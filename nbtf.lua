@@ -1012,12 +1012,15 @@ local function unspectate()
 		local char = LocalPlayer.Character
 		if char then
 			local hum = char:FindFirstChildOfClass("Humanoid")
-			if hum then camera.CameraSubject = hum end
+			if hum then
+				camera.CameraSubject = hum
+				camera.CameraType = Enum.CameraType.Custom
+			end
 		end
 	end)
 	spectateTarget = nil
 	spectateActive = false
-	notify("Spectate", "Stopped")
+	notify("Spectate", "Stopped - camera returned to you")
 end
 
 -- ===================== NO RECOIL (NBTF-Specific) =====================
@@ -1266,15 +1269,15 @@ local function findLocationByName(searchName)
 	return best
 end
 
--- Get position from a found object
+-- Get position from a found object (small offset so you don't clip into floor)
 local function getLocationPosition(obj)
 	if obj:IsA("Model") then
 		local primary = obj.PrimaryPart
-		if primary then return primary.Position + Vector3.new(0, 5, 0) end
+		if primary then return primary.Position + Vector3.new(0, 3, 0) end
 		local part = obj:FindFirstChildWhichIsA("BasePart")
-		if part then return part.Position + Vector3.new(0, 5, 0) end
+		if part then return part.Position + Vector3.new(0, 3, 0) end
 	elseif obj:IsA("BasePart") then
-		return obj.Position + Vector3.new(0, 5, 0)
+		return obj.Position + Vector3.new(0, 3, 0)
 	end
 	return nil
 end
@@ -1741,6 +1744,112 @@ do
 	createButton(tab, "Freeze All Players", o(), freezeAllPlayers)
 	createButton(tab, "Unfreeze All Players", o(), unfreezeAllPlayers)
 	createInfoLabel(tab, "Bring/freeze work on all non-team players", o())
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Announcement System", o())
+	createInfoLabel(tab, "Searches for announcement remotes in ReplicatedStorage", o())
+
+	-- Announcement text input
+	local announcementText = "Hello from NBTF Hub"
+	local announceTB = Instance.new("TextBox")
+	announceTB.Size = UDim2.new(1, 0, 0, 28)
+	announceTB.BackgroundColor3 = COLORS.panel
+	announceTB.BorderSizePixel = 0
+	announceTB.Text = announcementText
+	announceTB.PlaceholderText = "Type announcement here..."
+	announceTB.TextColor3 = COLORS.textPrimary
+	announceTB.PlaceholderColor3 = COLORS.textDim
+	announceTB.Font = Enum.Font.Gotham
+	announceTB.TextSize = 11
+	announceTB.ClearTextOnFocus = false
+	announceTB.LayoutOrder = o()
+	announceTB.Parent = tab
+	addCorner(announceTB, 5)
+	local tbPad = Instance.new("UIPadding")
+	tbPad.PaddingLeft = UDim.new(0, 8)
+	tbPad.PaddingRight = UDim.new(0, 8)
+	tbPad.Parent = announceTB
+	announceTB:GetPropertyChangedSignal("Text"):Connect(function()
+		announcementText = announceTB.Text
+	end)
+
+	createButton(tab, "Send Announcement", o(), function()
+		local sent = false
+		pcall(function()
+			-- Try common announcement remote patterns
+			local RS = game:GetService("ReplicatedStorage")
+			-- Search for any remote with "announce" or "broadcast" in name
+			for _, obj in ipairs(RS:GetDescendants()) do
+				if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+					local n = obj.Name:lower()
+					if n:find("announce") or n:find("broadcast") or n:find("message") or n:find("notification") then
+						if obj:IsA("RemoteEvent") then
+							obj:FireServer(announcementText)
+							sent = true
+						elseif obj:IsA("RemoteFunction") then
+							obj:InvokeServer(announcementText)
+							sent = true
+						end
+					end
+				end
+			end
+			-- Also try direct paths
+			if not sent then
+				local announce = RS:FindFirstChild("SendAnnouncement") or RS:FindFirstChild("SEND_ANNOUNCEMENT")
+					or RS:FindFirstChild("Announce") or RS:FindFirstChild("Announcement")
+				if announce then
+					if announce:IsA("RemoteEvent") then
+						announce:FireServer(announcementText)
+						sent = true
+					elseif announce:IsA("RemoteFunction") then
+						announce:InvokeServer(announcementText)
+						sent = true
+					end
+				end
+			end
+		end)
+		if sent then
+			notify("Announce", "Sent: " .. announcementText)
+		else
+			notify("Error", "No announcement remote found")
+		end
+	end)
+
+	createButton(tab, "List All Remotes (check console)", o(), function()
+		pcall(function()
+			local RS = game:GetService("ReplicatedStorage")
+			print("=== ReplicatedStorage Remotes ===")
+			for _, obj in ipairs(RS:GetDescendants()) do
+				if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+					print(obj.ClassName .. ": " .. obj:GetFullName())
+				end
+			end
+			print("=== End ===")
+		end)
+		notify("Remotes", "Printed to console (F9)")
+	end)
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Rank Change", o())
+	createInfoLabel(tab, "Uses ReplicatedStorage.ChangeRank remote", o())
+
+	-- Rank buttons
+	local ranks = {"Intern", "Expert", "Veteran", "Elite", "Master", "Grandmaster", "Legendary", "Ultimate"}
+	for _, rank in ipairs(ranks) do
+		createButton(tab, "Set Rank: " .. rank, o(), function()
+			pcall(function()
+				local changeRank = game:GetService("ReplicatedStorage"):FindFirstChild("ChangeRank")
+				if changeRank then
+					changeRank:FireServer(rank)
+					notify("Rank", "Changed to " .. rank)
+				else
+					notify("Error", "ChangeRank remote not found")
+				end
+			end)
+		end)
+	end
 end
 
 -- ===================== BUILD MOVEMENT TAB =====================
