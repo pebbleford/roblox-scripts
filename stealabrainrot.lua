@@ -87,7 +87,6 @@ local savedBasePosition = nil
 local noclipConnection = nil
 local flyConnection = nil
 local speedConnection = nil
-local autoLockConnection = nil
 local antiHitConnection = nil
 local antiRagdollConnection = nil
 local espHighlights = {}
@@ -752,8 +751,6 @@ end
 -- Anti-cheat bypass: only disables collision on Stepped (before physics solve),
 -- so the property is false for the shortest possible window.
 -- Some anti-cheats check CanCollide on Heartbeat - by then physics already solved.
-local noclipSavedCollide = {}
-
 local function startNoclip()
 	noclipConnection = RunService.Stepped:Connect(function()
 		pcall(function()
@@ -1080,6 +1077,7 @@ local function getRandomTarget()
 end
 
 local function sendChatMessage(msg)
+	local sent = false
 	pcall(function()
 		-- Try TextChatService first (new chat system)
 		local tcs = game:GetService("TextChatService")
@@ -1089,11 +1087,12 @@ local function sendChatMessage(msg)
 				local general = channels:FindFirstChild("RBXGeneral")
 				if general then
 					general:SendAsync(msg)
-					return
+					sent = true
 				end
 			end
 		end
 	end)
+	if sent then return end
 	pcall(function()
 		-- Fallback: Legacy chat system
 		local chatEvents = game:GetService("ReplicatedStorage"):FindFirstChild("DefaultChatSystemChatEvents")
@@ -1101,7 +1100,6 @@ local function sendChatMessage(msg)
 			local sayMsg = chatEvents:FindFirstChild("SayMessageRequest")
 			if sayMsg then
 				sayMsg:FireServer(msg, "All")
-				return
 			end
 		end
 	end)
