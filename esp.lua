@@ -17,12 +17,16 @@ local OUTLINE_TRANSPARENCY = 0
 -- Fly Config
 local FLY_SPEED = 80
 
+-- ESP Refresh Config
+local REFRESH_INTERVAL = 5
+
 -- State
 local espEnabled = false
 local flyEnabled = false
 local highlights = {}
 local nametags = {}
 local espConnections = {}
+local refreshThread = nil
 local flyConnection = nil
 local bodyGyro = nil
 local bodyVelocity = nil
@@ -148,11 +152,8 @@ local function addHighlight(player)
 	if highlights[player] then return end
 
 	local character = player.Character
-	if not character then return end
-	if not character:FindFirstChild("HumanoidRootPart") then
-		character:WaitForChild("HumanoidRootPart", 5)
-	end
 	if not character or not character.Parent then return end
+	if not character:FindFirstChild("HumanoidRootPart") then return end
 
 	local highlight = Instance.new("Highlight")
 	highlight.Name = "ESPHighlight"
@@ -174,6 +175,7 @@ local function addNametag(player)
 	local character = player.Character
 	if not character then return end
 
+	if not character:FindFirstChild("HumanoidRootPart") then return end
 	local head = character:FindFirstChild("Head")
 	if not head then return end
 
@@ -319,36 +321,33 @@ local function removeAllHighlights()
 	end
 end
 
-local function setupPlayer(player)
-	if player == LocalPlayer then return end
-
-	if player.Character then
-		addHighlight(player)
-		addNametag(player)
-	end
-
-	local conn = player.CharacterAdded:Connect(function(character)
-		removeHighlight(player)
-		removeNametag(player)
-
-		if not espEnabled then return end
-
-		character:WaitForChild("HumanoidRootPart", 10)
-		task.wait(0.2)
-
-		if espEnabled and character.Parent then
-			addHighlight(player)
-			addNametag(player)
+local function espScanAll()
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer then
+			local character = player.Character
+			if character and character.Parent and character:FindFirstChild("HumanoidRootPart") then
+				if not highlights[player] then
+					addHighlight(player)
+				end
+				if not nametags[player] then
+					addNametag(player)
+				end
+			end
 		end
-	end)
-
-	table.insert(espConnections, conn)
+	end
 end
 
 local function enableESP()
-	for _, player in ipairs(Players:GetPlayers()) do
-		setupPlayer(player)
-	end
+	espScanAll()
+
+	-- Refresh loop: pick up new players and respawns every N seconds
+	refreshThread = task.spawn(function()
+		while espEnabled do
+			task.wait(REFRESH_INTERVAL)
+			if not espEnabled then break end
+			espScanAll()
+		end
+	end)
 end
 
 local function disableESP()
@@ -358,6 +357,7 @@ local function disableESP()
 		conn:Disconnect()
 	end
 	espConnections = {}
+	refreshThread = nil
 end
 
 -- =============== Fly Logic ===============
@@ -464,13 +464,7 @@ flyButton.MouseButton1Click:Connect(function()
 	end
 end)
 
--- =========== New players / cleanup ===========
-
-Players.PlayerAdded:Connect(function(player)
-	if espEnabled then
-		setupPlayer(player)
-	end
-end)
+-- =========== Cleanup when players leave ===========
 
 Players.PlayerRemoving:Connect(function(player)
 	removeHighlight(player)
