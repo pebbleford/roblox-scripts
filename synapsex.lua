@@ -1860,16 +1860,63 @@ do
 	end)
 	createActionButton(tab, "Unspectate", 6, function() unspectate() end)
 	createActionButton(tab, "Fling Player", 7, function()
-		if selectedPlayer and selectedPlayer.Character then
-			pcall(function()
-				for _, part in ipairs(selectedPlayer.Character:GetDescendants()) do
-					if part:IsA("BasePart") and not part.Anchored then
-						part.Velocity = Vector3.new((math.random()-0.5)*flingPower, flingPower*0.5, (math.random()-0.5)*flingPower)
-					end
+		if not selectedPlayer or not selectedPlayer.Character then
+			addLog("[FLING] No player selected", COLORS.error)
+			return
+		end
+		local targetHRP = selectedPlayer.Character:FindFirstChild("HumanoidRootPart")
+		if not targetHRP then
+			addLog("[FLING] Target has no HumanoidRootPart", COLORS.error)
+			return
+		end
+		local myChar = LocalPlayer.Character
+		local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+		if not myHRP then return end
+
+		addLog("[FLING] Flinging " .. selectedPlayer.DisplayName .. "...", COLORS.warning)
+
+		task.spawn(function()
+			local savedCF = myHRP.CFrame
+
+			-- Make character super heavy so contact launches the target
+			local savedProps = {}
+			for _, part in ipairs(myChar:GetDescendants()) do
+				if part:IsA("BasePart") then
+					savedProps[part] = part.CustomPhysicalProperties
+					part.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
 				end
-				addLog("[FLING] Flung " .. selectedPlayer.DisplayName, COLORS.success)
-			end)
-		else addLog("[FLING] No player selected", COLORS.error) end
+			end
+
+			-- Spin at high angular velocity
+			local spinBAVLocal = Instance.new("BodyAngularVelocity")
+			spinBAVLocal.AngularVelocity = Vector3.new(0, flingPower, 0)
+			spinBAVLocal.MaxTorque = Vector3.new(0, math.huge, 0)
+			spinBAVLocal.P = math.huge
+			spinBAVLocal.Parent = myHRP
+
+			-- Ram into target for 2 seconds
+			local startTime = tick()
+			while tick() - startTime < 2 do
+				pcall(function()
+					if not targetHRP or not targetHRP.Parent then return end
+					myHRP.CFrame = CFrame.new(targetHRP.Position)
+				end)
+				task.wait()
+			end
+
+			-- Cleanup
+			pcall(function() spinBAVLocal:Destroy() end)
+			for part, props in pairs(savedProps) do
+				pcall(function()
+					if props then part.CustomPhysicalProperties = props
+					else part.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5) end
+				end)
+			end
+
+			task.wait(0.2)
+			pcall(function() myHRP.CFrame = savedCF end)
+			addLog("[FLING] Flung " .. selectedPlayer.DisplayName .. "!", COLORS.success)
+		end)
 	end)
 
 	createToggle(tab, "Kill Aura", 8, function(on)
