@@ -1748,9 +1748,87 @@ do
 	createSpacer(tab, o())
 
 	createSectionLabel(tab, "Announcement System", o())
-	createInfoLabel(tab, "Searches for announcement remotes in ReplicatedStorage", o())
+	createInfoLabel(tab, "Opens the in-game announcement GUI (normally exec-only)", o())
 
-	-- Announcement text input
+	createButton(tab, "Open Announcement Menu", o(), function()
+		local found = false
+		pcall(function()
+			-- The announcement GUI is already in PlayerGui but hidden for non-executives
+			-- Search PlayerGui for announcement/alert related GUIs and force them visible
+			local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+			if not playerGui then return end
+
+			for _, gui in ipairs(playerGui:GetDescendants()) do
+				local n = gui.Name:lower()
+				if n:find("announce") or n:find("alert") or n:find("broadcast")
+					or n:find("transmission") or n:find("static alert") then
+					if gui:IsA("ScreenGui") then
+						gui.Enabled = true
+						found = true
+						print("[NBTF Hub] Found GUI: " .. gui:GetFullName())
+					elseif gui:IsA("Frame") or gui:IsA("ImageLabel") or gui:IsA("TextLabel") then
+						gui.Visible = true
+						found = true
+						print("[NBTF Hub] Found frame: " .. gui:GetFullName())
+					elseif gui:IsA("TextButton") or gui:IsA("ImageButton") then
+						gui.Visible = true
+						found = true
+						print("[NBTF Hub] Found button: " .. gui:GetFullName())
+					end
+				end
+			end
+
+			-- Also check for GUIs stored in ReplicatedStorage that need cloning
+			local RS = game:GetService("ReplicatedStorage")
+			for _, obj in ipairs(RS:GetDescendants()) do
+				local n = obj.Name:lower()
+				if (n:find("announce") or n:find("alert") or n:find("broadcast")) and obj:IsA("ScreenGui") then
+					local clone = obj:Clone()
+					clone.Parent = playerGui
+					clone.Enabled = true
+					found = true
+					print("[NBTF Hub] Cloned GUI: " .. obj:GetFullName())
+				end
+			end
+		end)
+		if found then
+			notify("Announce", "Opened announcement GUI - check your screen!")
+		else
+			notify("Announce", "GUI not found - printing all GUIs to console...")
+			-- Print all GUIs for debugging
+			pcall(function()
+				print("=== All PlayerGui Contents ===")
+				for _, gui in ipairs(LocalPlayer.PlayerGui:GetDescendants()) do
+					if gui:IsA("ScreenGui") or gui:IsA("Frame") then
+						local vis = ""
+						if gui:IsA("ScreenGui") then
+							vis = gui.Enabled and "ENABLED" or "disabled"
+						elseif gui:IsA("Frame") then
+							vis = gui.Visible and "VISIBLE" or "hidden"
+						end
+						print(vis .. " | " .. gui.ClassName .. ": " .. gui:GetFullName())
+					end
+				end
+				print("=== End ===")
+			end)
+		end
+	end)
+
+	createButton(tab, "Force Show ALL Hidden GUIs", o(), function()
+		local count = 0
+		pcall(function()
+			for _, gui in ipairs(LocalPlayer.PlayerGui:GetChildren()) do
+				if gui:IsA("ScreenGui") and not gui.Enabled then
+					gui.Enabled = true
+					count = count + 1
+					print("[NBTF Hub] Enabled: " .. gui.Name)
+				end
+			end
+		end)
+		notify("GUIs", "Enabled " .. count .. " hidden GUIs")
+	end)
+
+	-- Announcement text input + send via remote
 	local announcementText = "Hello from NBTF Hub"
 	local announceTB = Instance.new("TextBox")
 	announceTB.Size = UDim2.new(1, 0, 0, 28)
@@ -1774,82 +1852,69 @@ do
 		announcementText = announceTB.Text
 	end)
 
-	createButton(tab, "Send Announcement", o(), function()
-		local sent = false
+	createButton(tab, "Send via Remote (fire all matching)", o(), function()
+		local sent = 0
 		pcall(function()
-			-- Try common announcement remote patterns
 			local RS = game:GetService("ReplicatedStorage")
-			-- Search for any remote with "announce" or "broadcast" in name
 			for _, obj in ipairs(RS:GetDescendants()) do
-				if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+				if obj:IsA("RemoteEvent") then
 					local n = obj.Name:lower()
-					if n:find("announce") or n:find("broadcast") or n:find("message") or n:find("notification") then
-						if obj:IsA("RemoteEvent") then
-							obj:FireServer(announcementText)
-							sent = true
-						elseif obj:IsA("RemoteFunction") then
-							obj:InvokeServer(announcementText)
-							sent = true
-						end
-					end
-				end
-			end
-			-- Also try direct paths
-			if not sent then
-				local announce = RS:FindFirstChild("SendAnnouncement") or RS:FindFirstChild("SEND_ANNOUNCEMENT")
-					or RS:FindFirstChild("Announce") or RS:FindFirstChild("Announcement")
-				if announce then
-					if announce:IsA("RemoteEvent") then
-						announce:FireServer(announcementText)
-						sent = true
-					elseif announce:IsA("RemoteFunction") then
-						announce:InvokeServer(announcementText)
-						sent = true
+					if n:find("announce") or n:find("broadcast") or n:find("alert") or n:find("send") then
+						obj:FireServer(announcementText)
+						sent = sent + 1
+						print("[NBTF Hub] Fired: " .. obj:GetFullName() .. " with: " .. announcementText)
 					end
 				end
 			end
 		end)
-		if sent then
-			notify("Announce", "Sent: " .. announcementText)
-		else
-			notify("Error", "No announcement remote found")
-		end
+		notify("Announce", "Fired " .. sent .. " remotes")
 	end)
 
-	createButton(tab, "List All Remotes (check console)", o(), function()
+	createButton(tab, "List All Remotes (F9 console)", o(), function()
 		pcall(function()
 			local RS = game:GetService("ReplicatedStorage")
 			print("=== ReplicatedStorage Remotes ===")
 			for _, obj in ipairs(RS:GetDescendants()) do
-				if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+				if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") or obj:IsA("BindableEvent") then
 					print(obj.ClassName .. ": " .. obj:GetFullName())
 				end
 			end
 			print("=== End ===")
 		end)
-		notify("Remotes", "Printed to console (F9)")
+		notify("Remotes", "Printed to F9 console")
 	end)
 
 	createSpacer(tab, o())
 
 	createSectionLabel(tab, "Rank Change", o())
-	createInfoLabel(tab, "Uses ReplicatedStorage.ChangeRank remote", o())
+	createInfoLabel(tab, "Searches for rank/role remotes (may be patched)", o())
 
-	-- Rank buttons
-	local ranks = {"Intern", "Expert", "Veteran", "Elite", "Master", "Grandmaster", "Legendary", "Ultimate"}
-	for _, rank in ipairs(ranks) do
-		createButton(tab, "Set Rank: " .. rank, o(), function()
-			pcall(function()
-				local changeRank = game:GetService("ReplicatedStorage"):FindFirstChild("ChangeRank")
-				if changeRank then
-					changeRank:FireServer(rank)
-					notify("Rank", "Changed to " .. rank)
-				else
-					notify("Error", "ChangeRank remote not found")
+	createButton(tab, "Try Change Rank (prints result to F9)", o(), function()
+		pcall(function()
+			local RS = game:GetService("ReplicatedStorage")
+			-- Search for any rank-related remote
+			local found = false
+			for _, obj in ipairs(RS:GetDescendants()) do
+				if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+					local n = obj.Name:lower()
+					if n:find("rank") or n:find("role") or n:find("promote") or n:find("setrank") then
+						print("[NBTF Hub] Found rank remote: " .. obj:GetFullName())
+						if obj:IsA("RemoteEvent") then
+							obj:FireServer("Ultimate")
+							print("[NBTF Hub] Fired: " .. obj.Name .. " with 'Ultimate'")
+						end
+						found = true
+					end
 				end
-			end)
+			end
+			if not found then
+				print("[NBTF Hub] No rank remotes found - may be patched")
+				notify("Rank", "No rank remote found - likely patched")
+			else
+				notify("Rank", "Fired rank remotes - check if it worked")
+			end
 		end)
-	end
+	end)
 end
 
 -- ===================== BUILD MOVEMENT TAB =====================
