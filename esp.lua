@@ -28,7 +28,6 @@ local highlights = {}
 local nametags = {}
 local espConnections = {}
 local flyConnection = nil
-local flingConnection = nil
 local bodyGyro = nil
 local bodyVelocity = nil
 
@@ -583,67 +582,73 @@ local function stopFly()
 end
 
 -- =============== Fling Logic ===============
--- Walk-around fling: move freely with WASD, anything you touch gets launched
--- Works like Infinite Yield / Dinos Anim fling
+-- Touched-based fling: walk around normally, anything you touch gets launched
+-- No spinning, no massless, no physics hacks - just applies velocity on contact
 
-local savedPhysics = {}
+local touchConnections = {}
+
+local function flingPart(hit)
+	if not flingEnabled then return end
+	if not hit or not hit.Parent then return end
+	-- Don't fling your own character or anchored parts
+	local myChar = LocalPlayer.Character
+	if not myChar then return end
+	if hit:IsDescendantOf(myChar) then return end
+	if hit.Anchored then return end
+
+	pcall(function()
+		local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+		if not myHRP then return end
+
+		-- Calculate direction away from you
+		local direction = (hit.Position - myHRP.Position)
+		if direction.Magnitude < 0.1 then
+			direction = Vector3.new(math.random() - 0.5, 1, math.random() - 0.5)
+		end
+		direction = direction.Unit
+
+		-- Launch it with upward angle
+		local launchVel = direction * flingPower + Vector3.new(0, flingPower * 0.5, 0)
+		hit.Velocity = launchVel
+		hit.RotVelocity = Vector3.new(
+			(math.random() - 0.5) * flingPower,
+			(math.random() - 0.5) * flingPower,
+			(math.random() - 0.5) * flingPower
+		)
+
+		-- If it's part of a player character, fling all their parts
+		local hitChar = hit.Parent
+		local hitHumanoid = hitChar and hitChar:FindFirstChildOfClass("Humanoid")
+		if hitHumanoid then
+			for _, part in ipairs(hitChar:GetDescendants()) do
+				if part:IsA("BasePart") and not part.Anchored then
+					part.Velocity = launchVel
+				end
+			end
+		end
+	end)
+end
 
 local function startFling()
 	local character = LocalPlayer.Character
 	if not character then return end
-	local hrp = character:FindFirstChild("HumanoidRootPart")
-	if not hrp then return end
 
-	-- Save original physics and make character massless
-	-- Massless = collisions push OTHERS, not you
-	pcall(function()
-		for _, part in ipairs(character:GetDescendants()) do
-			if part:IsA("BasePart") then
-				savedPhysics[part] = part.CustomPhysicalProperties
-				part.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 100, 100)
-			end
+	-- Connect Touched on every part of your character
+	for _, part in ipairs(character:GetDescendants()) do
+		if part:IsA("BasePart") then
+			local conn = part.Touched:Connect(flingPart)
+			table.insert(touchConnections, conn)
 		end
-	end)
+	end
 
-	-- Just spin via RotVelocity every frame, NO BodyPosition/BodyMovers
-	-- This lets the Humanoid still control walking normally
-	flingConnection = RunService.Heartbeat:Connect(function()
-		if not flingEnabled then return end
-		pcall(function()
-			local myChar = LocalPlayer.Character
-			if not myChar then return end
-			local myHRP = myChar:FindFirstChild("HumanoidRootPart")
-			if not myHRP then return end
-			-- Spin rapidly - when you walk into things they get flung
-			myHRP.RotVelocity = Vector3.new(flingPower, flingPower, flingPower)
-		end)
-	end)
 	print("[FLING] ON - Power: " .. flingPower .. " (walk into things to fling them)")
 end
 
 local function stopFling()
-	if flingConnection then flingConnection:Disconnect() flingConnection = nil end
-	pcall(function()
-		local character = LocalPlayer.Character
-		if character then
-			-- Restore original physics
-			for _, part in ipairs(character:GetDescendants()) do
-				if part:IsA("BasePart") then
-					if savedPhysics[part] then
-						part.CustomPhysicalProperties = savedPhysics[part]
-					else
-						part.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
-					end
-				end
-			end
-			savedPhysics = {}
-			local hrp = character:FindFirstChild("HumanoidRootPart")
-			if hrp then
-				hrp.RotVelocity = Vector3.new(0, 0, 0)
-				hrp.Velocity = Vector3.new(0, 0, 0)
-			end
-		end
-	end)
+	for _, conn in ipairs(touchConnections) do
+		pcall(function() conn:Disconnect() end)
+	end
+	touchConnections = {}
 	print("[FLING] OFF")
 end
 
