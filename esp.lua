@@ -1,79 +1,127 @@
---[[
-    PlayerHighlightESP
-    Type: LocalScript
-    Place inside: StarterGui
-
-    Highlights every other player with a toggleable GUI button.
-]]
+-- PlayerHighlightESP + Fly
+-- LocalScript - Place inside StarterGui
+-- Toggle ESP and Fly with draggable GUI buttons
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
--- Config
+-- ESP Config
 local HIGHLIGHT_COLOR = Color3.fromRGB(255, 0, 0)
 local OUTLINE_COLOR = Color3.fromRGB(255, 255, 255)
 local FILL_TRANSPARENCY = 0.5
 local OUTLINE_TRANSPARENCY = 0
 
+-- Fly Config
+local FLY_SPEED = 80
+
 -- State
-local enabled = false
+local espEnabled = false
+local flyEnabled = false
 local highlights = {}
 local nametags = {}
-local connections = {}
+local espConnections = {}
+local flyConnection = nil
+local bodyGyro = nil
+local bodyVelocity = nil
 
 -- ===================== GUI =====================
 
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "HighlightToggleGui"
+screenGui.Name = "ESPFlyGui"
 screenGui.ResetOnSpawn = false
 screenGui.DisplayOrder = 999
 screenGui.IgnoreGuiInset = true
 screenGui.Parent = PlayerGui
 
-local UserInputService = game:GetService("UserInputService")
+local panel = Instance.new("Frame")
+panel.Name = "Panel"
+panel.Size = UDim2.new(0, 170, 0, 110)
+panel.Position = UDim2.new(0, 15, 0, 15)
+panel.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+panel.BackgroundTransparency = 0.1
+panel.BorderSizePixel = 0
+panel.Active = true
+panel.Parent = screenGui
 
-local toggleFrame = Instance.new("Frame")
-toggleFrame.Name = "ToggleFrame"
-toggleFrame.Size = UDim2.new(0, 160, 0, 50)
-toggleFrame.Position = UDim2.new(0, 15, 0, 15)
-toggleFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-toggleFrame.BorderSizePixel = 0
-toggleFrame.Active = true
-toggleFrame.Parent = screenGui
+local panelCorner = Instance.new("UICorner")
+panelCorner.CornerRadius = UDim.new(0, 10)
+panelCorner.Parent = panel
 
-local frameCorner = Instance.new("UICorner")
-frameCorner.CornerRadius = UDim.new(0, 10)
-frameCorner.Parent = toggleFrame
+local panelStroke = Instance.new("UIStroke")
+panelStroke.Color = Color3.fromRGB(60, 60, 60)
+panelStroke.Thickness = 2
+panelStroke.Parent = panel
 
-local frameStroke = Instance.new("UIStroke")
-frameStroke.Color = Color3.fromRGB(80, 80, 80)
-frameStroke.Thickness = 2
-frameStroke.Parent = toggleFrame
+-- Title bar (drag handle)
+local titleBar = Instance.new("Frame")
+titleBar.Name = "TitleBar"
+titleBar.Size = UDim2.new(1, 0, 0, 28)
+titleBar.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+titleBar.BorderSizePixel = 0
+titleBar.Parent = panel
 
-local toggleButton = Instance.new("TextButton")
-toggleButton.Name = "ToggleButton"
-toggleButton.Size = UDim2.new(1, -16, 1, -12)
-toggleButton.Position = UDim2.new(0, 8, 0, 6)
-toggleButton.BackgroundTransparency = 1
-toggleButton.TextColor3 = Color3.fromRGB(255, 80, 80)
-toggleButton.Font = Enum.Font.GothamBold
-toggleButton.TextSize = 18
-toggleButton.Text = "ESP: OFF"
-toggleButton.Parent = toggleFrame
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 10)
+titleCorner.Parent = titleBar
 
--- =============== Draggable GUI ===============
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Name = "Title"
+titleLabel.Size = UDim2.new(1, -10, 1, 0)
+titleLabel.Position = UDim2.new(0, 10, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "Tools"
+titleLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextSize = 13
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = titleBar
+
+-- ESP Button
+local espButton = Instance.new("TextButton")
+espButton.Name = "ESPButton"
+espButton.Size = UDim2.new(1, -20, 0, 30)
+espButton.Position = UDim2.new(0, 10, 0, 35)
+espButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+espButton.TextColor3 = Color3.fromRGB(255, 80, 80)
+espButton.Font = Enum.Font.GothamBold
+espButton.TextSize = 15
+espButton.Text = "ESP: OFF"
+espButton.Parent = panel
+
+local espCorner = Instance.new("UICorner")
+espCorner.CornerRadius = UDim.new(0, 6)
+espCorner.Parent = espButton
+
+-- Fly Button
+local flyButton = Instance.new("TextButton")
+flyButton.Name = "FlyButton"
+flyButton.Size = UDim2.new(1, -20, 0, 30)
+flyButton.Position = UDim2.new(0, 10, 0, 72)
+flyButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+flyButton.TextColor3 = Color3.fromRGB(255, 80, 80)
+flyButton.Font = Enum.Font.GothamBold
+flyButton.TextSize = 15
+flyButton.Text = "FLY: OFF"
+flyButton.Parent = panel
+
+local flyCorner = Instance.new("UICorner")
+flyCorner.CornerRadius = UDim.new(0, 6)
+flyCorner.Parent = flyButton
+
+-- =============== Draggable Panel ===============
 
 do
 	local dragging = false
 	local dragStart, startPos
 
-	toggleFrame.InputBegan:Connect(function(input)
+	titleBar.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
 			dragStart = input.Position
-			startPos = toggleFrame.Position
+			startPos = panel.Position
 			input.Changed:Connect(function()
 				if input.UserInputState == Enum.UserInputState.End then
 					dragging = false
@@ -85,7 +133,7 @@ do
 	UserInputService.InputChanged:Connect(function(input)
 		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 			local delta = input.Position - dragStart
-			toggleFrame.Position = UDim2.new(
+			panel.Position = UDim2.new(
 				startPos.X.Scale, startPos.X.Offset + delta.X,
 				startPos.Y.Scale, startPos.Y.Offset + delta.Y
 			)
@@ -93,7 +141,7 @@ do
 	end)
 end
 
--- =============== Highlight Logic ===============
+-- =============== ESP: Highlight Logic ===============
 
 local function addHighlight(player)
 	if player == LocalPlayer then return end
@@ -114,7 +162,7 @@ local function addHighlight(player)
 	highlight.OutlineTransparency = OUTLINE_TRANSPARENCY
 	highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 	highlight.Adornee = character
-	highlight.Parent = screenGui -- parent to GUI so it survives character resets
+	highlight.Parent = screenGui
 
 	highlights[player] = highlight
 end
@@ -151,7 +199,7 @@ local function addNametag(player)
 	nameLabel.TextSize = 14
 	nameLabel.Parent = billboard
 
-	-- Health text (e.g. "75 / 100")
+	-- Health text
 	local healthLabel = Instance.new("TextLabel")
 	healthLabel.Name = "HealthLabel"
 	healthLabel.Size = UDim2.new(1, 0, 0, 14)
@@ -220,7 +268,7 @@ local function addNametag(player)
 		end
 		updateHealth()
 		local conn = humanoid.HealthChanged:Connect(updateHealth)
-		table.insert(connections, conn)
+		table.insert(espConnections, conn)
 	end
 
 	-- Update distance every frame
@@ -238,7 +286,7 @@ local function addNametag(player)
 			distLabel.Text = "[?m]"
 		end
 	end)
-	table.insert(connections, distConn)
+	table.insert(espConnections, distConn)
 
 	nametags[player] = billboard
 end
@@ -274,73 +322,152 @@ end
 local function setupPlayer(player)
 	if player == LocalPlayer then return end
 
-	-- Highlight and nametag their current character
 	if player.Character then
 		addHighlight(player)
 		addNametag(player)
 	end
 
-	-- Re-apply on every respawn
 	local conn = player.CharacterAdded:Connect(function(character)
-		-- Remove old instances
 		removeHighlight(player)
 		removeNametag(player)
 
-		if not enabled then return end
+		if not espEnabled then return end
 
-		-- Wait for the character model to fully load
 		character:WaitForChild("HumanoidRootPart", 10)
 		task.wait(0.2)
 
-		if enabled and character.Parent then
+		if espEnabled and character.Parent then
 			addHighlight(player)
 			addNametag(player)
 		end
 	end)
 
-	table.insert(connections, conn)
+	table.insert(espConnections, conn)
 end
 
-local function enableAll()
+local function enableESP()
 	for _, player in ipairs(Players:GetPlayers()) do
 		setupPlayer(player)
 	end
 end
 
-local function disableAll()
+local function disableESP()
 	removeAllHighlights()
 	removeAllNametags()
-	-- Disconnect respawn listeners
-	for _, conn in ipairs(connections) do
+	for _, conn in ipairs(espConnections) do
 		conn:Disconnect()
 	end
-	connections = {}
+	espConnections = {}
 end
 
--- ================== Toggle ==================
+-- =============== Fly Logic ===============
 
-local function toggle()
-	enabled = not enabled
+local function startFly()
+	local character = LocalPlayer.Character
+	if not character then return end
 
-	if enabled then
-		toggleButton.Text = "ESP: ON"
-		toggleButton.TextColor3 = Color3.fromRGB(80, 255, 80)
-		frameStroke.Color = Color3.fromRGB(0, 200, 80)
-		enableAll()
-	else
-		toggleButton.Text = "ESP: OFF"
-		toggleButton.TextColor3 = Color3.fromRGB(255, 80, 80)
-		frameStroke.Color = Color3.fromRGB(80, 80, 80)
-		disableAll()
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not hrp or not humanoid then return end
+
+	-- Prevent falling
+	bodyGyro = Instance.new("BodyGyro")
+	bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+	bodyGyro.P = 9e4
+	bodyGyro.Parent = hrp
+
+	bodyVelocity = Instance.new("BodyVelocity")
+	bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+	bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+	bodyVelocity.Parent = hrp
+
+	flyConnection = RunService.Heartbeat:Connect(function()
+		if not flyEnabled then return end
+		if not hrp or not hrp.Parent then return end
+
+		local camera = workspace.CurrentCamera
+		local moveDir = Vector3.new(0, 0, 0)
+
+		-- WASD movement relative to camera
+		if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+			moveDir = moveDir + camera.CFrame.LookVector
+		end
+		if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+			moveDir = moveDir - camera.CFrame.LookVector
+		end
+		if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+			moveDir = moveDir - camera.CFrame.RightVector
+		end
+		if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+			moveDir = moveDir + camera.CFrame.RightVector
+		end
+		if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+			moveDir = moveDir + Vector3.new(0, 1, 0)
+		end
+		if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+			moveDir = moveDir - Vector3.new(0, 1, 0)
+		end
+
+		if moveDir.Magnitude > 0 then
+			moveDir = moveDir.Unit
+		end
+
+		bodyVelocity.Velocity = moveDir * FLY_SPEED
+		bodyGyro.CFrame = camera.CFrame
+	end)
+end
+
+local function stopFly()
+	if flyConnection then
+		flyConnection:Disconnect()
+		flyConnection = nil
+	end
+	if bodyGyro then
+		bodyGyro:Destroy()
+		bodyGyro = nil
+	end
+	if bodyVelocity then
+		bodyVelocity:Destroy()
+		bodyVelocity = nil
 	end
 end
 
-toggleButton.MouseButton1Click:Connect(toggle)
+-- ================== Toggles ==================
+
+espButton.MouseButton1Click:Connect(function()
+	espEnabled = not espEnabled
+	if espEnabled then
+		espButton.Text = "ESP: ON"
+		espButton.TextColor3 = Color3.fromRGB(80, 255, 80)
+		espButton.BackgroundColor3 = Color3.fromRGB(30, 60, 30)
+		enableESP()
+	else
+		espButton.Text = "ESP: OFF"
+		espButton.TextColor3 = Color3.fromRGB(255, 80, 80)
+		espButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+		disableESP()
+	end
+end)
+
+flyButton.MouseButton1Click:Connect(function()
+	flyEnabled = not flyEnabled
+	if flyEnabled then
+		flyButton.Text = "FLY: ON"
+		flyButton.TextColor3 = Color3.fromRGB(80, 255, 80)
+		flyButton.BackgroundColor3 = Color3.fromRGB(30, 60, 30)
+		startFly()
+	else
+		flyButton.Text = "FLY: OFF"
+		flyButton.TextColor3 = Color3.fromRGB(255, 80, 80)
+		flyButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+		stopFly()
+	end
+end)
 
 -- =========== New players / cleanup ===========
 
 Players.PlayerAdded:Connect(function(player)
-	if enabled then
+	if espEnabled then
 		setupPlayer(player)
 	end
 end)
@@ -348,4 +475,16 @@ end)
 Players.PlayerRemoving:Connect(function(player)
 	removeHighlight(player)
 	removeNametag(player)
+end)
+
+-- Stop fly if character dies/resets
+LocalPlayer.CharacterAdded:Connect(function()
+	if flyEnabled then
+		stopFly()
+		task.wait(0.5)
+		local character = LocalPlayer.Character
+		if character and character:FindFirstChild("HumanoidRootPart") then
+			startFly()
+		end
+	end
 end)
