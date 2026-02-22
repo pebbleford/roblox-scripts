@@ -99,6 +99,20 @@ local function findGunInBackpack()
 end
 
 -- Fire a weapon hit on a target player using the NBTF WeaponHit remote
+local function equipGun(gun)
+	if not gun then return nil end
+	local char = LocalPlayer.Character
+	if not char then return nil end
+	-- Already equipped
+	if gun.Parent == char then return gun end
+	-- Equip it from backpack
+	pcall(function()
+		char:FindFirstChildOfClass("Humanoid"):EquipTool(gun)
+	end)
+	task.wait(0.15)
+	return gun
+end
+
 local function fireWeaponHit(targetPlayer, gun)
 	if not WeaponHitRemote then return false end
 	if not targetPlayer or not targetPlayer.Character then return false end
@@ -107,19 +121,28 @@ local function fireWeaponHit(targetPlayer, gun)
 	if not gun then gun = findGunInBackpack() end
 	if not gun then return false end
 
+	-- Gun must be equipped for server to accept the hit
+	equipGun(gun)
+
+	-- Use realistic hit data - actual positions for server validation
+	local myRoot = getRoot()
+	local hitPos = head.Position
+	local dir = myRoot and (hitPos - myRoot.Position).Unit or Vector3.new(0, 0, -1)
+	local dist = myRoot and (hitPos - myRoot.Position).Magnitude or 10
+
 	local args = {
 		[1] = gun,
 		[2] = {
-			["p"] = Vector3.new(0, 0, 0),
+			["p"] = hitPos,
 			["pid"] = 1,
 			["part"] = head,
-			["d"] = 0,
-			["maxDist"] = 0,
+			["d"] = dist,
+			["maxDist"] = 1000,
 			["h"] = head,
-			["m"] = Enum.Material.Plastic,
+			["m"] = head.Material,
 			["sid"] = 2,
-			["t"] = 0,
-			["n"] = Vector3.new(0, 0, 0)
+			["t"] = tick(),
+			["n"] = dir
 		}
 	}
 	pcall(function()
@@ -2099,41 +2122,86 @@ do
 	createInfoLabel(tab, "TP to Broadcast Room + auto-fire the console prompt to open GUI", o())
 	createInfoLabel(tab, "Uses noclip to bypass keycard door", o())
 
+	-- Helper: fire a single ProximityPrompt
+	local function firePrompt(obj)
+		local oldHold = obj.HoldDuration
+		local oldDist = obj.MaxActivationDistance
+		obj.MaxActivationDistance = 100
+		obj.HoldDuration = 0
+		pcall(function()
+			if fireproximityprompt then fireproximityprompt(obj) end
+		end)
+		pcall(function()
+			obj:InputHoldBegin()
+			task.wait(0.1)
+			obj:InputHoldEnd()
+		end)
+		obj.MaxActivationDistance = oldDist
+		obj.HoldDuration = oldHold
+	end
+
+	-- Helper: collect prompts/detectors near a position from a pre-fetched list
+	local function getNearbyPrompts(descendants, pos, radius)
+		local prompts, detectors = {}, {}
+		for _, obj in ipairs(descendants) do
+			pcall(function()
+				if obj:IsA("ProximityPrompt") then
+					local p = obj.Parent
+					if p and p:IsA("BasePart") and (p.Position - pos).Magnitude < radius then
+						table.insert(prompts, obj)
+					end
+				elseif obj:IsA("ClickDetector") then
+					local p = obj.Parent
+					if p and p:IsA("BasePart") and (p.Position - pos).Magnitude < radius then
+						table.insert(detectors, obj)
+					end
+				end
+			end)
+		end
+		return prompts, detectors
+	end
+
 	createButton(tab, "TP to Broadcast Room + Open Console", o(), function()
 		local char = LocalPlayer.Character
 		if not char then return end
+		local hrp = getRoot()
+		if not hrp then return end
 
-		-- Enable noclip temporarily to get through keycard doors
+		-- Lightweight noclip - only root parts, not every descendant
 		local tempNoclip = RunService.Stepped:Connect(function()
 			pcall(function()
-				if not char then return end
-				for _, part in ipairs(char:GetDescendants()) do
-					if part:IsA("BasePart") then part.CanCollide = false end
-				end
+				local c = LocalPlayer.Character
+				if not c then return end
+				local h = c:FindFirstChild("HumanoidRootPart")
+				if h then h.CanCollide = false end
+				local t = c:FindFirstChild("Torso") or c:FindFirstChild("UpperTorso")
+				if t then t.CanCollide = false end
 			end)
 		end)
 
+		-- Single GetDescendants call - cache and reuse
+		local allDesc = workspace:GetDescendants()
+
 		-- Search for broadcast/announcement room
 		local searchTerms = {"broadcast", "broadcasting", "announc", "alert room",
-			"alert system", "static alert", "control room", "control tablet",
-			"facility control", "announcement center", "pirate transmission"}
+			"alert system", "static alert", "control tablet",
+			"announcement center", "pirate transmission"}
 		local found = nil
-		for _, obj in ipairs(workspace:GetDescendants()) do
+		for _, obj in ipairs(allDesc) do
 			if found then break end
 			pcall(function()
-				local n = obj.Name:lower()
-				for _, term in ipairs(searchTerms) do
-					if n:find(term, 1, true) then
-						if obj:IsA("BasePart") or obj:IsA("Model") then
+				if obj:IsA("BasePart") or obj:IsA("Model") then
+					local n = obj.Name:lower()
+					for _, term in ipairs(searchTerms) do
+						if n:find(term, 1, true) then
 							found = obj
+							return
 						end
-						return
 					end
 				end
 			end)
 		end
 
-		-- Fallback: try SCC area
 		if not found then
 			found = findLocationByName("SCC") or findLocationByName("Strategic") or findLocationByName("Executive")
 		end
@@ -2143,160 +2211,75 @@ do
 			if not pos and found:IsA("BasePart") then pos = found.Position + Vector3.new(0, 3, 0) end
 			if pos then
 				char:PivotTo(CFrame.new(pos))
-				notify("Teleport", "TP to: " .. found.Name .. " - looking for console...")
+				notify("Teleport", "TP to: " .. found.Name)
 			end
 		else
-			notify("Error", "Broadcast Room not found - use Print Workspace Names")
+			notify("Error", "Broadcast Room not found")
 		end
 
-		-- Wait a moment then search for ProximityPrompts and ClickDetectors nearby
+		-- Wait then fire nearby prompts (reuse cached descendants)
 		task.wait(0.5)
-
-		-- Fire ALL ProximityPrompts within 50 studs
-		local hrp = getRoot()
-		local promptsFired = 0
+		hrp = getRoot()
 		if hrp then
-			for _, obj in ipairs(workspace:GetDescendants()) do
-				pcall(function()
-					if obj:IsA("ProximityPrompt") then
-						local promptPart = obj.Parent
-						if promptPart and promptPart:IsA("BasePart") then
-							local dist = (promptPart.Position - hrp.Position).Magnitude
-							if dist < 50 then
-								-- Fire the prompt
-								local oldHold = obj.HoldDuration
-								local oldDist = obj.MaxActivationDistance
-								obj.MaxActivationDistance = 100
-								obj.HoldDuration = 0
-								-- Try multiple methods to fire
-								pcall(function()
-									if fireproximityprompt then
-										fireproximityprompt(obj)
-									end
-								end)
-								pcall(function()
-									obj:InputHoldBegin()
-									task.wait(0.1)
-									obj:InputHoldEnd()
-								end)
-								obj.MaxActivationDistance = oldDist
-								obj.HoldDuration = oldHold
-								promptsFired = promptsFired + 1
-								print("[SX NBTF] Fired prompt: " .. obj.Parent.Name .. " (" .. math.floor(dist) .. "m)")
-							end
-						end
-					elseif obj:IsA("ClickDetector") then
-						local detPart = obj.Parent
-						if detPart and detPart:IsA("BasePart") then
-							local dist = (detPart.Position - hrp.Position).Magnitude
-							if dist < 50 then
-								pcall(function()
-									if fireclickdetector then
-										fireclickdetector(obj)
-									end
-								end)
-								promptsFired = promptsFired + 1
-								print("[SX NBTF] Fired click detector: " .. obj.Parent.Name .. " (" .. math.floor(dist) .. "m)")
-							end
-						end
-					end
-				end)
+			local prompts, detectors = getNearbyPrompts(allDesc, hrp.Position, 50)
+			for _, p in ipairs(prompts) do
+				firePrompt(p)
+				print("[SX NBTF] Fired prompt: " .. p.Parent.Name)
+			end
+			for _, d in ipairs(detectors) do
+				pcall(function() if fireclickdetector then fireclickdetector(d) end end)
+				print("[SX NBTF] Fired click: " .. d.Parent.Name)
+			end
+			local total = #prompts + #detectors
+			if total > 0 then
+				notify("Announce", "Fired " .. total .. " prompts - check your screen!")
+			else
+				notify("Announce", "No prompts nearby - walk up to the console")
 			end
 		end
 
-		-- Disable temp noclip after 3 seconds
-		task.delay(3, function()
-			pcall(function() tempNoclip:Disconnect() end)
-		end)
-
-		if promptsFired > 0 then
-			notify("Announce", "Fired " .. promptsFired .. " prompts - check your screen!")
-		else
-			notify("Announce", "No prompts found nearby - try walking up to the console")
-		end
+		-- Disable noclip after 3 seconds
+		task.delay(3, function() pcall(function() tempNoclip:Disconnect() end) end)
 	end)
 
 	createButton(tab, "Fire ALL Nearby Prompts (within 30m)", o(), function()
 		local hrp = getRoot()
 		if not hrp then notify("Error", "No character") return end
-		local count = 0
-		for _, obj in ipairs(workspace:GetDescendants()) do
-			pcall(function()
-				if obj:IsA("ProximityPrompt") then
-					local promptPart = obj.Parent
-					if promptPart and promptPart:IsA("BasePart") then
-						local dist = (promptPart.Position - hrp.Position).Magnitude
-						if dist < 30 then
-							local oldHold = obj.HoldDuration
-							local oldDist = obj.MaxActivationDistance
-							obj.MaxActivationDistance = 100
-							obj.HoldDuration = 0
-							pcall(function()
-								if fireproximityprompt then fireproximityprompt(obj) end
-							end)
-							pcall(function()
-								obj:InputHoldBegin()
-								task.wait(0.1)
-								obj:InputHoldEnd()
-							end)
-							obj.MaxActivationDistance = oldDist
-							obj.HoldDuration = oldHold
-							count = count + 1
-							print("[SX NBTF] Fired: " .. obj.Parent.Name .. " [" .. (obj.ActionText ~= "" and obj.ActionText or obj.ObjectText) .. "]")
-						end
-					end
-				elseif obj:IsA("ClickDetector") then
-					local detPart = obj.Parent
-					if detPart and detPart:IsA("BasePart") then
-						local dist = (detPart.Position - hrp.Position).Magnitude
-						if dist < 30 then
-							pcall(function()
-								if fireclickdetector then fireclickdetector(obj) end
-							end)
-							count = count + 1
-							print("[SX NBTF] Fired click: " .. obj.Parent.Name)
-						end
-					end
-				end
-			end)
+		local prompts, detectors = getNearbyPrompts(workspace:GetDescendants(), hrp.Position, 30)
+		for _, p in ipairs(prompts) do
+			firePrompt(p)
+			print("[SX NBTF] Fired: " .. p.Parent.Name .. " [" .. (p.ActionText ~= "" and p.ActionText or p.ObjectText) .. "]")
 		end
-		notify("Prompts", "Fired " .. count .. " nearby prompts/detectors")
+		for _, d in ipairs(detectors) do
+			pcall(function() if fireclickdetector then fireclickdetector(d) end end)
+			print("[SX NBTF] Fired click: " .. d.Parent.Name)
+		end
+		notify("Prompts", "Fired " .. (#prompts + #detectors) .. " nearby prompts/detectors")
 	end)
 
 	createButton(tab, "List ALL Prompts Near You (F9)", o(), function()
 		local hrp = getRoot()
 		if not hrp then notify("Error", "No character") return end
 		print("=== PROMPTS WITHIN 100m ===")
-		local count = 0
-		for _, obj in ipairs(workspace:GetDescendants()) do
+		local prompts, detectors = getNearbyPrompts(workspace:GetDescendants(), hrp.Position, 100)
+		for _, obj in ipairs(prompts) do
 			pcall(function()
-				if obj:IsA("ProximityPrompt") then
-					local promptPart = obj.Parent
-					if promptPart and promptPart:IsA("BasePart") then
-						local dist = (promptPart.Position - hrp.Position).Magnitude
-						if dist < 100 then
-							count = count + 1
-							print(math.floor(dist) .. "m | " .. obj.Parent:GetFullName()
-								.. " | Action: " .. obj.ActionText
-								.. " | Object: " .. obj.ObjectText
-								.. " | Enabled: " .. tostring(obj.Enabled)
-								.. " | Hold: " .. tostring(obj.HoldDuration) .. "s")
-						end
-					end
-				elseif obj:IsA("ClickDetector") then
-					local detPart = obj.Parent
-					if detPart and detPart:IsA("BasePart") then
-						local dist = (detPart.Position - hrp.Position).Magnitude
-						if dist < 100 then
-							count = count + 1
-							print(math.floor(dist) .. "m | ClickDetector: " .. obj.Parent:GetFullName())
-						end
-					end
-				end
+				local dist = (obj.Parent.Position - hrp.Position).Magnitude
+				print(math.floor(dist) .. "m | " .. obj.Parent:GetFullName()
+					.. " | Action: " .. obj.ActionText
+					.. " | Object: " .. obj.ObjectText
+					.. " | Enabled: " .. tostring(obj.Enabled)
+					.. " | Hold: " .. tostring(obj.HoldDuration) .. "s")
 			end)
 		end
-		print("=== " .. count .. " PROMPTS FOUND ===")
-		notify("Debug", count .. " prompts/detectors printed to F9")
+		for _, obj in ipairs(detectors) do
+			pcall(function()
+				local dist = (obj.Parent.Position - hrp.Position).Magnitude
+				print(math.floor(dist) .. "m | ClickDetector: " .. obj.Parent:GetFullName())
+			end)
+		end
+		print("=== " .. (#prompts + #detectors) .. " PROMPTS FOUND ===")
+		notify("Debug", (#prompts + #detectors) .. " prompts/detectors printed to F9")
 	end)
 
 	createSpacer(tab, o())
@@ -2931,17 +2914,23 @@ do
 				local actions = {
 					{text = "Kill", offset = 215, fn = function()
 						local gun = findGunInBackpack()
-						if gun then
-							task.spawn(function()
-								for i = 1, 3 do
-									fireWeaponHit(player, gun)
-									task.wait(0.3)
-								end
-							end)
-							notify("Kill", "Fired at " .. player.DisplayName)
-						else
-							notify("Error", "No gun found!")
+						if not gun then
+							notify("Error", "No gun found! Equip a weapon first.")
+							return
 						end
+						if not isAlive(player) then
+							notify("Error", player.DisplayName .. " is dead or not in game")
+							return
+						end
+						-- Equip the gun first so server accepts the hit
+						equipGun(gun)
+						task.spawn(function()
+							for i = 1, 3 do
+								fireWeaponHit(player, gun)
+								task.wait(killAllDelay)
+							end
+							notify("Kill", "Fired 3 rounds at " .. player.DisplayName)
+						end)
 					end},
 					{text = "Bring", offset = 165, fn = function()
 						pcall(function()
