@@ -1,7 +1,7 @@
--- ╔═══════════════════════════════════════════════════════════════╗
--- ║            Synapse X The Revival - Executor + Admin          ║
--- ║       Script executor with Infinite Yield-style admin        ║
--- ╚═══════════════════════════════════════════════════════════════╝
+-- ================================================================
+-- Synapse X The Revival - Executor + Admin
+-- Script executor with Infinite Yield-style admin
+-- ================================================================
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")

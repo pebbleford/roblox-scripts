@@ -1,8 +1,8 @@
--- ╔═══════════════════════════════════════════════════════════════╗
--- ║              Spin Fling + Dinos Anim Fling                  ║
--- ║   V = Spin Fling (Infinite Yield style)                     ║
--- ║   B = Dinos Anim / Walk Fling (velocity spike style)        ║
--- ╚═══════════════════════════════════════════════════════════════╝
+-- ================================================================
+-- Spin Fling + Dinos Anim Fling
+-- V = Spin Fling (Infinite Yield style)
+-- B = Dinos Anim / Walk Fling (velocity spike style)
+-- ================================================================
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
