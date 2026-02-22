@@ -1233,6 +1233,32 @@ local function stopFly()
 	addLog("[FLY] OFF", COLORS.error)
 end
 
+-- ===================== NOCLIP LOGIC =====================
+local function startNoclip()
+	noclipConnection = RunService.Stepped:Connect(function()
+		pcall(function()
+			local character = LocalPlayer.Character
+			if not character then return end
+			for _, part in ipairs(character:GetDescendants()) do
+				if part:IsA("BasePart") then part.CanCollide = false end
+			end
+		end)
+	end)
+	addLog("[NOCLIP] ON", COLORS.success)
+end
+
+local function stopNoclip()
+	if noclipConnection then noclipConnection:Disconnect() noclipConnection = nil end
+	pcall(function()
+		local character = LocalPlayer.Character
+		if not character then return end
+		for _, part in ipairs(character:GetDescendants()) do
+			if part:IsA("BasePart") then part.CanCollide = true end
+		end
+	end)
+	addLog("[NOCLIP] OFF", COLORS.error)
+end
+
 -- ===================== SPIN FLING LOGIC (Infinite Yield Style) =====================
 -- High density + BodyAngularVelocity + noclip + massless + pulse spin
 
@@ -1406,32 +1432,6 @@ local function stopSpeed()
 		end
 	end)
 	addLog("[SPEED] OFF", COLORS.error)
-end
-
--- ===================== NOCLIP LOGIC =====================
-local function startNoclip()
-	noclipConnection = RunService.Stepped:Connect(function()
-		pcall(function()
-			local character = LocalPlayer.Character
-			if not character then return end
-			for _, part in ipairs(character:GetDescendants()) do
-				if part:IsA("BasePart") then part.CanCollide = false end
-			end
-		end)
-	end)
-	addLog("[NOCLIP] ON", COLORS.success)
-end
-
-local function stopNoclip()
-	if noclipConnection then noclipConnection:Disconnect() noclipConnection = nil end
-	pcall(function()
-		local character = LocalPlayer.Character
-		if not character then return end
-		for _, part in ipairs(character:GetDescendants()) do
-			if part:IsA("BasePart") then part.CanCollide = true end
-		end
-	end)
-	addLog("[NOCLIP] OFF", COLORS.error)
 end
 
 -- ===================== GOD MODE LOGIC =====================
