@@ -482,9 +482,8 @@ local function adminDrone(target) sendAdminCmd(";drone " .. target) end
 
 -- ===================== SIGN EDITOR =====================
 -- Signs in Elected use the Red networking library (ReliableRedEvent)
--- Method 1: Fire ProximityPrompts on signs to open edit UI, then modify
--- Method 2: Find sign SurfaceGui TextLabels and try to trigger edit via tool interaction
--- Method 3: TP to each sign, fire prompt, interact with edit GUI
+-- The sign editing flow: player clicks sign -> edit UI opens -> types text -> submits
+-- We need to figure out the exact interaction method, so we try everything
 
 local function findSigns(ownerOnly)
 	local signs = {}
@@ -511,9 +510,66 @@ local function findSigns(ownerOnly)
 	return signs
 end
 
-local function editSignViaPrompt(sign)
-	-- Fire any ProximityPrompt on the sign to trigger edit UI
-	local fired = false
+-- Print the full structure of a sign to F9 so user can see what's inside
+local function scanSignStructure()
+	local signs = findSigns(false)
+	if #signs == 0 then
+		print("[SX Elected] No signs found in workspace.Blocks")
+		notify("Signs", "No signs found")
+		return
+	end
+
+	-- Scan the first sign found
+	local sign = signs[1]
+	print("=== SIGN STRUCTURE: " .. sign:GetFullName() .. " ===")
+	print("  ClassName: " .. sign.ClassName)
+
+	-- Print all attributes
+	pcall(function()
+		local attrs = sign:GetAttributes()
+		for k, v in pairs(attrs) do
+			print("  [Attribute] " .. k .. " = " .. tostring(v) .. " (" .. typeof(v) .. ")")
+		end
+	end)
+
+	-- Print all descendants with their types
+	pcall(function()
+		for _, desc in ipairs(sign:GetDescendants()) do
+			local info = "  [" .. desc.ClassName .. "] " .. desc.Name
+			if desc:IsA("ProximityPrompt") then
+				info = info .. " (MaxDist=" .. desc.MaxActivationDistance .. ", Hold=" .. desc.HoldDuration .. ")"
+			elseif desc:IsA("ClickDetector") then
+				info = info .. " (MaxDist=" .. desc.MaxActivationDistance .. ")"
+			elseif desc:IsA("TextLabel") then
+				info = info .. " Text='" .. desc.Text:sub(1, 50) .. "'"
+			elseif desc:IsA("TextBox") then
+				info = info .. " Text='" .. desc.Text:sub(1, 50) .. "'"
+			elseif desc:IsA("SurfaceGui") then
+				info = info .. " Face=" .. tostring(desc.Face)
+			elseif desc:IsA("RemoteEvent") or desc:IsA("RemoteFunction") or desc:IsA("BindableEvent") then
+				info = info .. " *** REMOTE/BINDABLE ***"
+			end
+			print(info)
+		end
+	end)
+
+	-- Also check if sign has special properties
+	pcall(function()
+		if sign:IsA("BasePart") then
+			print("  Size: " .. tostring(sign.Size))
+			print("  CanCollide: " .. tostring(sign.CanCollide))
+		end
+	end)
+
+	print("=== END SIGN STRUCTURE (" .. #signs .. " total signs found) ===")
+	notify("Signs", "Sign structure printed to F9 - check it!")
+end
+
+-- Try every possible way to interact with a sign
+local function interactWithSign(sign)
+	local interacted = false
+
+	-- Method 1: Fire ProximityPrompts
 	pcall(function()
 		for _, desc in ipairs(sign:GetDescendants()) do
 			if desc:IsA("ProximityPrompt") then
@@ -521,122 +577,214 @@ local function editSignViaPrompt(sign)
 				local oldDist = desc.MaxActivationDistance
 				desc.HoldDuration = 0
 				desc.MaxActivationDistance = 9999
-				pcall(function() if fireproximityprompt then fireproximityprompt(desc) fired = true end end)
-				pcall(function() desc:InputHoldBegin() task.wait(0.05) desc:InputHoldEnd() fired = true end)
+				pcall(function() if fireproximityprompt then fireproximityprompt(desc) interacted = true end end)
+				pcall(function() desc:InputHoldBegin() task.wait(0.05) desc:InputHoldEnd() interacted = true end)
 				desc.HoldDuration = oldHold
 				desc.MaxActivationDistance = oldDist
 			end
 		end
 	end)
 
-	-- Also try clicking on it
-	if not fired then
+	-- Method 2: Fire ClickDetectors
+	pcall(function()
+		for _, desc in ipairs(sign:GetDescendants()) do
+			if desc:IsA("ClickDetector") then
+				local oldDist = desc.MaxActivationDistance
+				desc.MaxActivationDistance = 9999
+				pcall(function() if fireclickdetector then fireclickdetector(desc) interacted = true end end)
+				desc.MaxActivationDistance = oldDist
+			end
+		end
+	end)
+
+	-- Method 3: Simulate mouse click on the sign (some games use raycasting)
+	pcall(function() mouse1click() interacted = true end)
+
+	-- Method 4: Activate equipped tool on the sign
+	pcall(function()
+		local char = LocalPlayer.Character
+		if char then
+			for _, tool in ipairs(char:GetChildren()) do
+				if tool:IsA("Tool") then
+					tool:Activate()
+					interacted = true
+					break
+				end
+			end
+		end
+	end)
+
+	return interacted
+end
+
+-- Find and fill the sign edit GUI that appeared in PlayerGui
+local function fillSignEditGUI(newText)
+	local filled = false
+	local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+	if not playerGui then return false end
+
+	-- Search for any visible TextBox that could be the sign editor
+	for _, gui in ipairs(playerGui:GetDescendants()) do
 		pcall(function()
-			for _, desc in ipairs(sign:GetDescendants()) do
-				if desc:IsA("ClickDetector") then
-					pcall(function() fireclickdetector(desc) fired = true end)
+			if gui:IsA("TextBox") then
+				-- Check if it's visible and likely a sign editor
+				local isVisible = gui.Visible
+				-- Walk up to check parent visibility
+				local parent = gui.Parent
+				while parent and parent ~= playerGui do
+					pcall(function()
+						if parent:IsA("GuiObject") and not parent.Visible then
+							isVisible = false
+						end
+					end)
+					parent = parent.Parent
+				end
+				if isVisible then
+					gui.Text = newText
+					gui:CaptureFocus()
+					task.wait(0.1)
+					gui:ReleaseFocus(true) -- true = enterPressed
+					filled = true
 				end
 			end
 		end)
 	end
 
-	return fired
+	-- Also try to find and click any "Save" / "Submit" / "Confirm" / "Done" button
+	if filled then
+		task.wait(0.1)
+		for _, gui in ipairs(playerGui:GetDescendants()) do
+			pcall(function()
+				if gui:IsA("TextButton") or gui:IsA("ImageButton") then
+					local btnText = ""
+					pcall(function() btnText = gui.Text:lower() end)
+					if btnText:find("save") or btnText:find("submit") or btnText:find("confirm")
+						or btnText:find("done") or btnText:find("ok") or btnText:find("apply") then
+						pcall(function()
+							if firesignal then
+								firesignal(gui.MouseButton1Click)
+							else
+								gui.MouseButton1Click:Fire()
+							end
+						end)
+					end
+				end
+			end)
+		end
+	end
+
+	return filled
 end
 
 local function editAllSigns(newText)
-	local signs = findSigns(true) -- owner only
+	local signs = findSigns(true)
 	if #signs == 0 then
 		notify("Signs", "No signs found that belong to you")
 		return
 	end
 
-	local count = 0
 	local char = LocalPlayer.Character
 	local hrp = getRoot()
 	if not char or not hrp then return end
 	local savedCF = hrp.CFrame
 
+	-- Equip building tool if available (some games require it for sign interaction)
+	local buildTool = findBuildingTool()
+	if buildTool then equipTool(buildTool) end
+
 	notify("Signs", "Editing " .. #signs .. " signs...")
 
 	task.spawn(function()
+		local count = 0
 		for _, sign in ipairs(signs) do
 			pcall(function()
-				-- TP to sign, fire prompt, TP back
 				local cf = getItemCFrame(sign)
-				if cf then
-					char:PivotTo(cf + Vector3.new(0, 2, 0))
-					task.wait(0.1)
-					editSignViaPrompt(sign)
-					task.wait(0.2)
+				if not cf then return end
 
-					-- Try to find and fill the sign edit GUI that opened
-					local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-					if playerGui then
-						for _, gui in ipairs(playerGui:GetDescendants()) do
-							pcall(function()
-								if gui:IsA("TextBox") and gui.Visible then
-									gui.Text = newText
-									-- Try to confirm/submit
-									pcall(function() gui:ReleaseFocus(true) end)
-								end
-							end)
-						end
-					end
+				-- TP close to the sign face
+				char:PivotTo(cf + cf.LookVector * 3 + Vector3.new(0, 0, 0))
+				task.wait(0.2)
 
-					char:PivotTo(savedCF)
+				-- Try to interact with sign
+				interactWithSign(sign)
+				task.wait(0.5) -- Wait for edit UI to appear
+
+				-- Try to fill the sign edit GUI
+				local ok = fillSignEditGUI(newText)
+				if ok then
 					count = count + 1
+					print("[SX Elected] Edited sign: " .. sign:GetFullName())
+				else
+					-- If no GUI appeared, try clicking directly on sign face
+					-- Look at the sign
+					pcall(function()
+						camera.CFrame = CFrame.lookAt(hrp.Position, cf.Position)
+					end)
+					task.wait(0.1)
+					mouse1click()
+					task.wait(0.5)
+					local ok2 = fillSignEditGUI(newText)
+					if ok2 then
+						count = count + 1
+						print("[SX Elected] Edited sign (click method): " .. sign:GetFullName())
+					else
+						print("[SX Elected] Could not edit sign: " .. sign:GetFullName())
+					end
 				end
+
+				char:PivotTo(savedCF)
 			end)
-			task.wait(0.3)
+			task.wait(0.5)
 		end
-		notify("Signs", "Interacted with " .. count .. " sign(s)")
+		notify("Signs", "Edited " .. count .. "/" .. #signs .. " signs")
 	end)
 end
 
 local function editAllSignsGlobal(newText)
-	local signs = findSigns(false) -- all signs
+	local signs = findSigns(false)
 	if #signs == 0 then
 		notify("Signs", "No signs found")
 		return
 	end
 
-	local count = 0
 	local char = LocalPlayer.Character
 	local hrp = getRoot()
 	if not char or not hrp then return end
 	local savedCF = hrp.CFrame
 
+	local buildTool = findBuildingTool()
+	if buildTool then equipTool(buildTool) end
+
 	notify("Signs", "Attempting " .. #signs .. " signs globally...")
 
 	task.spawn(function()
+		local count = 0
 		for _, sign in ipairs(signs) do
 			pcall(function()
 				local cf = getItemCFrame(sign)
-				if cf then
-					char:PivotTo(cf + Vector3.new(0, 2, 0))
-					task.wait(0.1)
-					editSignViaPrompt(sign)
-					task.wait(0.2)
+				if not cf then return end
 
-					local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-					if playerGui then
-						for _, gui in ipairs(playerGui:GetDescendants()) do
-							pcall(function()
-								if gui:IsA("TextBox") and gui.Visible then
-									gui.Text = newText
-									pcall(function() gui:ReleaseFocus(true) end)
-								end
-							end)
-						end
-					end
+				char:PivotTo(cf + cf.LookVector * 3)
+				task.wait(0.2)
+				interactWithSign(sign)
+				task.wait(0.5)
 
-					char:PivotTo(savedCF)
+				local ok = fillSignEditGUI(newText)
+				if ok then
 					count = count + 1
+				else
+					pcall(function() camera.CFrame = CFrame.lookAt(hrp.Position, cf.Position) end)
+					task.wait(0.1)
+					mouse1click()
+					task.wait(0.5)
+					if fillSignEditGUI(newText) then count = count + 1 end
 				end
+
+				char:PivotTo(savedCF)
 			end)
-			task.wait(0.3)
+			task.wait(0.5)
 		end
-		notify("Signs", "Attempted " .. count .. " signs globally")
+		notify("Signs", "Edited " .. count .. "/" .. #signs .. " signs globally")
 	end)
 end
 
@@ -1747,25 +1895,31 @@ do
 	local function o() n = n + 1 return n end
 
 	createSectionLabel(tab, "Sign Editor", o())
-	createInfoLabel(tab, "TPs to each sign, fires ProximityPrompt to open edit UI", o())
+	createInfoLabel(tab, "TPs to sign, opens edit UI, fills text + submits", o())
 	local signInput = createTextInput(tab, "Enter new sign text...", o())
 	createButton(tab, "Edit All My Signs", o(), function()
 		if signInput.Text ~= "" then
 			editAllSigns(signInput.Text)
+		else
+			notify("Error", "Enter sign text first!")
 		end
 	end)
 	createButton(tab, "Edit ALL Signs (Global)", o(), function()
 		if signInput.Text ~= "" then
 			editAllSignsGlobal(signInput.Text)
+		else
+			notify("Error", "Enter sign text first!")
 		end
 	end)
-	createButton(tab, "Count Signs (F9)", o(), function()
+	createButton(tab, "Scan Sign Structure (F9)", o(), scanSignStructure)
+	createButton(tab, "Count Signs", o(), function()
 		local mine = findSigns(true)
 		local all = findSigns(false)
 		print("[SX Elected] Your signs: " .. #mine .. " | All signs: " .. #all)
 		notify("Signs", "Yours: " .. #mine .. " | Total: " .. #all)
 	end)
-	createInfoLabel(tab, "Uses ProximityPrompt + edit UI interaction", o())
+	createInfoLabel(tab, "Use 'Scan Sign Structure' to see how signs work (F9)", o())
+	createInfoLabel(tab, "Enable Remote Spy, manually edit a sign, check F9 for remotes", o())
 
 	createSpacer(tab, o())
 
