@@ -321,7 +321,25 @@ local function removeAllHighlights()
 	end
 end
 
+local function cleanupStale()
+	for player, hl in pairs(highlights) do
+		local adornee = hl.Adornee
+		if not adornee or not adornee.Parent then
+			hl:Destroy()
+			highlights[player] = nil
+		end
+	end
+	for player, tag in pairs(nametags) do
+		local adornee = tag.Adornee
+		if not adornee or not adornee.Parent then
+			tag:Destroy()
+			nametags[player] = nil
+		end
+	end
+end
+
 local function espScanAll()
+	cleanupStale()
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player ~= LocalPlayer then
 			local character = player.Character
@@ -346,6 +364,7 @@ local function enableESP()
 			task.wait(REFRESH_INTERVAL)
 			if not espEnabled then break end
 			espScanAll()
+			print("[ESP] Refreshed")
 		end
 	end)
 end
