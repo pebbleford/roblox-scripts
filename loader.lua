@@ -1,8 +1,8 @@
-local url = "https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/esp.lua?v=" .. tostring(tick())
+local url = "https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/synapsex.lua?v=" .. tostring(tick())
 local code = game:HttpGet(url, true)
 local fn, err = loadstring(code)
 if not fn then
-    warn("[ESP Loader] Failed to compile: " .. tostring(err))
+    warn("[Synapse X Loader] Failed to compile: " .. tostring(err))
     return
 end
 fn()
