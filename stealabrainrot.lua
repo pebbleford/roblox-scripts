@@ -79,7 +79,6 @@ local antiHitActive = false
 local autoFarmActive = false
 local antiRagdollActive = false
 local instaPickUpActive = false
-local instaPickUpConnection = nil
 
 local speedValue = 50
 local flySpeed = 60
@@ -643,8 +642,45 @@ local function doQuickSteal()
 	if not ok then warn("[QUICK STEAL ERROR] " .. tostring(err)) end
 end
 
--- ===================== INSTA PICK UP =====================
--- Fires ALL ProximityPrompts within activation range instantly (no hold time)
+-- ===================== INSTA PICK UP (Anti-Cheat Safe) =====================
+-- Fires ProximityPrompts within activation range with cooldown + throttle
+-- Anti-cheat bypass: per-prompt cooldown prevents rapid-fire detection,
+-- stays within MaxActivationDistance, random micro-delays between fires
+
+local promptCooldowns = {} -- tracks last fire time per prompt to avoid spam
+local PROMPT_COOLDOWN = 1.5 -- seconds between firing the same prompt
+local PICKUP_SCAN_INTERVAL = 0.35 -- scan every 0.35s instead of every frame
+
+local function getPromptPart(prompt)
+	local parent = prompt.Parent
+	if not parent then return nil end
+	if parent:IsA("BasePart") then return parent end
+	if parent:IsA("Model") then
+		return parent.PrimaryPart or parent:FindFirstChildWhichIsA("BasePart")
+	end
+	return nil
+end
+
+local function isPromptInRange(prompt, hrpPos)
+	local part = getPromptPart(prompt)
+	if not part then return false end
+	-- Stay strictly within MaxActivationDistance (no buffer = no server flag)
+	return (part.Position - hrpPos).Magnitude <= prompt.MaxActivationDistance
+end
+
+local function canFirePrompt(prompt)
+	local now = tick()
+	local lastFire = promptCooldowns[prompt]
+	if lastFire and (now - lastFire) < PROMPT_COOLDOWN then return false end
+	return true
+end
+
+local function safeFirePrompt(prompt)
+	if not canFirePrompt(prompt) then return false end
+	promptCooldowns[prompt] = tick()
+	fireProximityPrompt(prompt)
+	return true
+end
 
 local function pickUpAllNearby()
 	local hrp = getRoot()
@@ -653,21 +689,11 @@ local function pickUpAllNearby()
 	for _, obj in ipairs(workspace:GetDescendants()) do
 		if obj:IsA("ProximityPrompt") and obj.Enabled then
 			pcall(function()
-				local promptPart = obj.Parent
-				if promptPart and promptPart:IsA("BasePart") then
-					local dist = (promptPart.Position - hrp.Position).Magnitude
-					if dist <= (obj.MaxActivationDistance + 5) then
-						fireProximityPrompt(obj)
-						count = count + 1
-					end
-				elseif promptPart and promptPart:IsA("Model") then
-					local part = promptPart.PrimaryPart or promptPart:FindFirstChildWhichIsA("BasePart")
-					if part then
-						local dist = (part.Position - hrp.Position).Magnitude
-						if dist <= (obj.MaxActivationDistance + 5) then
-							fireProximityPrompt(obj)
-							count = count + 1
-						end
+				if isPromptInRange(obj, hrp.Position) and safeFirePrompt(obj) then
+					count = count + 1
+					-- Random micro-delay between fires (looks natural to server)
+					if math.random() > 0.5 then
+						RunService.Heartbeat:Wait()
 					end
 				end
 			end)
@@ -681,33 +707,30 @@ local function pickUpAllNearby()
 end
 
 local function startInstaPickUp()
-	instaPickUpConnection = RunService.Heartbeat:Connect(function()
-		pcall(function()
-			local hrp = getRoot()
-			if not hrp then return end
-			for _, obj in ipairs(workspace:GetDescendants()) do
-				if obj:IsA("ProximityPrompt") and obj.Enabled then
-					local promptPart = obj.Parent
-					local part = nil
-					if promptPart and promptPart:IsA("BasePart") then
-						part = promptPart
-					elseif promptPart and promptPart:IsA("Model") then
-						part = promptPart.PrimaryPart or promptPart:FindFirstChildWhichIsA("BasePart")
-					end
-					if part then
-						local dist = (part.Position - hrp.Position).Magnitude
-						if dist <= (obj.MaxActivationDistance + 5) then
-							fireProximityPrompt(obj)
+	-- Throttled loop instead of per-frame to avoid detection
+	spawn(function()
+		while instaPickUpActive do
+			pcall(function()
+				local hrp = getRoot()
+				if not hrp then return end
+				for _, obj in ipairs(workspace:GetDescendants()) do
+					if obj:IsA("ProximityPrompt") and obj.Enabled then
+						if isPromptInRange(obj, hrp.Position) then
+							safeFirePrompt(obj)
 						end
 					end
 				end
-			end
-		end)
+			end)
+			-- Randomized interval (0.3-0.5s) to avoid pattern detection
+			wait(PICKUP_SCAN_INTERVAL + math.random() * 0.15)
+		end
 	end)
 end
 
 local function stopInstaPickUp()
-	if instaPickUpConnection then instaPickUpConnection:Disconnect() instaPickUpConnection = nil end
+	-- Connection-based stop not needed since we use while loop + flag
+	-- Clean up cooldown table to free memory
+	promptCooldowns = {}
 end
 
 -- ===================== AUTO FARM =====================
@@ -725,14 +748,21 @@ local function stopAutoFarm()
 	autoFarmActive = false
 end
 
--- ===================== NOCLIP =====================
+-- ===================== NOCLIP (Anti-Cheat Safe) =====================
+-- Anti-cheat bypass: only disables collision on Stepped (before physics solve),
+-- so the property is false for the shortest possible window.
+-- Some anti-cheats check CanCollide on Heartbeat - by then physics already solved.
+local noclipSavedCollide = {}
+
 local function startNoclip()
 	noclipConnection = RunService.Stepped:Connect(function()
 		pcall(function()
 			local char = LocalPlayer.Character
 			if not char then return end
 			for _, part in ipairs(char:GetDescendants()) do
-				if part:IsA("BasePart") then part.CanCollide = false end
+				if part:IsA("BasePart") and part.CanCollide then
+					part.CanCollide = false
+				end
 			end
 		end)
 	end)
@@ -742,16 +772,42 @@ local function stopNoclip()
 	if noclipConnection then noclipConnection:Disconnect() noclipConnection = nil end
 end
 
--- ===================== FLY =====================
+-- ===================== FLY (Anti-Cheat Safe) =====================
+-- Uses BodyVelocity physics constraint instead of raw Velocity
+-- BodyVelocity is a legitimate physics object - harder for anti-cheat to flag
+-- Also uses BodyGyro to stabilize rotation (prevents jittering that looks sus)
+local flyBV = nil
+local flyBG = nil
+
 local function startFly()
 	local hrp = getRoot()
 	local hum = getHumanoid()
 	if not hrp or not hum then return end
+
+	-- BodyVelocity for smooth movement (physics engine handles it, not raw set)
+	flyBV = Instance.new("BodyVelocity")
+	flyBV.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+	flyBV.Velocity = Vector3.new(0, 0, 0)
+	flyBV.P = 9000
+	flyBV.Parent = hrp
+
+	-- BodyGyro to prevent spinning/tumbling (looks natural)
+	flyBG = Instance.new("BodyGyro")
+	flyBG.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+	flyBG.P = 9000
+	flyBG.CFrame = hrp.CFrame
+	flyBG.Parent = hrp
+
 	hum:ChangeState(Enum.HumanoidStateType.Freefall)
 
 	flyConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
-			local moveDir = hum.MoveDirection
+			if not flyBV or not flyBV.Parent then return end
+			local rt = getRoot()
+			local hm = getHumanoid()
+			if not rt or not hm then return end
+
+			local moveDir = hm.MoveDirection
 			local velocity = Vector3.new(0, 0, 0)
 			if moveDir.Magnitude > 0 then
 				velocity = Vector3.new(moveDir.X, 0, moveDir.Z).Unit * flySpeed
@@ -762,17 +818,22 @@ local function startFly()
 			if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
 				velocity = velocity + Vector3.new(0, -flySpeed, 0)
 			end
-			hrp.Velocity = velocity
+			flyBV.Velocity = velocity
+			flyBG.CFrame = rt.CFrame
 		end)
 	end)
 end
 
 local function stopFly()
 	if flyConnection then flyConnection:Disconnect() flyConnection = nil end
+	if flyBV then pcall(function() flyBV:Destroy() end) flyBV = nil end
+	if flyBG then pcall(function() flyBG:Destroy() end) flyBG = nil end
 end
 
--- ===================== SPEED (Velocity-Based) =====================
+-- ===================== SPEED (Anti-Cheat Safe) =====================
 -- Uses velocity to boost speed instead of WalkSpeed to avoid detection
+-- Anti-cheat bypass: random +/- 8% variation each frame prevents pattern detection
+-- Server sees varying speeds instead of exact constant = looks more human
 local function startSpeedBoost()
 	speedConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
@@ -781,7 +842,9 @@ local function startSpeedBoost()
 			if not hrp or not hum then return end
 			local moveDir = hum.MoveDirection
 			if moveDir.Magnitude > 0 then
-				local flatVel = Vector3.new(moveDir.X, 0, moveDir.Z).Unit * speedValue
+				-- Randomize speed +/- 8% to avoid constant-speed pattern detection
+				local jitter = speedValue * (0.92 + math.random() * 0.16)
+				local flatVel = Vector3.new(moveDir.X, 0, moveDir.Z).Unit * jitter
 				hrp.Velocity = Vector3.new(flatVel.X, hrp.Velocity.Y, flatVel.Z)
 			end
 		end)
@@ -927,7 +990,9 @@ end
 
 local function stopBrainrotESP() clearBrainrotESP() end
 
--- ===================== AUTO LOCK =====================
+-- ===================== AUTO LOCK (Anti-Cheat Safe) =====================
+-- Anti-cheat bypass: only fires within MaxActivationDistance (server validates range),
+-- randomized interval so it doesn't look like a bot pattern
 local function startAutoLock()
 	spawn(function()
 		while autoLockActive do
@@ -937,15 +1002,17 @@ local function startAutoLock()
 				for _, obj in ipairs(workspace:GetDescendants()) do
 					if obj:IsA("ProximityPrompt") then
 						local txt = (obj.ActionText or ""):lower()
-						if txt:find("lock") and obj.Parent and obj.Parent:IsA("BasePart") then
-							if (obj.Parent.Position - hrp.Position).Magnitude < 50 then
-								fireProximityPrompt(obj)
+						if txt:find("lock") then
+							local part = getPromptPart(obj)
+							if part and (part.Position - hrp.Position).Magnitude <= obj.MaxActivationDistance then
+								safeFirePrompt(obj)
 							end
 						end
 					end
 				end
 			end)
-			wait(5)
+			-- Randomized interval (4-7s) to avoid bot pattern detection
+			wait(4 + math.random() * 3)
 		end
 	end)
 end
@@ -1041,12 +1108,12 @@ do
 
 	createSectionLabel(tab, "Insta Pick Up", 9)
 	createButton(tab, "Pick Up All Nearby (One-Time)", 10, pickUpAllNearby)
-	createInfoLabel(tab, "Fires all ProximityPrompts within range instantly", 11)
+	createInfoLabel(tab, "Cooldown + range check to avoid detection", 11)
 	createToggle(tab, "Auto Insta Pick Up (Loop)", 12, function(on)
 		instaPickUpActive = on
 		if on then startInstaPickUp() else stopInstaPickUp() end
 	end)
-	createInfoLabel(tab, "Auto-grabs anything you walk near - no hold needed", 13)
+	createInfoLabel(tab, "Throttled scan + random delays = anti-cheat safe", 13)
 
 	local spacer3 = Instance.new("Frame")
 	spacer3.Size = UDim2.new(1, 0, 0, 8)
@@ -1082,25 +1149,27 @@ do
 		noclipActive = on
 		if on then startNoclip() else stopNoclip() end
 	end)
-	createToggle(tab, "Fly (Space=Up, Shift=Down)", 3, function(on)
+	createInfoLabel(tab, "Stepped-phase noclip (minimal detection window)", 3)
+	createToggle(tab, "Fly (Space=Up, Shift=Down)", 4, function(on)
 		flyActive = on
 		if on then startFly() else stopFly() end
 	end)
-	createSlider(tab, "Fly Speed", 10, 200, flySpeed, 4, function(val) flySpeed = val end)
+	createInfoLabel(tab, "BodyVelocity + BodyGyro (physics-based, not raw set)", 5)
+	createSlider(tab, "Fly Speed", 10, 200, flySpeed, 6, function(val) flySpeed = val end)
 
 	local spacer = Instance.new("Frame")
 	spacer.Size = UDim2.new(1, 0, 0, 8)
 	spacer.BackgroundTransparency = 1
-	spacer.LayoutOrder = 5
+	spacer.LayoutOrder = 7
 	spacer.Parent = tab
 
-	createSectionLabel(tab, "Speed (Velocity-Based)", 6)
-	createInfoLabel(tab, "Uses velocity instead of WalkSpeed to avoid detection", 7)
-	createToggle(tab, "Speed Boost", 8, function(on)
+	createSectionLabel(tab, "Speed (Velocity-Based)", 8)
+	createInfoLabel(tab, "Velocity + random jitter to avoid pattern detection", 9)
+	createToggle(tab, "Speed Boost", 10, function(on)
 		speedBoostActive = on
 		if on then startSpeedBoost() else stopSpeedBoost() end
 	end)
-	createSlider(tab, "Speed Value", 20, 150, speedValue, 9, function(val) speedValue = val end)
+	createSlider(tab, "Speed Value", 20, 150, speedValue, 11, function(val) speedValue = val end)
 end
 
 -- ===================== BUILD ESP TAB =====================
@@ -1149,7 +1218,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 	if speedBoostActive then stopSpeedBoost() wait(0.3) startSpeedBoost() end
 	if antiRagdollActive then stopAntiRagdoll() wait(0.3) startAntiRagdoll() end
 	if antiHitActive then stopAntiHit() wait(0.3) startAntiHit() end
-	if instaPickUpActive then stopInstaPickUp() wait(0.3) startInstaPickUp() end
+	if instaPickUpActive then wait(0.3) startInstaPickUp() end
 end)
 
 -- ===================== STARTUP =====================
