@@ -1,34 +1,32 @@
--- PlayerHighlightESP + Fly
--- Toggle ESP and Fly with draggable GUI buttons
+-- PlayerHighlightESP + Fly + Fling
+-- Draggable GUI with toggles and fling power slider
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 
--- Use task library if available, fallback to legacy globals
 local _spawn = (task and task.spawn) or spawn
 local _wait = (task and task.wait) or wait
 
--- ESP Config
+-- Config
 local HIGHLIGHT_COLOR = Color3.fromRGB(255, 0, 0)
 local OUTLINE_COLOR = Color3.fromRGB(255, 255, 255)
 local FILL_TRANSPARENCY = 0.5
 local OUTLINE_TRANSPARENCY = 0
-
--- Fly Config
 local FLY_SPEED = 80
-
--- ESP Refresh Config
 local REFRESH_INTERVAL = 5
 
 -- State
 local espEnabled = false
 local flyEnabled = false
+local flingEnabled = false
+local flingPower = 500
 local highlights = {}
 local nametags = {}
 local espConnections = {}
 local flyConnection = nil
+local flingConnection = nil
 local bodyGyro = nil
 local bodyVelocity = nil
 
@@ -40,18 +38,14 @@ screenGui.ResetOnSpawn = false
 screenGui.DisplayOrder = 999
 screenGui.IgnoreGuiInset = true
 
--- Try CoreGui first (works better in executors), fallback to PlayerGui
-local guiParent = (syn and syn.protect_gui and screenGui) or screenGui
-local ok, err = pcall(function()
-	screenGui.Parent = game:GetService("CoreGui")
-end)
-if not ok then
+pcall(function() screenGui.Parent = game:GetService("CoreGui") end)
+if not screenGui.Parent then
 	screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 end
 
 local panel = Instance.new("Frame")
 panel.Name = "Panel"
-panel.Size = UDim2.new(0, 170, 0, 110)
+panel.Size = UDim2.new(0, 170, 0, 215)
 panel.Position = UDim2.new(0, 15, 0, 15)
 panel.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 panel.BackgroundTransparency = 0.1
@@ -68,7 +62,7 @@ panelStroke.Color = Color3.fromRGB(60, 60, 60)
 panelStroke.Thickness = 2
 panelStroke.Parent = panel
 
--- Title bar (drag handle)
+-- Title bar
 local titleBar = Instance.new("Frame")
 titleBar.Name = "TitleBar"
 titleBar.Size = UDim2.new(1, 0, 0, 28)
@@ -81,7 +75,6 @@ titleCorner.CornerRadius = UDim.new(0, 10)
 titleCorner.Parent = titleBar
 
 local titleLabel = Instance.new("TextLabel")
-titleLabel.Name = "Title"
 titleLabel.Size = UDim2.new(1, -10, 1, 0)
 titleLabel.Position = UDim2.new(0, 10, 0, 0)
 titleLabel.BackgroundTransparency = 1
@@ -92,37 +85,152 @@ titleLabel.TextSize = 13
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 titleLabel.Parent = titleBar
 
--- ESP Button
-local espButton = Instance.new("TextButton")
-espButton.Name = "ESPButton"
-espButton.Size = UDim2.new(1, -20, 0, 30)
-espButton.Position = UDim2.new(0, 10, 0, 35)
-espButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-espButton.TextColor3 = Color3.fromRGB(255, 80, 80)
-espButton.Font = Enum.Font.GothamBold
-espButton.TextSize = 15
-espButton.Text = "ESP: OFF"
-espButton.Parent = panel
+local function makeButton(name, text, yPos)
+	local btn = Instance.new("TextButton")
+	btn.Name = name
+	btn.Size = UDim2.new(1, -20, 0, 28)
+	btn.Position = UDim2.new(0, 10, 0, yPos)
+	btn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+	btn.TextColor3 = Color3.fromRGB(255, 80, 80)
+	btn.Font = Enum.Font.GothamBold
+	btn.TextSize = 14
+	btn.Text = text
+	btn.Parent = panel
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, 6)
+	c.Parent = btn
+	return btn
+end
 
-local espCorner = Instance.new("UICorner")
-espCorner.CornerRadius = UDim.new(0, 6)
-espCorner.Parent = espButton
+local espButton = makeButton("ESP", "ESP: OFF", 35)
+local flyButton = makeButton("FLY", "FLY: OFF", 70)
+local flingButton = makeButton("FLING", "FLING: OFF", 105)
 
--- Fly Button
-local flyButton = Instance.new("TextButton")
-flyButton.Name = "FlyButton"
-flyButton.Size = UDim2.new(1, -20, 0, 30)
-flyButton.Position = UDim2.new(0, 10, 0, 72)
-flyButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-flyButton.TextColor3 = Color3.fromRGB(255, 80, 80)
-flyButton.Font = Enum.Font.GothamBold
-flyButton.TextSize = 15
-flyButton.Text = "FLY: OFF"
-flyButton.Parent = panel
+-- Fling power label
+local powerLabel = Instance.new("TextLabel")
+powerLabel.Size = UDim2.new(1, -20, 0, 16)
+powerLabel.Position = UDim2.new(0, 10, 0, 138)
+powerLabel.BackgroundTransparency = 1
+powerLabel.Text = "Power: 500"
+powerLabel.TextColor3 = Color3.fromRGB(170, 170, 170)
+powerLabel.Font = Enum.Font.Gotham
+powerLabel.TextSize = 12
+powerLabel.Parent = panel
 
-local flyCorner = Instance.new("UICorner")
-flyCorner.CornerRadius = UDim.new(0, 6)
-flyCorner.Parent = flyButton
+-- Fling power slider
+local sliderBg = Instance.new("Frame")
+sliderBg.Name = "SliderBG"
+sliderBg.Size = UDim2.new(1, -20, 0, 10)
+sliderBg.Position = UDim2.new(0, 10, 0, 157)
+sliderBg.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+sliderBg.BorderSizePixel = 0
+sliderBg.Parent = panel
+
+local sliderBgCorner = Instance.new("UICorner")
+sliderBgCorner.CornerRadius = UDim.new(0, 5)
+sliderBgCorner.Parent = sliderBg
+
+local sliderFill = Instance.new("Frame")
+sliderFill.Name = "Fill"
+sliderFill.Size = UDim2.new(0.5, 0, 1, 0)
+sliderFill.BackgroundColor3 = Color3.fromRGB(255, 100, 50)
+sliderFill.BorderSizePixel = 0
+sliderFill.Parent = sliderBg
+
+local sliderFillCorner = Instance.new("UICorner")
+sliderFillCorner.CornerRadius = UDim.new(0, 5)
+sliderFillCorner.Parent = sliderFill
+
+-- Min/Max labels
+local minLabel = Instance.new("TextLabel")
+minLabel.Size = UDim2.new(0.5, 0, 0, 14)
+minLabel.Position = UDim2.new(0, 10, 0, 170)
+minLabel.BackgroundTransparency = 1
+minLabel.Text = "100"
+minLabel.TextColor3 = Color3.fromRGB(120, 120, 120)
+minLabel.Font = Enum.Font.Gotham
+minLabel.TextSize = 10
+minLabel.TextXAlignment = Enum.TextXAlignment.Left
+minLabel.Parent = panel
+
+local maxLabel = Instance.new("TextLabel")
+maxLabel.Size = UDim2.new(0.5, -10, 0, 14)
+maxLabel.Position = UDim2.new(0.5, 0, 0, 170)
+maxLabel.BackgroundTransparency = 1
+maxLabel.Text = "1000"
+maxLabel.TextColor3 = Color3.fromRGB(120, 120, 120)
+maxLabel.Font = Enum.Font.Gotham
+maxLabel.TextSize = 10
+maxLabel.TextXAlignment = Enum.TextXAlignment.Right
+maxLabel.Parent = panel
+
+-- Power input box
+local powerBox = Instance.new("TextBox")
+powerBox.Size = UDim2.new(1, -20, 0, 22)
+powerBox.Position = UDim2.new(0, 10, 0, 186)
+powerBox.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+powerBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+powerBox.PlaceholderText = "Type power (100-9999)"
+powerBox.PlaceholderColor3 = Color3.fromRGB(100, 100, 100)
+powerBox.Font = Enum.Font.Gotham
+powerBox.TextSize = 11
+powerBox.Text = ""
+powerBox.ClearTextOnFocus = true
+powerBox.Parent = panel
+
+local powerBoxCorner = Instance.new("UICorner")
+powerBoxCorner.CornerRadius = UDim.new(0, 5)
+powerBoxCorner.Parent = powerBox
+
+-- Slider logic
+do
+	local draggingSlider = false
+
+	local function updateSlider(inputX)
+		local absPos = sliderBg.AbsolutePosition.X
+		local absSize = sliderBg.AbsoluteSize.X
+		local pct = (inputX - absPos) / absSize
+		if pct < 0 then pct = 0 end
+		if pct > 1 then pct = 1 end
+		sliderFill.Size = UDim2.new(pct, 0, 1, 0)
+		flingPower = math.floor(100 + pct * 900)
+		powerLabel.Text = "Power: " .. flingPower
+	end
+
+	sliderBg.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			draggingSlider = true
+			updateSlider(input.Position.X)
+		end
+	end)
+
+	sliderBg.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			draggingSlider = false
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if draggingSlider and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			updateSlider(input.Position.X)
+		end
+	end)
+end
+
+-- Power text input
+powerBox.FocusLost:Connect(function()
+	local num = tonumber(powerBox.Text)
+	if num then
+		if num < 100 then num = 100 end
+		if num > 9999 then num = 9999 end
+		flingPower = math.floor(num)
+		powerLabel.Text = "Power: " .. flingPower
+		local pct = (flingPower - 100) / 900
+		if pct > 1 then pct = 1 end
+		sliderFill.Size = UDim2.new(pct, 0, 1, 0)
+	end
+	powerBox.Text = ""
+end)
 
 -- =============== Draggable Panel ===============
 
@@ -154,7 +262,7 @@ do
 	end)
 end
 
--- =============== ESP: Highlight Logic ===============
+-- =============== ESP Logic ===============
 
 local function addHighlight(player)
 	if player == LocalPlayer then return end
@@ -173,11 +281,10 @@ local function addHighlight(player)
 		highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 		highlight.Adornee = character
 		highlight.Parent = character
-
 		highlights[player] = highlight
 	end)
 	if not ok2 then
-		warn("[ESP] Highlight failed for " .. player.Name .. ": " .. tostring(err2))
+		warn("[ESP] Highlight error " .. player.Name .. ": " .. tostring(err2))
 	end
 end
 
@@ -192,19 +299,16 @@ local function addNametag(player)
 	if not head then return end
 
 	local ok2, err2 = pcall(function()
-		local billboard = Instance.new("BillboardGui")
-		billboard.Name = "ESPNametag"
-		billboard.Adornee = head
-		billboard.Size = UDim2.new(0, 200, 0, 70)
-		billboard.StudsOffset = Vector3.new(0, 3, 0)
-		billboard.AlwaysOnTop = true
-		billboard.Parent = character
+		local bb = Instance.new("BillboardGui")
+		bb.Name = "ESPNametag"
+		bb.Adornee = head
+		bb.Size = UDim2.new(0, 200, 0, 70)
+		bb.StudsOffset = Vector3.new(0, 3, 0)
+		bb.AlwaysOnTop = true
+		bb.Parent = character
 
-		-- Name
 		local nameLabel = Instance.new("TextLabel")
-		nameLabel.Name = "NameLabel"
 		nameLabel.Size = UDim2.new(1, 0, 0, 18)
-		nameLabel.Position = UDim2.new(0, 0, 0, 0)
 		nameLabel.BackgroundTransparency = 1
 		nameLabel.Text = player.DisplayName
 		nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -212,11 +316,9 @@ local function addNametag(player)
 		nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 		nameLabel.Font = Enum.Font.GothamBold
 		nameLabel.TextSize = 14
-		nameLabel.Parent = billboard
+		nameLabel.Parent = bb
 
-		-- Health text
 		local healthLabel = Instance.new("TextLabel")
-		healthLabel.Name = "HealthLabel"
 		healthLabel.Size = UDim2.new(1, 0, 0, 14)
 		healthLabel.Position = UDim2.new(0, 0, 0, 19)
 		healthLabel.BackgroundTransparency = 1
@@ -226,47 +328,35 @@ local function addNametag(player)
 		healthLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 		healthLabel.Font = Enum.Font.Gotham
 		healthLabel.TextSize = 12
-		healthLabel.Parent = billboard
+		healthLabel.Parent = bb
 
-		-- Health bar
-		local healthBar = Instance.new("Frame")
-		healthBar.Name = "HealthBarBG"
-		healthBar.Size = UDim2.new(0.7, 0, 0, 6)
-		healthBar.Position = UDim2.new(0.15, 0, 0, 36)
-		healthBar.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-		healthBar.BorderSizePixel = 0
-		healthBar.Parent = billboard
+		local hpBg = Instance.new("Frame")
+		hpBg.Size = UDim2.new(0.7, 0, 0, 6)
+		hpBg.Position = UDim2.new(0.15, 0, 0, 36)
+		hpBg.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+		hpBg.BorderSizePixel = 0
+		hpBg.Parent = bb
+		Instance.new("UICorner", hpBg).CornerRadius = UDim.new(0, 3)
 
-		local healthBarCorner = Instance.new("UICorner")
-		healthBarCorner.CornerRadius = UDim.new(0, 3)
-		healthBarCorner.Parent = healthBar
+		local hpFill = Instance.new("Frame")
+		hpFill.Size = UDim2.new(1, 0, 1, 0)
+		hpFill.BackgroundColor3 = Color3.fromRGB(80, 255, 80)
+		hpFill.BorderSizePixel = 0
+		hpFill.Parent = hpBg
+		Instance.new("UICorner", hpFill).CornerRadius = UDim.new(0, 3)
 
-		local healthFill = Instance.new("Frame")
-		healthFill.Name = "HealthFill"
-		healthFill.Size = UDim2.new(1, 0, 1, 0)
-		healthFill.BackgroundColor3 = Color3.fromRGB(80, 255, 80)
-		healthFill.BorderSizePixel = 0
-		healthFill.Parent = healthBar
-
-		local healthFillCorner = Instance.new("UICorner")
-		healthFillCorner.CornerRadius = UDim.new(0, 3)
-		healthFillCorner.Parent = healthFill
-
-		-- Distance label
 		local distLabel = Instance.new("TextLabel")
-		distLabel.Name = "DistLabel"
 		distLabel.Size = UDim2.new(1, 0, 0, 14)
 		distLabel.Position = UDim2.new(0, 0, 0, 45)
 		distLabel.BackgroundTransparency = 1
-		distLabel.Text = "[0m]"
+		distLabel.Text = "[?m]"
 		distLabel.TextColor3 = Color3.fromRGB(170, 170, 255)
 		distLabel.TextStrokeTransparency = 0.4
 		distLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 		distLabel.Font = Enum.Font.Gotham
 		distLabel.TextSize = 12
-		distLabel.Parent = billboard
+		distLabel.Parent = bb
 
-		-- Update health bar + health text
 		local humanoid = character:FindFirstChildOfClass("Humanoid")
 		if humanoid then
 			local function updateHealth()
@@ -275,14 +365,14 @@ local function addNametag(player)
 				local pct = (maxHp > 0) and (hp / maxHp) or 0
 				if pct < 0 then pct = 0 end
 				if pct > 1 then pct = 1 end
-				healthFill.Size = UDim2.new(pct, 0, 1, 0)
+				hpFill.Size = UDim2.new(pct, 0, 1, 0)
 				healthLabel.Text = math.floor(hp) .. " / " .. math.floor(maxHp)
 				if pct > 0.5 then
-					healthFill.BackgroundColor3 = Color3.fromRGB(80, 255, 80)
+					hpFill.BackgroundColor3 = Color3.fromRGB(80, 255, 80)
 				elseif pct > 0.25 then
-					healthFill.BackgroundColor3 = Color3.fromRGB(255, 200, 0)
+					hpFill.BackgroundColor3 = Color3.fromRGB(255, 200, 0)
 				else
-					healthFill.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+					hpFill.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
 				end
 			end
 			updateHealth()
@@ -290,41 +380,23 @@ local function addNametag(player)
 			table.insert(espConnections, conn)
 		end
 
-		-- Update distance every frame
 		local distConn = RunService.Heartbeat:Connect(function()
-			if not billboard or not billboard.Parent then return end
-
-			local myChar = LocalPlayer.Character
-			local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-			local theirRoot = character and character:FindFirstChild("HumanoidRootPart")
-
-			if myRoot and theirRoot then
-				local dist = (myRoot.Position - theirRoot.Position).Magnitude
-				distLabel.Text = "[" .. math.floor(dist) .. "m]"
-			else
-				distLabel.Text = "[?m]"
-			end
+			pcall(function()
+				if not bb or not bb.Parent then return end
+				local myChar = LocalPlayer.Character
+				local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+				local theirRoot = character and character:FindFirstChild("HumanoidRootPart")
+				if myRoot and theirRoot then
+					distLabel.Text = "[" .. math.floor((myRoot.Position - theirRoot.Position).Magnitude) .. "m]"
+				end
+			end)
 		end)
 		table.insert(espConnections, distConn)
 
-		nametags[player] = billboard
+		nametags[player] = bb
 	end)
 	if not ok2 then
-		warn("[ESP] Nametag failed for " .. player.Name .. ": " .. tostring(err2))
-	end
-end
-
-local function removeNametag(player)
-	local tag = nametags[player]
-	if tag then
-		pcall(function() tag:Destroy() end)
-		nametags[player] = nil
-	end
-end
-
-local function removeAllNametags()
-	for player in pairs(nametags) do
-		removeNametag(player)
+		warn("[ESP] Nametag error " .. player.Name .. ": " .. tostring(err2))
 	end
 end
 
@@ -332,42 +404,56 @@ local function removeHighlight(player)
 	local hl = highlights[player]
 	if hl then
 		pcall(function() hl:Destroy() end)
-		highlights[player] = nil
 	end
+	highlights[player] = nil
 end
 
-local function removeAllHighlights()
-	for player in pairs(highlights) do
-		removeHighlight(player)
+local function removeNametag(player)
+	local tag = nametags[player]
+	if tag then
+		pcall(function() tag:Destroy() end)
 	end
+	nametags[player] = nil
 end
 
 local function cleanupStale()
+	-- Collect stale keys first, THEN remove (safe iteration)
+	local staleHL = {}
+	local staleNT = {}
 	for player, hl in pairs(highlights) do
-		local valid = pcall(function() return hl.Adornee and hl.Adornee.Parent end)
-		if not valid then
-			pcall(function() hl:Destroy() end)
-			highlights[player] = nil
-		else
-			local adornee = hl.Adornee
-			if not adornee or not adornee.Parent then
-				pcall(function() hl:Destroy() end)
-				highlights[player] = nil
+		local alive = false
+		pcall(function()
+			if hl and hl.Adornee and hl.Adornee.Parent then
+				alive = true
 			end
+		end)
+		if not alive then
+			table.insert(staleHL, player)
 		end
 	end
 	for player, tag in pairs(nametags) do
-		local valid = pcall(function() return tag.Parent end)
-		if not valid or not tag.Parent then
-			pcall(function() tag:Destroy() end)
-			nametags[player] = nil
+		local alive = false
+		pcall(function()
+			if tag and tag.Parent then
+				alive = true
+			end
+		end)
+		if not alive then
+			table.insert(staleNT, player)
 		end
+	end
+	for _, player in ipairs(staleHL) do
+		removeHighlight(player)
+	end
+	for _, player in ipairs(staleNT) do
+		removeNametag(player)
 	end
 end
 
 local function espScanAll()
 	cleanupStale()
 	local count = 0
+	local skipped = 0
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player ~= LocalPlayer then
 			local character = player.Character
@@ -379,35 +465,51 @@ local function espScanAll()
 					addNametag(player)
 				end
 				count = count + 1
+			else
+				skipped = skipped + 1
 			end
 		end
 	end
-	return count
+	return count, skipped
 end
 
 local function enableESP()
-	local count = espScanAll()
-	print("[ESP] Enabled - found " .. count .. " players")
+	local count, skipped = espScanAll()
+	print("[ESP] ON - " .. count .. " highlighted, " .. skipped .. " no character yet")
 
-	-- Refresh loop using spawn (compatible with all executors)
 	_spawn(function()
 		while espEnabled do
 			_wait(REFRESH_INTERVAL)
 			if not espEnabled then break end
-			local c = espScanAll()
-			print("[ESP] Refreshed - " .. c .. " players")
+			local c, s = espScanAll()
+			print("[ESP] Refreshed - " .. c .. " highlighted, " .. s .. " skipped")
 		end
 	end)
 end
 
 local function disableESP()
-	removeAllHighlights()
-	removeAllNametags()
+	-- Collect all players first then remove
+	local allPlayers = {}
+	for player in pairs(highlights) do
+		table.insert(allPlayers, player)
+	end
+	for _, player in ipairs(allPlayers) do
+		removeHighlight(player)
+	end
+
+	local allNT = {}
+	for player in pairs(nametags) do
+		table.insert(allNT, player)
+	end
+	for _, player in ipairs(allNT) do
+		removeNametag(player)
+	end
+
 	for _, conn in ipairs(espConnections) do
 		pcall(function() conn:Disconnect() end)
 	end
 	espConnections = {}
-	print("[ESP] Disabled")
+	print("[ESP] OFF")
 end
 
 -- =============== Fly Logic ===============
@@ -415,10 +517,8 @@ end
 local function startFly()
 	local character = LocalPlayer.Character
 	if not character then return end
-
 	local hrp = character:FindFirstChild("HumanoidRootPart")
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if not hrp or not humanoid then return end
+	if not hrp then return end
 
 	bodyGyro = Instance.new("BodyGyro")
 	bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
@@ -431,104 +531,119 @@ local function startFly()
 	bodyVelocity.Parent = hrp
 
 	flyConnection = RunService.Heartbeat:Connect(function()
-		if not flyEnabled then return end
-		if not hrp or not hrp.Parent then return end
-
-		local camera = workspace.CurrentCamera
-		local moveDir = Vector3.new(0, 0, 0)
-
-		if UserInputService:IsKeyDown(Enum.KeyCode.W) then
-			moveDir = moveDir + camera.CFrame.LookVector
-		end
-		if UserInputService:IsKeyDown(Enum.KeyCode.S) then
-			moveDir = moveDir - camera.CFrame.LookVector
-		end
-		if UserInputService:IsKeyDown(Enum.KeyCode.A) then
-			moveDir = moveDir - camera.CFrame.RightVector
-		end
-		if UserInputService:IsKeyDown(Enum.KeyCode.D) then
-			moveDir = moveDir + camera.CFrame.RightVector
-		end
-		if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-			moveDir = moveDir + Vector3.new(0, 1, 0)
-		end
-		if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
-			moveDir = moveDir - Vector3.new(0, 1, 0)
-		end
-
-		if moveDir.Magnitude > 0 then
-			moveDir = moveDir.Unit
-		end
-
-		bodyVelocity.Velocity = moveDir * FLY_SPEED
-		bodyGyro.CFrame = camera.CFrame
+		if not flyEnabled or not hrp or not hrp.Parent then return end
+		local cam = workspace.CurrentCamera
+		local dir = Vector3.new(0, 0, 0)
+		if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir = dir + cam.CFrame.LookVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir = dir - cam.CFrame.LookVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir = dir - cam.CFrame.RightVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir = dir + cam.CFrame.RightVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir = dir + Vector3.new(0, 1, 0) end
+		if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then dir = dir - Vector3.new(0, 1, 0) end
+		if dir.Magnitude > 0 then dir = dir.Unit end
+		bodyVelocity.Velocity = dir * FLY_SPEED
+		bodyGyro.CFrame = cam.CFrame
 	end)
 end
 
 local function stopFly()
-	if flyConnection then
-		flyConnection:Disconnect()
-		flyConnection = nil
-	end
-	if bodyGyro then
-		bodyGyro:Destroy()
-		bodyGyro = nil
-	end
-	if bodyVelocity then
-		bodyVelocity:Destroy()
-		bodyVelocity = nil
-	end
+	if flyConnection then flyConnection:Disconnect() flyConnection = nil end
+	if bodyGyro then bodyGyro:Destroy() bodyGyro = nil end
+	if bodyVelocity then bodyVelocity:Destroy() bodyVelocity = nil end
 end
 
--- ================== Toggles ==================
+-- =============== Fling Logic ===============
+
+local function startFling()
+	local character = LocalPlayer.Character
+	if not character then return end
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+
+	-- Make your character massless so physics flings others harder
+	for _, part in ipairs(character:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.CustomPhysicalProperties = PhysicalProperties.new(0, 0.3, 0.5)
+		end
+	end
+
+	flingConnection = RunService.Heartbeat:Connect(function()
+		if not flingEnabled or not hrp or not hrp.Parent then return end
+		pcall(function()
+			hrp.RotVelocity = Vector3.new(flingPower, flingPower, flingPower)
+			hrp.Velocity = Vector3.new(flingPower, 0, flingPower)
+		end)
+	end)
+	print("[FLING] ON - Power: " .. flingPower)
+end
+
+local function stopFling()
+	if flingConnection then flingConnection:Disconnect() flingConnection = nil end
+	-- Restore physics
+	pcall(function()
+		local character = LocalPlayer.Character
+		if character then
+			for _, part in ipairs(character:GetDescendants()) do
+				if part:IsA("BasePart") then
+					part.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
+				end
+			end
+			local hrp = character:FindFirstChild("HumanoidRootPart")
+			if hrp then
+				hrp.RotVelocity = Vector3.new(0, 0, 0)
+				hrp.Velocity = Vector3.new(0, 0, 0)
+			end
+		end
+	end)
+	print("[FLING] OFF")
+end
+
+-- ================== Button Toggles ==================
+
+local function setBtn(btn, on, text)
+	btn.Text = text
+	btn.TextColor3 = on and Color3.fromRGB(80, 255, 80) or Color3.fromRGB(255, 80, 80)
+	btn.BackgroundColor3 = on and Color3.fromRGB(30, 60, 30) or Color3.fromRGB(45, 45, 45)
+end
 
 espButton.MouseButton1Click:Connect(function()
 	espEnabled = not espEnabled
-	if espEnabled then
-		espButton.Text = "ESP: ON"
-		espButton.TextColor3 = Color3.fromRGB(80, 255, 80)
-		espButton.BackgroundColor3 = Color3.fromRGB(30, 60, 30)
-		enableESP()
-	else
-		espButton.Text = "ESP: OFF"
-		espButton.TextColor3 = Color3.fromRGB(255, 80, 80)
-		espButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-		disableESP()
-	end
+	setBtn(espButton, espEnabled, espEnabled and "ESP: ON" or "ESP: OFF")
+	if espEnabled then enableESP() else disableESP() end
 end)
 
 flyButton.MouseButton1Click:Connect(function()
 	flyEnabled = not flyEnabled
-	if flyEnabled then
-		flyButton.Text = "FLY: ON"
-		flyButton.TextColor3 = Color3.fromRGB(80, 255, 80)
-		flyButton.BackgroundColor3 = Color3.fromRGB(30, 60, 30)
-		startFly()
-	else
-		flyButton.Text = "FLY: OFF"
-		flyButton.TextColor3 = Color3.fromRGB(255, 80, 80)
-		flyButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-		stopFly()
-	end
+	setBtn(flyButton, flyEnabled, flyEnabled and "FLY: ON" or "FLY: OFF")
+	if flyEnabled then startFly() else stopFly() end
 end)
 
--- =========== Cleanup when players leave ===========
+flingButton.MouseButton1Click:Connect(function()
+	flingEnabled = not flingEnabled
+	setBtn(flingButton, flingEnabled, flingEnabled and "FLING: ON" or "FLING: OFF")
+	if flingEnabled then startFling() else stopFling() end
+end)
+
+-- =========== Cleanup / Respawn ===========
 
 Players.PlayerRemoving:Connect(function(player)
 	removeHighlight(player)
 	removeNametag(player)
 end)
 
--- Stop fly if character dies/resets
 LocalPlayer.CharacterAdded:Connect(function()
 	if flyEnabled then
 		stopFly()
 		_wait(0.5)
-		local character = LocalPlayer.Character
-		if character and character:FindFirstChild("HumanoidRootPart") then
+		if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
 			startFly()
 		end
 	end
+	if flingEnabled then
+		stopFling()
+		_wait(0.5)
+		startFling()
+	end
 end)
 
-print("[ESP] Script loaded successfully")
+print("[ESP] Script loaded")
