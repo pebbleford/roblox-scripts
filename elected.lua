@@ -44,59 +44,133 @@ pcall(function()
 end)
 
 -- ===================== REMOTE SPY =====================
--- Hooks FireServer/InvokeServer to log all remote traffic to F9
--- This lets the user see what remotes the game actually fires when mining/building/etc.
 local remoteSpyActive = false
 local remoteSpyHooks = {}
+
+-- Deep print a table recursively for spy output
+local function deepPrint(val, indent, visited)
+	indent = indent or "  "
+	visited = visited or {}
+
+	if type(val) ~= "table" then
+		if typeof(val) == "Instance" then
+			return val.ClassName .. " '" .. val:GetFullName() .. "'"
+		elseif type(val) == "string" then
+			return '"' .. val:sub(1, 100) .. '"'
+		else
+			return tostring(val)
+		end
+	end
+
+	-- Avoid infinite recursion
+	if visited[val] then return "{...circular...}" end
+	visited[val] = true
+
+	local parts = {}
+	local count = 0
+	for k, v in pairs(val) do
+		count = count + 1
+		if count > 20 then
+			table.insert(parts, indent .. "  ... (" .. count .. "+ entries)")
+			break
+		end
+		local keyStr = type(k) == "number" and "[" .. k .. "]" or tostring(k)
+		local valStr = deepPrint(v, indent .. "  ", visited)
+		table.insert(parts, indent .. "  " .. keyStr .. " = " .. valStr)
+	end
+
+	if #parts == 0 then return "{}" end
+	return "{\n" .. table.concat(parts, "\n") .. "\n" .. indent .. "}"
+end
 
 local function startRemoteSpy()
 	remoteSpyActive = true
 	print("[SX Elected] === REMOTE SPY STARTED ===")
-	print("[SX Elected] Perform actions in-game (mine, build, edit sign) and watch F9")
+	print("[SX Elected] Perform actions in-game and watch F9")
 
+	-- Try multiple hooking methods in order of preference
+	local hooked = false
+
+	-- Method 1: hookmetamethod (best - catches all outgoing)
 	pcall(function()
-		if hookfunction and getnamecallmethod then
-			-- Hook __namecall for FireServer/InvokeServer
+		if hookmetamethod and getnamecallmethod then
 			local oldNamecall
 			oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
 				local method = getnamecallmethod()
 				if remoteSpyActive and (method == "FireServer" or method == "InvokeServer") then
+					print("[SPY-OUT] " .. method .. " -> " .. self:GetFullName())
 					local args = {...}
-					local argsStr = ""
 					for i, arg in ipairs(args) do
-						local s = tostring(arg)
-						if typeof(arg) == "table" then
-							pcall(function()
-								local parts = {}
-								for k, v in pairs(arg) do
-									table.insert(parts, tostring(k) .. "=" .. tostring(v))
-								end
-								s = "{" .. table.concat(parts, ", ") .. "}"
-							end)
-						end
-						argsStr = argsStr .. (i > 1 and ", " or "") .. s
+						print("  arg" .. i .. " (" .. typeof(arg) .. "): " .. deepPrint(arg))
 					end
-					print("[SPY] " .. method .. " " .. self:GetFullName() .. "(" .. argsStr .. ")")
 				end
 				return oldNamecall(self, ...)
 			end)
-			table.insert(remoteSpyHooks, function()
-				-- Can't easily unhook, so just disable via flag
-			end)
-		else
-			warn("[SX Elected] hookmetamethod not available - using basic spy")
-			-- Fallback: connect to known events
-			if RedEvent then
-				local conn = RedEvent.OnClientEvent:Connect(function(...)
+			hooked = true
+			print("[SX Elected] Spy: hookmetamethod active (full outgoing spy)")
+		end
+	end)
+
+	-- Method 2: hookfunction on ReliableRedEvent.FireServer specifically
+	if not hooked then
+		pcall(function()
+			if hookfunction and newcclosure and RedEvent then
+				local oldFire = RedEvent.FireServer
+				hookfunction(RedEvent.FireServer, newcclosure(function(self, ...)
 					if remoteSpyActive then
+						print("[SPY-OUT] ReliableRedEvent:FireServer()")
 						local args = {...}
-						print("[SPY-IN] ReliableRedEvent received: " .. #args .. " args")
 						for i, arg in ipairs(args) do
-							print("  arg" .. i .. ": " .. typeof(arg) .. " = " .. tostring(arg))
+							print("  arg" .. i .. " (" .. typeof(arg) .. "): " .. deepPrint(arg))
 						end
 					end
-				end)
-				table.insert(remoteSpyHooks, function() conn:Disconnect() end)
+					return oldFire(self, ...)
+				end))
+				hooked = true
+				print("[SX Elected] Spy: hookfunction active (RedEvent outgoing spy)")
+			end
+		end)
+	end
+
+	-- Method 3: Listen to incoming events + deep print tables
+	if not hooked then
+		warn("[SX Elected] No outgoing hook available - incoming spy only")
+		print("[SX Elected] TIP: Manually edit a sign and check what incoming data changes")
+	end
+
+	-- Always listen to incoming events with deep table printing
+	pcall(function()
+		if RedEvent then
+			local conn = RedEvent.OnClientEvent:Connect(function(...)
+				if remoteSpyActive then
+					local args = {...}
+					print("[SPY-IN] ReliableRedEvent received: " .. #args .. " args")
+					for i, arg in ipairs(args) do
+						print("  arg" .. i .. " (" .. typeof(arg) .. "): " .. deepPrint(arg))
+					end
+				end
+			end)
+			table.insert(remoteSpyHooks, function() conn:Disconnect() end)
+		end
+	end)
+
+	-- Also spy on all other known remotes
+	pcall(function()
+		local remoteEvents = ReplicatedStorage:FindFirstChild("RemoteEvents")
+		if remoteEvents then
+			for _, remote in ipairs(remoteEvents:GetChildren()) do
+				if remote:IsA("RemoteEvent") then
+					local conn = remote.OnClientEvent:Connect(function(...)
+						if remoteSpyActive then
+							local args = {...}
+							print("[SPY-IN] " .. remote.Name .. " received: " .. #args .. " args")
+							for i, arg in ipairs(args) do
+								print("  arg" .. i .. " (" .. typeof(arg) .. "): " .. deepPrint(arg))
+							end
+						end
+					end)
+					table.insert(remoteSpyHooks, function() conn:Disconnect() end)
+				end
 			end
 		end
 	end)
@@ -565,6 +639,49 @@ local function scanSignStructure()
 	notify("Signs", "Sign structure printed to F9 - check it!")
 end
 
+-- Try to edit a sign by firing ReliableRedEvent directly
+-- Red networking library format: {EventName = {args...}}
+-- We try common event names used for sign editing
+local function editSignViaRed(sign, newText)
+	if not RedEvent then return false end
+
+	local success = false
+	-- Get sign identifier - could be the instance, its name, or an attribute
+	local signId = nil
+	pcall(function() signId = sign:GetAttribute("Id") end)
+	if not signId then pcall(function() signId = sign:GetAttribute("BlockId") end) end
+	if not signId then pcall(function() signId = sign:GetAttribute("UUID") end) end
+
+	-- Try various Red event name formats that games commonly use
+	local eventNames = {
+		"EditSign", "UpdateSign", "SetSignText", "SignEdit",
+		"editSign", "updateSign", "setSignText", "signEdit",
+		"Edit", "UpdateText", "SetText", "ChangeText",
+		"edit", "updateText", "setText", "changeText",
+		"EditBlock", "UpdateBlock", "editBlock", "updateBlock",
+	}
+
+	for _, eventName in ipairs(eventNames) do
+		pcall(function()
+			-- Try with instance reference
+			RedEvent:FireServer({[eventName] = {sign, newText}})
+			success = true
+		end)
+		pcall(function()
+			-- Try with sign ID attribute
+			if signId then
+				RedEvent:FireServer({[eventName] = {signId, newText}})
+			end
+		end)
+		pcall(function()
+			-- Try with just text (some systems identify sign by proximity)
+			RedEvent:FireServer({[eventName] = {newText}})
+		end)
+	end
+
+	return success
+end
+
 -- Try every possible way to interact with a sign
 local function interactWithSign(sign)
 	local interacted = false
@@ -597,10 +714,10 @@ local function interactWithSign(sign)
 		end
 	end)
 
-	-- Method 3: Simulate mouse click on the sign (some games use raycasting)
+	-- Method 3: Simulate mouse click
 	pcall(function() mouse1click() interacted = true end)
 
-	-- Method 4: Activate equipped tool on the sign
+	-- Method 4: Activate equipped tool
 	pcall(function()
 		local char = LocalPlayer.Character
 		if char then
@@ -624,12 +741,11 @@ local function fillSignEditGUI(newText)
 	if not playerGui then return false end
 
 	-- Search for any visible TextBox that could be the sign editor
+	-- First, snapshot all TextBoxes BEFORE interaction so we can detect new ones
 	for _, gui in ipairs(playerGui:GetDescendants()) do
 		pcall(function()
 			if gui:IsA("TextBox") then
-				-- Check if it's visible and likely a sign editor
 				local isVisible = gui.Visible
-				-- Walk up to check parent visibility
 				local parent = gui.Parent
 				while parent and parent ~= playerGui do
 					pcall(function()
@@ -640,26 +756,29 @@ local function fillSignEditGUI(newText)
 					parent = parent.Parent
 				end
 				if isVisible then
+					print("[SX Elected] Found TextBox: " .. gui:GetFullName() .. " Text='" .. gui.Text:sub(1,30) .. "'")
 					gui.Text = newText
 					gui:CaptureFocus()
 					task.wait(0.1)
-					gui:ReleaseFocus(true) -- true = enterPressed
+					gui:ReleaseFocus(true)
 					filled = true
 				end
 			end
 		end)
 	end
 
-	-- Also try to find and click any "Save" / "Submit" / "Confirm" / "Done" button
+	-- Find and click Save/Submit/Done/Confirm buttons
 	if filled then
-		task.wait(0.1)
+		task.wait(0.15)
 		for _, gui in ipairs(playerGui:GetDescendants()) do
 			pcall(function()
 				if gui:IsA("TextButton") or gui:IsA("ImageButton") then
 					local btnText = ""
 					pcall(function() btnText = gui.Text:lower() end)
 					if btnText:find("save") or btnText:find("submit") or btnText:find("confirm")
-						or btnText:find("done") or btnText:find("ok") or btnText:find("apply") then
+						or btnText:find("done") or btnText:find("ok") or btnText:find("apply")
+						or btnText:find("set") or btnText:find("update") or btnText:find("enter") then
+						print("[SX Elected] Clicking button: " .. gui:GetFullName() .. " '" .. gui.Text .. "'")
 						pcall(function()
 							if firesignal then
 								firesignal(gui.MouseButton1Click)
@@ -676,10 +795,40 @@ local function fillSignEditGUI(newText)
 	return filled
 end
 
-local function editAllSigns(newText)
-	local signs = findSigns(true)
+-- Scan all GUIs in PlayerGui for sign-related elements and print to F9
+local function scanPlayerGUI()
+	local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+	if not playerGui then
+		print("[SX Elected] No PlayerGui")
+		return
+	end
+
+	print("=== PLAYERGUI SCAN ===")
+	local textboxes = 0
+	local buttons = 0
+	for _, gui in ipairs(playerGui:GetDescendants()) do
+		pcall(function()
+			if gui:IsA("TextBox") then
+				textboxes = textboxes + 1
+				local vis = gui.Visible and "visible" or "hidden"
+				print("  [TextBox] " .. gui:GetFullName() .. " (" .. vis .. ") Text='" .. gui.Text:sub(1,40) .. "'")
+			elseif gui:IsA("TextButton") then
+				buttons = buttons + 1
+				local vis = gui.Visible and "visible" or "hidden"
+				local txt = gui.Text:sub(1, 30)
+				if txt ~= "" then
+					print("  [TextButton] " .. gui:GetFullName() .. " (" .. vis .. ") '" .. txt .. "'")
+				end
+			end
+		end)
+	end
+	print("=== " .. textboxes .. " TextBoxes, " .. buttons .. " TextButtons ===")
+	notify("GUI Scan", textboxes .. " TextBoxes, " .. buttons .. " TextButtons - F9")
+end
+
+local function editSignCore(signs, newText, label)
 	if #signs == 0 then
-		notify("Signs", "No signs found that belong to you")
+		notify("Signs", "No signs found")
 		return
 	end
 
@@ -688,11 +837,7 @@ local function editAllSigns(newText)
 	if not char or not hrp then return end
 	local savedCF = hrp.CFrame
 
-	-- Equip building tool if available (some games require it for sign interaction)
-	local buildTool = findBuildingTool()
-	if buildTool then equipTool(buildTool) end
-
-	notify("Signs", "Editing " .. #signs .. " signs...")
+	notify("Signs", label .. " " .. #signs .. " signs...")
 
 	task.spawn(function()
 		local count = 0
@@ -701,34 +846,43 @@ local function editAllSigns(newText)
 				local cf = getItemCFrame(sign)
 				if not cf then return end
 
-				-- TP close to the sign face
-				char:PivotTo(cf + cf.LookVector * 3 + Vector3.new(0, 0, 0))
-				task.wait(0.2)
+				-- TP close to the sign
+				char:PivotTo(cf + Vector3.new(0, 0, 3))
+				task.wait(0.15)
 
-				-- Try to interact with sign
+				-- Point camera at sign
+				pcall(function()
+					camera.CFrame = CFrame.lookAt(hrp.Position, cf.Position)
+				end)
+				task.wait(0.1)
+
+				-- Try all interaction methods
 				interactWithSign(sign)
-				task.wait(0.5) -- Wait for edit UI to appear
+				task.wait(0.5)
 
-				-- Try to fill the sign edit GUI
+				-- Check if edit UI appeared
 				local ok = fillSignEditGUI(newText)
 				if ok then
 					count = count + 1
-					print("[SX Elected] Edited sign: " .. sign:GetFullName())
+					print("[SX Elected] Edited sign via UI: " .. sign:GetFullName())
 				else
-					-- If no GUI appeared, try clicking directly on sign face
-					-- Look at the sign
-					pcall(function()
-						camera.CFrame = CFrame.lookAt(hrp.Position, cf.Position)
-					end)
-					task.wait(0.1)
-					mouse1click()
-					task.wait(0.5)
-					local ok2 = fillSignEditGUI(newText)
-					if ok2 then
+					-- Try Red event directly
+					local redOk = editSignViaRed(sign, newText)
+					if redOk then
 						count = count + 1
-						print("[SX Elected] Edited sign (click method): " .. sign:GetFullName())
+						print("[SX Elected] Fired Red events for sign: " .. sign:GetFullName())
 					else
-						print("[SX Elected] Could not edit sign: " .. sign:GetFullName())
+						-- Last resort: click again with slight offset
+						char:PivotTo(cf + cf.LookVector * -2 + Vector3.new(0, 0, 0))
+						task.wait(0.1)
+						pcall(function() camera.CFrame = CFrame.lookAt(hrp.Position, cf.Position) end)
+						mouse1click()
+						task.wait(0.5)
+						if fillSignEditGUI(newText) then
+							count = count + 1
+						else
+							print("[SX Elected] Could not edit sign: " .. sign:GetFullName())
+						end
 					end
 				end
 
@@ -740,52 +894,12 @@ local function editAllSigns(newText)
 	end)
 end
 
+local function editAllSigns(newText)
+	editSignCore(findSigns(true), newText, "Editing")
+end
+
 local function editAllSignsGlobal(newText)
-	local signs = findSigns(false)
-	if #signs == 0 then
-		notify("Signs", "No signs found")
-		return
-	end
-
-	local char = LocalPlayer.Character
-	local hrp = getRoot()
-	if not char or not hrp then return end
-	local savedCF = hrp.CFrame
-
-	local buildTool = findBuildingTool()
-	if buildTool then equipTool(buildTool) end
-
-	notify("Signs", "Attempting " .. #signs .. " signs globally...")
-
-	task.spawn(function()
-		local count = 0
-		for _, sign in ipairs(signs) do
-			pcall(function()
-				local cf = getItemCFrame(sign)
-				if not cf then return end
-
-				char:PivotTo(cf + cf.LookVector * 3)
-				task.wait(0.2)
-				interactWithSign(sign)
-				task.wait(0.5)
-
-				local ok = fillSignEditGUI(newText)
-				if ok then
-					count = count + 1
-				else
-					pcall(function() camera.CFrame = CFrame.lookAt(hrp.Position, cf.Position) end)
-					task.wait(0.1)
-					mouse1click()
-					task.wait(0.5)
-					if fillSignEditGUI(newText) then count = count + 1 end
-				end
-
-				char:PivotTo(savedCF)
-			end)
-			task.wait(0.5)
-		end
-		notify("Signs", "Edited " .. count .. "/" .. #signs .. " signs globally")
-	end)
+	editSignCore(findSigns(false), newText, "Global editing")
 end
 
 -- ===================== BUILDING SYSTEM =====================
@@ -1912,14 +2026,16 @@ do
 		end
 	end)
 	createButton(tab, "Scan Sign Structure (F9)", o(), scanSignStructure)
+	createButton(tab, "Scan PlayerGui (F9)", o(), scanPlayerGUI)
 	createButton(tab, "Count Signs", o(), function()
 		local mine = findSigns(true)
 		local all = findSigns(false)
 		print("[SX Elected] Your signs: " .. #mine .. " | All signs: " .. #all)
 		notify("Signs", "Yours: " .. #mine .. " | Total: " .. #all)
 	end)
-	createInfoLabel(tab, "Use 'Scan Sign Structure' to see how signs work (F9)", o())
-	createInfoLabel(tab, "Enable Remote Spy, manually edit a sign, check F9 for remotes", o())
+	createInfoLabel(tab, "Step 1: Click 'Scan Sign Structure' to see sign internals", o())
+	createInfoLabel(tab, "Step 2: Click 'Scan PlayerGui' WHILE editing a sign manually", o())
+	createInfoLabel(tab, "Step 3: Send me the F9 output and I'll make it work", o())
 
 	createSpacer(tab, o())
 
