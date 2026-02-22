@@ -395,6 +395,65 @@ local function placeBlockAt(cframe, blockName)
 	end)
 end
 
+-- ===================== CLIENT-SIDE FLING =====================
+-- Spins your character at high velocity into a target player to fling them
+
+local function flingPlayer(targetPlayer)
+	if not targetPlayer or not targetPlayer.Character then
+		notify("Error", targetPlayer and (targetPlayer.DisplayName .. " has no character") or "No target")
+		return
+	end
+	local targetHRP = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+	if not targetHRP then
+		notify("Error", "Target has no HumanoidRootPart")
+		return
+	end
+
+	local myChar = LocalPlayer.Character
+	local myHRP = getRoot()
+	if not myChar or not myHRP then return end
+
+	local savedCF = myHRP.CFrame
+	notify("Fling", "Flinging " .. targetPlayer.DisplayName .. "...")
+
+	task.spawn(function()
+		-- TP to target and spin at high velocity
+		local av = Instance.new("BodyAngularVelocity")
+		av.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+		av.AngularVelocity = Vector3.new(0, 9999, 0)
+		av.P = 1000000
+		av.Parent = myHRP
+
+		local bv = Instance.new("BodyVelocity")
+		bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+		bv.P = 9000
+		bv.Parent = myHRP
+
+		-- Ram into them for 1.5 seconds
+		local startTime = tick()
+		while tick() - startTime < 1.5 do
+			pcall(function()
+				if not targetHRP or not targetHRP.Parent then return end
+				local dir = (targetHRP.Position - myHRP.Position).Unit
+				bv.Velocity = dir * 500
+				myHRP.CFrame = CFrame.new(targetHRP.Position + dir * -3)
+			end)
+			task.wait()
+		end
+
+		-- Cleanup and return
+		pcall(function() av:Destroy() end)
+		pcall(function() bv:Destroy() end)
+
+		task.wait(0.2)
+		pcall(function()
+			local root = getRoot()
+			if root then root.CFrame = savedCF end
+		end)
+		notify("Fling", "Flung " .. targetPlayer.DisplayName .. "!")
+	end)
+end
+
 -- ===================== ANTI-JAIL =====================
 -- Detects when player gets jailed (sudden teleport to jail cell) and teleports back
 
@@ -1357,7 +1416,7 @@ do
 							end
 						end)
 					end},
-					{text = "Fling", offset = 148, fn = function() adminFling(player.Name) end},
+					{text = "Fling", offset = 148, fn = function() flingPlayer(player) end},
 					{text = "Jail", offset = 108, fn = function() adminJail(player.Name) end},
 					{text = "Kick", offset = 68, fn = function() adminKick(player.Name) end},
 				}
