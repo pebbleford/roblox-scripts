@@ -12,7 +12,90 @@ local LocalPlayer = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 local Mouse = LocalPlayer:GetMouse()
 
--- ===================== CLICK SIMULATION =====================
+-- ===================== NBTF WEAPON SYSTEM =====================
+-- NBTF uses ReplicatedStorage.WeaponsSystem.Network.WeaponHit:FireServer()
+-- This is the ACTUAL remote the game uses for hit registration
+local WeaponHitRemote = nil
+pcall(function()
+	WeaponHitRemote = game:GetService("ReplicatedStorage"):FindFirstChild("WeaponsSystem")
+	if WeaponHitRemote then
+		WeaponHitRemote = WeaponHitRemote:FindFirstChild("Network")
+		if WeaponHitRemote then
+			WeaponHitRemote = WeaponHitRemote:FindFirstChild("WeaponHit")
+		end
+	end
+end)
+
+-- All NBTF weapon names
+local NBTF_GUNS = {
+	"Imaginary Gun", "M4 Carbine", "USP", "Spy USP", "AK74",
+	"Colt Python", "USP Silenced", "M24 Sniper", "UMP-9", "MPX",
+	"XM1014", "Makarov", "AK47", "Crowbar", "Virus Kit",
+	"SniperRifle", "Shotgun"
+}
+
+-- NBTF weapon config values
+local NBTF_ZERO_VALUES = {"RecoilDecay", "RecoilMax", "RecoilMin", "ShotCooldown", "TotalRecoilMax", "MaxSpread", "MinSpread"}
+local NBTF_MAX_VALUES = {"AmmoCapacity", "AmmoReserves", "FullMagazineSize", "HitDamage", "MaxDistance"}
+
+-- Find any gun in the player's backpack
+local function findGunInBackpack()
+	for _, tool in ipairs(LocalPlayer.Backpack:GetChildren()) do
+		if tool:IsA("Tool") then
+			for _, gunName in ipairs(NBTF_GUNS) do
+				if tool.Name == gunName then
+					return tool
+				end
+			end
+		end
+	end
+	-- Also check equipped tools
+	local char = LocalPlayer.Character
+	if char then
+		for _, tool in ipairs(char:GetChildren()) do
+			if tool:IsA("Tool") then
+				for _, gunName in ipairs(NBTF_GUNS) do
+					if tool.Name == gunName then
+						return tool
+					end
+				end
+			end
+		end
+	end
+	return nil
+end
+
+-- Fire a weapon hit on a target player using the NBTF WeaponHit remote
+local function fireWeaponHit(targetPlayer, gun)
+	if not WeaponHitRemote then return false end
+	if not targetPlayer or not targetPlayer.Character then return false end
+	local head = targetPlayer.Character:FindFirstChild("Head")
+	if not head then return false end
+	if not gun then gun = findGunInBackpack() end
+	if not gun then return false end
+
+	local args = {
+		[1] = gun,
+		[2] = {
+			["p"] = Vector3.new(0, 0, 0),
+			["pid"] = 1,
+			["part"] = head,
+			["d"] = 0,
+			["maxDist"] = 0,
+			["h"] = head,
+			["m"] = Enum.Material.Plastic,
+			["sid"] = 2,
+			["t"] = 0,
+			["n"] = Vector3.new(0, 0, 0)
+		}
+	}
+	pcall(function()
+		WeaponHitRemote:FireServer(unpack(args))
+	end)
+	return true
+end
+
+-- Click simulation fallback
 local function mouse1click()
 	VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
 	task.wait(0.05)
@@ -60,7 +143,6 @@ local autoFireActive = false
 local gravityActive = false
 local bringAllActive = false
 
-local silentAimMethod = "Raycast" -- Raycast, FindPartOnRay, Mouse.Hit/Target
 local targetPart = "Head" -- Head, HumanoidRootPart
 local fovRadius = 150
 local hitChance = 100
@@ -88,8 +170,6 @@ local vehicleFlyBG = nil
 local noRecoilConnection = nil
 local autoFireConnection = nil
 local espHighlights = {}
-local oldNamecall = nil
-local oldIndex = nil
 local spectateTarget = nil
 
 -- ===================== HELPERS =====================
@@ -271,151 +351,103 @@ end
 -- This is the core "teleport bullets" / "shoot through walls" mechanic
 -- Requires executor with hookmetamethod support
 
+-- Silent aim connection
+local silentAimConnection = nil
+
 local function enableSilentAim()
 	silentAimActive = true
 
-	-- Check if executor supports hookmetamethod
-	if not hookmetamethod then
-		notify("Silent Aim", "Your executor doesn't support hookmetamethod!")
-		return
+	if not WeaponHitRemote then
+		notify("Silent Aim", "WeaponHit remote not found! Waiting for game to load...")
+		-- Try to find it again
+		pcall(function()
+			WeaponHitRemote = game:GetService("ReplicatedStorage").WeaponsSystem.Network.WeaponHit
+		end)
+		if not WeaponHitRemote then
+			notify("Error", "Could not find WeaponsSystem.Network.WeaponHit")
+			return
+		end
 	end
 
-	-- Hook __namecall to intercept ALL method calls
-	-- NBTF uses ReplicatedStorage.WeaponsSystem which fires RemoteEvents for hits
-	-- We hook both Raycast (for visual tracers) AND FireServer (to modify hit data)
-	if not oldNamecall then
-		oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
-			local args = {...}
-			local self = args[1]
-			local method = getnamecallmethod()
+	-- NBTF Silent Aim: When you fire your gun, we also fire a WeaponHit
+	-- at the closest enemy's Head using the actual game remote
+	-- This runs every frame while you hold left click
+	silentAimConnection = RunService.Heartbeat:Connect(function()
+		if not silentAimActive then return end
+		pcall(function()
+			-- Only fire when player is holding left click (shooting)
+			if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then return end
 
-			if not checkcaller() then
-				-- Hook Raycast calls (visual tracers + some hit detection)
-				if (silentAimActive or wallbangActive) and self == workspace then
-					if method == "Raycast" then
-						local origin = args[2]
-						if typeof(origin) == "Vector3" then
-							if silentAimActive then
-								local target = getClosestPlayerInFOV()
-								if target and calculateChance(hitChance) then
-									args[3] = getDirection(origin, target.Position)
-								end
-							end
-							if wallbangActive then
-								local params = RaycastParams.new()
-								params.FilterType = Enum.RaycastFilterType.Include
-								local includeList = {}
-								for _, p in ipairs(Players:GetPlayers()) do
-									if p ~= LocalPlayer and p.Character then
-										table.insert(includeList, p.Character)
-									end
-								end
-								params.FilterDescendantsInstances = includeList
-								args[4] = params
-							end
-							return oldNamecall(unpack(args))
-						end
-					elseif method == "FindPartOnRay" or method == "findPartOnRay"
-						or method == "FindPartOnRayWithIgnoreList"
-						or method == "FindPartOnRayWithWhitelist" then
-						local ray = args[2]
-						if typeof(ray) == "Ray" then
-							if silentAimActive then
-								local target = getClosestPlayerInFOV()
-								if target and calculateChance(hitChance) then
-									args[2] = Ray.new(ray.Origin, getDirection(ray.Origin, target.Position))
-								end
-							end
-							return oldNamecall(unpack(args))
-						end
-					end
-				end
-
-				-- Hook FireServer calls on weapon-related RemoteEvents
-				-- NBTF WeaponsSystem sends hit data through RemoteEvents
-				-- We intercept and modify the hit position / hit part to target enemies
-				if silentAimActive and (method == "FireServer" or method == "fireServer") then
-					if self:IsA("RemoteEvent") then
-						local remoteName = self.Name:lower()
-						-- Common NBTF weapon remote names
-						if remoteName:find("hit") or remoteName:find("damage") or remoteName:find("fire")
-							or remoteName:find("shoot") or remoteName:find("bullet") or remoteName:find("weapon")
-							or remoteName:find("attack") or remoteName:find("ray") then
-							local target = getClosestPlayerInFOV()
-							if target and calculateChance(hitChance) then
-								-- Modify args to point at the target
-								for i = 2, #args do
-									if typeof(args[i]) == "Vector3" then
-										-- Replace direction/position vectors with target position
-										args[i] = target.Position
-									elseif typeof(args[i]) == "CFrame" then
-										args[i] = target.CFrame
-									elseif typeof(args[i]) == "Instance" then
-										-- Replace hit part with target part
-										if args[i]:IsA("BasePart") and args[i].Parent then
-											if not args[i].Parent:FindFirstChildOfClass("Humanoid") then
-												args[i] = target
-											end
-										end
-									end
-								end
-								return oldNamecall(unpack(args))
-							end
-						end
-					end
-				end
-
-				-- Hook InvokeServer for RemoteFunctions (some games use these)
-				if silentAimActive and (method == "InvokeServer" or method == "invokeServer") then
-					if self:IsA("RemoteFunction") then
-						local remoteName = self.Name:lower()
-						if remoteName:find("hit") or remoteName:find("damage") or remoteName:find("fire")
-							or remoteName:find("shoot") or remoteName:find("weapon") then
-							local target = getClosestPlayerInFOV()
-							if target and calculateChance(hitChance) then
-								for i = 2, #args do
-									if typeof(args[i]) == "Vector3" then
-										args[i] = target.Position
-									elseif typeof(args[i]) == "CFrame" then
-										args[i] = target.CFrame
-									end
-								end
-								return oldNamecall(unpack(args))
-							end
-						end
-					end
+			local gun = findGunInBackpack()
+			if not gun then
+				-- Check equipped tool
+				local char = LocalPlayer.Character
+				if char then
+					local tool = char:FindFirstChildOfClass("Tool")
+					if tool then gun = tool end
 				end
 			end
+			if not gun then return end
 
-			return oldNamecall(...)
-		end))
-	end
+			local target = getClosestPlayerInFOV()
+			if not target then target = getClosestPlayer3D() end
+			if not target or not target.Parent then return end
 
-	-- Hook __index for Mouse.Hit/Target
-	if not oldIndex then
-		oldIndex = hookmetamethod(game, "__index", newcclosure(function(self, index)
-			if not checkcaller() then
-				if silentAimActive and self == Mouse then
-					local target = getClosestPlayerInFOV()
-					if target and calculateChance(hitChance) then
-						if index == "Hit" or index == "hit" then
-							return target.CFrame
-						elseif index == "Target" or index == "target" then
-							return target
-						end
-					end
-				end
-			end
-			return oldIndex(self, index)
-		end))
-	end
+			-- Find the player who owns this character
+			local targetPlayer = Players:GetPlayerFromCharacter(target.Parent)
+			if not targetPlayer then return end
+			if not calculateChance(hitChance) then return end
 
-	notify("Silent Aim", "Active - hooks Raycast + RemoteEvents + Mouse!")
+			fireWeaponHit(targetPlayer, gun)
+		end)
+	end)
+
+	notify("Silent Aim", "Active! Bullets auto-hit nearest enemy head")
 end
 
 local function disableSilentAim()
 	silentAimActive = false
+	if silentAimConnection then silentAimConnection:Disconnect() silentAimConnection = nil end
 	notify("Silent Aim", "Disabled")
+end
+
+-- ===================== WALLBANG (WeaponHit through walls) =====================
+-- Since WeaponHit uses d=0 and maxDist=0, it bypasses distance/wall checks
+-- Wallbang auto-fires at nearest enemy every 0.3s while holding left click
+local wallbangConnection = nil
+
+local function enableWallbang()
+	wallbangActive = true
+	wallbangConnection = RunService.Heartbeat:Connect(function()
+		if not wallbangActive then return end
+		pcall(function()
+			if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then return end
+
+			local gun = findGunInBackpack()
+			if not gun then
+				local char = LocalPlayer.Character
+				if char then
+					local tool = char:FindFirstChildOfClass("Tool")
+					if tool then gun = tool end
+				end
+			end
+			if not gun then return end
+
+			-- Fire at ALL visible enemies through walls
+			for _, player in ipairs(Players:GetPlayers()) do
+				if isEnemy(player) and isAlive(player) then
+					fireWeaponHit(player, gun)
+				end
+			end
+		end)
+	end)
+	notify("Wallbang", "Active! Hold LMB to hit all enemies through walls")
+end
+
+local function disableWallbang()
+	wallbangActive = false
+	if wallbangConnection then wallbangConnection:Disconnect() wallbangConnection = nil end
+	notify("Wallbang", "Disabled")
 end
 
 -- ===================== AIMBOT (Camera Lock) =====================
@@ -578,65 +610,68 @@ local function startESP()
 	notify("ESP", "Player ESP active!")
 end
 
--- ===================== UNLIMITED AMMO =====================
--- Finds tool ammo values and keeps them maxed
+-- ===================== UNLIMITED AMMO (NBTF-Specific) =====================
+-- NBTF weapons store ammo in tool.Configuration (AmmoCapacity, AmmoReserves, etc.)
+local function modGuns()
+	pcall(function()
+		for _, tool in ipairs(LocalPlayer.Backpack:GetChildren()) do
+			if tool:IsA("Tool") then
+				local config = tool:FindFirstChild("Configuration")
+				if config then
+					for _, val in ipairs(config:GetChildren()) do
+						-- Max out ammo, damage, range
+						for _, maxName in ipairs(NBTF_MAX_VALUES) do
+							if val.Name == maxName then
+								val.Value = 9999999
+							end
+						end
+						-- Zero out recoil, spread, cooldown
+						for _, zeroName in ipairs(NBTF_ZERO_VALUES) do
+							if val.Name == zeroName then
+								val.Value = 0
+							end
+						end
+					end
+				end
+			end
+		end
+		-- Also mod equipped tool
+		local char = LocalPlayer.Character
+		if char then
+			for _, tool in ipairs(char:GetChildren()) do
+				if tool:IsA("Tool") then
+					local config = tool:FindFirstChild("Configuration")
+					if config then
+						for _, val in ipairs(config:GetChildren()) do
+							for _, maxName in ipairs(NBTF_MAX_VALUES) do
+								if val.Name == maxName then val.Value = 9999999 end
+							end
+							for _, zeroName in ipairs(NBTF_ZERO_VALUES) do
+								if val.Name == zeroName then val.Value = 0 end
+							end
+						end
+					end
+				end
+			end
+		end
+	end)
+end
+
 local function startInfAmmo()
+	-- Mod guns once immediately
+	modGuns()
+	-- Keep modding on heartbeat (in case guns reset)
 	ammoConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local char = LocalPlayer.Character
 			if not char then return end
 			for _, tool in ipairs(char:GetChildren()) do
 				if tool:IsA("Tool") then
-					-- Common ammo patterns in Roblox FPS games
-					for _, obj in ipairs(tool:GetDescendants()) do
-						if obj:IsA("NumberValue") or obj:IsA("IntValue") then
-							local name = obj.Name:lower()
-							if name == "ammo" or name == "currentammo" or name == "magammo"
-								or name == "clip" or name == "clipammo" or name == "bullets"
-								or name == "magazine" or name == "mag" or name == "rounds" then
-								if obj.Value < 999 then
-									obj.Value = 999
-								end
-							elseif name == "reserveammo" or name == "reserve" or name == "totalammo"
-								or name == "storedammo" or name == "spareammmo" or name == "maxammo" then
-								if obj.Value < 999 then
-									obj.Value = 999
-								end
-							end
-						end
-					end
-					-- Also check in Backpack copy
-					local bpTool = LocalPlayer.Backpack:FindFirstChild(tool.Name)
-					if bpTool then
-						for _, obj in ipairs(bpTool:GetDescendants()) do
-							if (obj:IsA("NumberValue") or obj:IsA("IntValue")) then
-								local name = obj.Name:lower()
-								if name == "ammo" or name == "currentammo" or name == "magammo"
-									or name == "clip" or name == "clipammo" or name == "bullets"
-									or name == "magazine" or name == "mag" or name == "rounds"
-									or name == "reserveammo" or name == "reserve" or name == "totalammo" then
-									if obj.Value < 999 then
-										obj.Value = 999
-									end
-								end
-							end
-						end
-					end
-				end
-			end
-			-- Also set all backpack tool ammo
-			for _, tool in ipairs(LocalPlayer.Backpack:GetChildren()) do
-				if tool:IsA("Tool") then
-					for _, obj in ipairs(tool:GetDescendants()) do
-						if (obj:IsA("NumberValue") or obj:IsA("IntValue")) then
-							local name = obj.Name:lower()
-							if name == "ammo" or name == "currentammo" or name == "magammo"
-								or name == "clip" or name == "clipammo" or name == "bullets"
-								or name == "magazine" or name == "mag" or name == "rounds"
-								or name == "reserveammo" or name == "reserve" or name == "totalammo" then
-								if obj.Value < 999 then
-									obj.Value = 999
-								end
+					local config = tool:FindFirstChild("Configuration")
+					if config then
+						for _, val in ipairs(config:GetChildren()) do
+							for _, maxName in ipairs(NBTF_MAX_VALUES) do
+								if val.Name == maxName and val.Value < 9999 then val.Value = 9999999 end
 							end
 						end
 					end
@@ -644,7 +679,7 @@ local function startInfAmmo()
 			end
 		end)
 	end)
-	notify("Ammo", "Unlimited ammo active!")
+	notify("Ammo", "Unlimited ammo + max damage active!")
 end
 
 local function stopInfAmmo()
@@ -985,24 +1020,31 @@ local function unspectate()
 	notify("Spectate", "Stopped")
 end
 
--- ===================== NO RECOIL =====================
--- Hooks camera CFrame changes to prevent recoil from moving the camera
+-- ===================== NO RECOIL (NBTF-Specific) =====================
+-- Sets RecoilDecay/RecoilMax/RecoilMin/MaxSpread/MinSpread to 0 in weapon Configuration
 local function startNoRecoil()
-	local lastCamCF = camera.CFrame
-	noRecoilConnection = RunService.RenderStepped:Connect(function()
+	-- Apply to all guns immediately
+	modGuns()
+	-- Keep applying on heartbeat
+	noRecoilConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
-			-- Only stabilize when a tool is equipped (shooting)
 			local char = LocalPlayer.Character
 			if not char then return end
-			local tool = char:FindFirstChildOfClass("Tool")
-			if tool and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
-				camera.CFrame = lastCamCF
-			else
-				lastCamCF = camera.CFrame
+			for _, tool in ipairs(char:GetChildren()) do
+				if tool:IsA("Tool") then
+					local config = tool:FindFirstChild("Configuration")
+					if config then
+						for _, val in ipairs(config:GetChildren()) do
+							for _, zeroName in ipairs(NBTF_ZERO_VALUES) do
+								if val.Name == zeroName and val.Value ~= 0 then val.Value = 0 end
+							end
+						end
+					end
+				end
 			end
 		end)
 	end)
-	notify("No Recoil", "Recoil removed!")
+	notify("No Recoil", "Zero recoil + zero spread!")
 end
 
 local function stopNoRecoil()
@@ -1055,42 +1097,46 @@ local function bringAllPlayers()
 	notify("Bring All", "Brought " .. count .. " players!")
 end
 
--- ===================== KILL ALL =====================
--- Rapidly teleports to each enemy, attacks with every method available
+-- ===================== KILL ALL (NBTF WeaponHit Remote) =====================
+-- Fires WeaponHit remote at every enemy player's Head - no teleporting needed
+-- This is how the actual NBTF kill-all scripts work
 local function killAllPlayers()
-	local char = LocalPlayer.Character
-	if not char then return end
-
-	local startCF = getRoot() and getRoot().CFrame or nil
+	if not WeaponHitRemote then
+		notify("Error", "WeaponHit remote not found!")
+		return
+	end
 
 	task.spawn(function()
+		local gun = findGunInBackpack()
+		if not gun then
+			notify("Error", "No gun in backpack! Equip a weapon first.")
+			return
+		end
+
 		local killed = 0
-		for _, player in ipairs(Players:GetPlayers()) do
-			if isEnemy(player) and isAlive(player) then
-				pcall(function()
-					local theirHRP = player.Character:FindFirstChild("HumanoidRootPart")
-					if theirHRP then
-						-- Teleport right in front of them facing them
-						char:PivotTo(CFrame.new(theirHRP.Position + Vector3.new(0, 0, -2), theirHRP.Position))
-						task.wait(0.1)
-						-- Attack with all methods
-						local tool = char:FindFirstChildOfClass("Tool")
-						for i = 1, 5 do
-							if tool then tool:Activate() end
-							mouse1click()
-							task.wait(0.05)
+		-- Fire 10 rounds at each enemy (same as the proven NBTF kill script)
+		for count = 1, 10 do
+			for _, player in ipairs(Players:GetPlayers()) do
+				if player ~= LocalPlayer and isAlive(player) then
+					pcall(function()
+						-- Try every gun in backpack
+						for _, bpTool in ipairs(LocalPlayer.Backpack:GetChildren()) do
+							if bpTool:IsA("Tool") then
+								local isGun = false
+								for _, gn in ipairs(NBTF_GUNS) do
+									if bpTool.Name == gn then isGun = true break end
+								end
+								if isGun then
+									fireWeaponHit(player, bpTool)
+								end
+							end
 						end
-						killed = killed + 1
-						task.wait(0.1)
-					end
-				end)
+						if count == 1 then killed = killed + 1 end
+					end)
+				end
 			end
 		end
-		-- Return to start
-		if startCF and char and char.Parent then
-			char:PivotTo(startCF)
-		end
-		notify("Kill All", "Attacked " .. killed .. " enemies!")
+		notify("Kill All", "Fired at " .. killed .. " players!")
 	end)
 end
 
@@ -1152,25 +1198,39 @@ end
 -- This works regardless of map version because it searches by name
 
 -- Keywords to search for in workspace descendants
+-- All known NBTF locations from the wiki
 local NBTF_SEARCH_NAMES = {
-	"Spawn", "Lobby",
-	"Core", "Reactor", "ReactorCore",
+	-- Exterior
+	"RebelBase", "Rebel Base", "Rebel",
+	"LogisticsCheckpoint", "Logistics",
+	"RebelGas", "Gas",
+	"HiddenCave", "Cave",
+	-- Interior
+	"ExteriorCheckpoint", "Exterior Checkpoint",
+	"InteriorCheckpoint", "Interior Checkpoint", "Internal",
+	"LookoutBridge", "Lookout",
+	"Hospital",
 	"SCC", "StrategicCommand", "Strategic Command",
-	"Control", "ControlRoom", "MainControl",
-	"Barracks", "MilitaryBarracks",
-	"Checkpoint", "ExteriorCheckpoint", "InteriorCheckpoint",
-	"Datacenter", "DataCenter",
-	"PowerFacility", "Power",
-	"Weapons", "WeaponsResearch", "Armory", "Arsenal",
-	"Terminal", "TerminalA", "TerminalB", "TerminalC",
-	"AmmoStation", "Ammo", "BulletReloader",
-	"ShootingRange", "Range",
-	"NukeLaunch", "LaunchCenter", "Silo",
-	"Cooler", "Pump", "HazmatSuit",
-	"SafetyOverride", "OverridePanel",
-	"TeleportPad", "Teleporter",
-	"Garage", "Vehicle", "Car",
+	"SCCRooftop",
+	"ExecutiveOffices", "Executive",
+	"MasterTeleporter", "Teleporter",
+	"SecretArea", "ModRoom", "Mod Room", "Regular Lounge",
+	"MaintenanceOffices", "Maintenance",
+	"DataCenter", "Datacenter",
+	"AppliedSciences", "Sciences",
+	"ReceivingDepartment", "Receiving",
+	"WeaponsResearch", "Weapons Research",
+	"TestingField", "Testing",
+	"PowerStation", "Power",
+	"EGC", "EnergyGeneration", "Energy",
+	"EGCLower",
+	"CoreControl", "Core",
+	"EGCRooftop",
+	"MilitaryBarracks", "Barracks",
+	-- Other
+	"Garage", "Vehicle",
 	"Helipad", "Helicopter",
+	"Terminal", "Silo", "Armory",
 }
 
 -- Find a part/model in workspace by name - only checks direct children and 2 levels deep
@@ -1299,7 +1359,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "NBTF Hub v1.0 - Nuclear Blast Testing Facility"
+titleText.Text = "NBTF Hub v2.0 - Nuclear Blast Testing Facility"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 12
@@ -1582,17 +1642,16 @@ do
 		silentAimActive = on
 		if on then enableSilentAim() else disableSilentAim() end
 	end)
-	createInfoLabel(tab, "Hooks Raycast + RemoteEvents + Mouse to redirect bullets", o())
-	createInfoLabel(tab, "Requires hookmetamethod (Xeno/Synapse/Fluxus)", o())
+	createInfoLabel(tab, "Fires WeaponHit remote at nearest enemy when you shoot", o())
+	createInfoLabel(tab, "Uses actual NBTF WeaponsSystem - no hookmetamethod needed!", o())
 
 	createSpacer(tab, o())
 
 	createSectionLabel(tab, "Wallbang (Shoot Through Walls)", o())
 	createToggle(tab, "Wallbang", o(), function(on)
-		wallbangActive = on
-		if on then notify("Wallbang", "Bullets ignore walls!") else notify("Wallbang", "Disabled") end
+		if on then enableWallbang() else disableWallbang() end
 	end)
-	createInfoLabel(tab, "Makes raycasts ignore walls - bullets pass through everything", o())
+	createInfoLabel(tab, "Fires WeaponHit with d=0/maxDist=0 - hits through any wall", o())
 
 	createSpacer(tab, o())
 
@@ -1632,7 +1691,11 @@ do
 		infAmmoActive = on
 		if on then startInfAmmo() else stopInfAmmo() end
 	end)
-	createInfoLabel(tab, "Keeps all weapon ammo values at 999", o())
+	createInfoLabel(tab, "Maxes AmmoCapacity/Reserves/Damage in weapon Configuration", o())
+	createButton(tab, "Mod All Guns (Ammo + Damage + No Recoil)", o(), function()
+		modGuns()
+		notify("Mod Guns", "All guns modded! Max ammo, damage, zero recoil/spread")
+	end)
 
 	createSpacer(tab, o())
 
@@ -1659,7 +1722,7 @@ do
 		autoFireActive = on
 		if on then startAutoFire() else stopAutoFire() end
 	end)
-	createInfoLabel(tab, "No recoil stabilizes camera, auto fire spams tool:Activate()", o())
+	createInfoLabel(tab, "No recoil zeros gun config values. Auto fire spams tool:Activate()", o())
 
 	createSpacer(tab, o())
 
@@ -1674,7 +1737,7 @@ do
 
 	createSectionLabel(tab, "Player Control", o())
 	createButton(tab, "Bring All Players to You", o(), bringAllPlayers)
-	createButton(tab, "Kill All (TP + Attack Each)", o(), killAllPlayers)
+	createButton(tab, "Kill All (WeaponHit Remote)", o(), killAllPlayers)
 	createButton(tab, "Freeze All Players", o(), freezeAllPlayers)
 	createButton(tab, "Unfreeze All Players", o(), unfreezeAllPlayers)
 	createInfoLabel(tab, "Bring/freeze work on all non-team players", o())
@@ -1769,6 +1832,19 @@ do
 	local tab = tabFrames["Teleport"]
 	local n = 0
 	local function o() n = n + 1 return n end
+
+	createSectionLabel(tab, "Secret / Special Locations", o())
+	createButton(tab, "TP: Secret Mod Room (Canyon Wall)", o(), function()
+		-- Known NBTF invis/mod room coordinates
+		local char = LocalPlayer.Character
+		if char then
+			char:PivotTo(CFrame.new(Vector3.new(-25.95, 84, 3537.55)))
+			notify("Teleport", "Teleported to Secret Mod Room area!")
+		end
+	end)
+	createInfoLabel(tab, "Behind Maintenance Offices on the Canyon Wall", o())
+
+	createSpacer(tab, o())
 
 	createSectionLabel(tab, "Facility Locations (Auto-Scanned)", o())
 	createInfoLabel(tab, "Scans workspace for named areas - click Scan to find them", o())
@@ -1947,7 +2023,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ===================== STARTUP =====================
-notify("NBTF Hub v1.0", "Loaded! Right Shift to toggle")
-print("[NBTF Hub v1.0] Loaded - Right Shift to toggle")
-print("[NBTF Hub v1.0] Tabs: Aim | Combat | Movement | Visuals | Teleport")
-print("[NBTF Hub v1.0] Silent Aim requires hookmetamethod support")
+notify("NBTF Hub v2.0", "Loaded! Right Shift to toggle")
+print("[NBTF Hub v2.0] Loaded - Right Shift to toggle")
+print("[NBTF Hub v2.0] Tabs: Aim | Combat | Movement | Visuals | Teleport")
+print("[NBTF Hub v2.0] Uses WeaponsSystem.Network.WeaponHit for kill/aim")
