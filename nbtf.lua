@@ -1040,8 +1040,20 @@ local function sendChatMessage(msg)
 end
 
 -- ===================== CUSTOM ANNOUNCEMENT DISPLAY =====================
-local function showCustomAnnouncement(text, duration)
-	duration = duration or 5
+-- Replica of the NBTF Static Alert System / Rebellion Pirate Transmission
+-- The real GUI requires Council Executive/Facility Director or Raid Leader/Warlord/Overseer
+-- and is NEVER replicated to non-authorized players, so we build our own
+
+local function showCustomAnnouncement(text, protocol, duration)
+	duration = duration or 8
+	protocol = protocol or "alert" -- alert, lockdown, core, normal
+
+	-- Remove any existing announcement
+	pcall(function()
+		local old = game:GetService("CoreGui"):FindFirstChild("SX_Announcement")
+		if old then old:Destroy() end
+	end)
+
 	local announceGui = Instance.new("ScreenGui")
 	announceGui.Name = "SX_Announcement"
 	announceGui.ResetOnSpawn = false
@@ -1049,51 +1061,111 @@ local function showCustomAnnouncement(text, duration)
 	pcall(function() announceGui.Parent = game:GetService("CoreGui") end)
 	if not announceGui.Parent then announceGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
-	local bar = Instance.new("Frame")
-	bar.Size = UDim2.new(0.6, 0, 0, 60)
-	bar.Position = UDim2.new(0.2, 0, 0, -70)
-	bar.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-	bar.BorderSizePixel = 0
-	bar.Parent = announceGui
+	-- Get team info for styling
+	local teamColor, roleName, teamName = getPlayerTeamInfo(LocalPlayer)
+	local isRebel = teamName:lower():find("rebel") or teamName:lower():find("rebellion")
 
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 8)
-	corner.Parent = bar
+	-- Protocol colors
+	local protocolColors = {
+		normal = Color3.fromRGB(50, 130, 255),   -- Blue
+		alert = Color3.fromRGB(255, 200, 60),     -- Yellow
+		lockdown = Color3.fromRGB(255, 50, 50),   -- Red
+		core = Color3.fromRGB(30, 30, 30),        -- Black
+	}
+	local protocolNames = {
+		normal = "AREA SCAN PROTOCOL",
+		alert = "HOLD AND SECURE PROTOCOL",
+		lockdown = "LOCKDOWN PROTOCOL",
+		core = "CORE COMPROMISED - EVACUATE",
+	}
+	local pColor = protocolColors[protocol] or protocolColors.alert
 
-	local stroke = Instance.new("UIStroke")
-	stroke.Color = COLORS.accent
-	stroke.Thickness = 2
-	stroke.Parent = bar
+	-- Main container
+	local container = Instance.new("Frame")
+	container.Size = UDim2.new(0.5, 0, 0, 120)
+	container.Position = UDim2.new(0.25, 0, 0, -130)
+	container.BackgroundColor3 = Color3.fromRGB(20, 25, 35)
+	container.BorderSizePixel = 0
+	container.Parent = announceGui
+	local cc = Instance.new("UICorner")
+	cc.CornerRadius = UDim.new(0, 12)
+	cc.Parent = container
 
-	local header = Instance.new("TextLabel")
-	header.Size = UDim2.new(1, 0, 0, 20)
-	header.Position = UDim2.new(0, 0, 0, 5)
-	header.BackgroundTransparency = 1
-	header.Text = "NBTF STATIC ALERT SYSTEM"
-	header.TextColor3 = COLORS.accent
-	header.Font = Enum.Font.GothamBold
-	header.TextSize = 11
-	header.Parent = bar
+	-- Top stripe (blue for facility, red for rebels)
+	local stripe = Instance.new("Frame")
+	stripe.Size = UDim2.new(1, 0, 0, 28)
+	stripe.BackgroundColor3 = isRebel and Color3.fromRGB(180, 30, 30) or Color3.fromRGB(30, 80, 180)
+	stripe.BorderSizePixel = 0
+	stripe.Parent = container
+	local sc = Instance.new("UICorner")
+	sc.CornerRadius = UDim.new(0, 12)
+	sc.Parent = stripe
+	-- Fix bottom corners of stripe
+	local stripeFix = Instance.new("Frame")
+	stripeFix.Size = UDim2.new(1, 0, 0, 12)
+	stripeFix.Position = UDim2.new(0, 0, 1, -12)
+	stripeFix.BackgroundColor3 = stripe.BackgroundColor3
+	stripeFix.BorderSizePixel = 0
+	stripeFix.Parent = stripe
 
+	-- Stripe text
+	local stripeText = Instance.new("TextLabel")
+	stripeText.Size = UDim2.new(1, -20, 1, 0)
+	stripeText.Position = UDim2.new(0, 10, 0, 0)
+	stripeText.BackgroundTransparency = 1
+	stripeText.Text = isRebel and "REBELLION PIRATE TRANSMISSION" or "NBTF STATIC ALERT SYSTEM"
+	stripeText.TextColor3 = Color3.fromRGB(255, 255, 255)
+	stripeText.Font = Enum.Font.GothamBold
+	stripeText.TextSize = 13
+	stripeText.TextXAlignment = Enum.TextXAlignment.Left
+	stripeText.Parent = stripe
+
+	-- Protocol label
+	local protoLabel = Instance.new("TextLabel")
+	protoLabel.Size = UDim2.new(1, -20, 0, 18)
+	protoLabel.Position = UDim2.new(0, 10, 0, 32)
+	protoLabel.BackgroundTransparency = 1
+	protoLabel.Text = protocolNames[protocol] or "ALERT"
+	protoLabel.TextColor3 = pColor
+	protoLabel.Font = Enum.Font.GothamBold
+	protoLabel.TextSize = 11
+	protoLabel.TextXAlignment = Enum.TextXAlignment.Left
+	protoLabel.Parent = container
+
+	-- Sender info
+	local senderLabel = Instance.new("TextLabel")
+	senderLabel.Size = UDim2.new(0.4, -10, 0, 14)
+	senderLabel.Position = UDim2.new(0, 10, 0, 52)
+	senderLabel.BackgroundTransparency = 1
+	senderLabel.Text = LocalPlayer.DisplayName .. (roleName ~= "" and (" - " .. roleName) or "")
+	senderLabel.TextColor3 = Color3.fromRGB(160, 170, 190)
+	senderLabel.Font = Enum.Font.Gotham
+	senderLabel.TextSize = 10
+	senderLabel.TextXAlignment = Enum.TextXAlignment.Left
+	senderLabel.Parent = container
+
+	-- Message text
 	local msgLabel = Instance.new("TextLabel")
-	msgLabel.Size = UDim2.new(1, -20, 0, 30)
-	msgLabel.Position = UDim2.new(0, 10, 0, 25)
+	msgLabel.Size = UDim2.new(1, -20, 0, 42)
+	msgLabel.Position = UDim2.new(0, 10, 0, 70)
 	msgLabel.BackgroundTransparency = 1
 	msgLabel.Text = text
-	msgLabel.TextColor3 = COLORS.textPrimary
+	msgLabel.TextColor3 = Color3.fromRGB(230, 235, 245)
 	msgLabel.Font = Enum.Font.Gotham
 	msgLabel.TextSize = 14
 	msgLabel.TextWrapped = true
-	msgLabel.Parent = bar
+	msgLabel.TextXAlignment = Enum.TextXAlignment.Left
+	msgLabel.TextYAlignment = Enum.TextYAlignment.Top
+	msgLabel.Parent = container
 
-	-- Slide in
-	bar:TweenPosition(UDim2.new(0.2, 0, 0, 10), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.3, true)
+	-- Slide in from top
+	container:TweenPosition(UDim2.new(0.25, 0, 0, 15), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.4, true)
 
 	-- Auto dismiss
 	task.delay(duration, function()
 		pcall(function()
-			bar:TweenPosition(UDim2.new(0.2, 0, 0, -70), Enum.EasingDirection.In, Enum.EasingStyle.Quad, 0.3, true)
-			task.wait(0.4)
+			container:TweenPosition(UDim2.new(0.25, 0, 0, -130), Enum.EasingDirection.In, Enum.EasingStyle.Quad, 0.4, true)
+			task.wait(0.5)
 			announceGui:Destroy()
 		end)
 	end)
@@ -2024,8 +2096,8 @@ do
 	createSpacer(tab, o())
 
 	createSectionLabel(tab, "Announcement System", o())
-	createInfoLabel(tab, "NBTF restricts announcements to authorized roles", o())
-	createInfoLabel(tab, "Method 1: Fire remotes. Method 2: Custom local display.", o())
+	createInfoLabel(tab, "Real GUI requires Council Exec/Director or Raid Leader gamepass", o())
+	createInfoLabel(tab, "This creates a replica + tries firing server remotes", o())
 
 	-- Announcement text input
 	local announcementText = "Alert: All personnel report to SCC immediately"
@@ -2051,26 +2123,71 @@ do
 		announcementText = announceTB.Text
 	end)
 
-	createButton(tab, "Show Custom Announcement (Local)", o(), function()
-		showCustomAnnouncement(announcementText, 6)
-		notify("Announce", "Custom announcement displayed!")
+	-- Protocol selector
+	local selectedProtocol = "alert"
+	createInfoLabel(tab, "Protocol: Yellow=Alert, Red=Lockdown, Black=Core, Blue=Normal", o())
+	local protoFrame = Instance.new("Frame")
+	protoFrame.Size = UDim2.new(1, 0, 0, 26)
+	protoFrame.BackgroundTransparency = 1
+	protoFrame.LayoutOrder = o()
+	protoFrame.Parent = tab
+	local protoLayout = Instance.new("UIListLayout")
+	protoLayout.FillDirection = Enum.FillDirection.Horizontal
+	protoLayout.Padding = UDim.new(0, 4)
+	protoLayout.Parent = protoFrame
+
+	local protoBtns = {}
+	local protocols = {
+		{id = "normal", label = "Normal", color = Color3.fromRGB(50, 130, 255)},
+		{id = "alert", label = "Alert", color = Color3.fromRGB(255, 200, 60)},
+		{id = "lockdown", label = "Lockdown", color = Color3.fromRGB(255, 50, 50)},
+		{id = "core", label = "Core", color = Color3.fromRGB(80, 80, 80)},
+	}
+	for i, proto in ipairs(protocols) do
+		local pb = Instance.new("TextButton")
+		pb.Size = UDim2.new(0, 75, 0, 24)
+		pb.BackgroundColor3 = proto.id == selectedProtocol and proto.color or COLORS.panel
+		pb.BorderSizePixel = 0
+		pb.Text = proto.label
+		pb.TextColor3 = COLORS.textPrimary
+		pb.Font = Enum.Font.GothamBold
+		pb.TextSize = 10
+		pb.LayoutOrder = i
+		pb.Parent = protoFrame
+		addCorner(pb, 4)
+		protoBtns[proto.id] = {btn = pb, color = proto.color}
+		pb.MouseButton1Click:Connect(function()
+			selectedProtocol = proto.id
+			for pid, data in pairs(protoBtns) do
+				data.btn.BackgroundColor3 = pid == selectedProtocol and data.color or COLORS.panel
+			end
+		end)
+	end
+
+	createButton(tab, "Show Announcement (Local Display)", o(), function()
+		showCustomAnnouncement(announcementText, selectedProtocol, 8)
+		notify("Announce", "Announcement displayed on your screen!")
 	end)
 
-	createButton(tab, "Fire Announcement Remotes (All Services)", o(), function()
+	createButton(tab, "Fire Announcement Remotes (Server)", o(), function()
 		local sent = 0
 		local searchContainers = {}
 		pcall(function() table.insert(searchContainers, game:GetService("ReplicatedStorage")) end)
 		pcall(function() table.insert(searchContainers, game:GetService("ReplicatedFirst")) end)
 		pcall(function() table.insert(searchContainers, workspace) end)
-		local terms = {"announce", "broadcast", "alert", "transmission", "static", "send", "facility_alert", "notification"}
+		local terms = {"announce", "broadcast", "alert", "transmission", "static",
+			"facility_alert", "notification", "message", "pirate"}
 		for _, container in ipairs(searchContainers) do
 			pcall(function()
 				for _, obj in ipairs(container:GetDescendants()) do
-					if obj:IsA("RemoteEvent") then
+					if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
 						local n = obj.Name:lower()
 						for _, term in ipairs(terms) do
 							if n:find(term) then
-								obj:FireServer(announcementText)
+								-- Try multiple arg formats the game might expect
+								pcall(function() obj:FireServer(announcementText) end)
+								pcall(function() obj:FireServer(announcementText, selectedProtocol) end)
+								pcall(function() obj:FireServer({message = announcementText, protocol = selectedProtocol}) end)
 								sent = sent + 1
 								print("[SX NBTF] Fired: " .. obj:GetFullName())
 								break
@@ -2080,8 +2197,69 @@ do
 				end
 			end)
 		end
-		notify("Announce", "Fired " .. sent .. " remotes")
+		-- Also show locally as fallback
+		showCustomAnnouncement(announcementText, selectedProtocol, 8)
+		notify("Announce", "Fired " .. sent .. " remotes + shown locally")
 	end)
+
+	createButton(tab, "TP to Broadcast Room", o(), function()
+		local char = LocalPlayer.Character
+		if not char then return end
+		local searchTerms = {"broadcast", "broadcasting", "announc", "alert room",
+			"control room", "control tablet", "facility control"}
+		local found = nil
+		for _, obj in ipairs(workspace:GetChildren()) do
+			local n = obj.Name:lower()
+			for _, term in ipairs(searchTerms) do
+				if n:find(term, 1, true) then found = obj break end
+			end
+			if found then break end
+			if obj:IsA("Model") or obj:IsA("Folder") then
+				pcall(function()
+					for _, child in ipairs(obj:GetChildren()) do
+						if found then return end
+						local cn = child.Name:lower()
+						for _, term in ipairs(searchTerms) do
+							if cn:find(term, 1, true) then found = child return end
+						end
+						if child:IsA("Model") or child:IsA("Folder") then
+							for _, gc in ipairs(child:GetChildren()) do
+								if found then return end
+								local gn = gc.Name:lower()
+								for _, term in ipairs(searchTerms) do
+									if gn:find(term, 1, true) then found = gc return end
+								end
+							end
+						end
+					end
+				end)
+			end
+			if found then break end
+		end
+		if found then
+			local pos = getLocationPosition(found)
+			if pos then
+				char:PivotTo(CFrame.new(pos))
+				notify("Teleport", "Found: " .. found.Name)
+				return
+			end
+		end
+		-- Fallback: try SCC (where broadcast center is typically located)
+		local scc = findLocationByName("SCC") or findLocationByName("Strategic")
+		if scc then
+			local pos = getLocationPosition(scc)
+			if pos then
+				char:PivotTo(CFrame.new(pos))
+				notify("Teleport", "TP to SCC (Broadcast Room is nearby)")
+				return
+			end
+		end
+		notify("Error", "Broadcast Room not found - try SCC area")
+	end)
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "GUI & Remote Debug", o())
 
 	createButton(tab, "Force Show ALL Hidden GUIs", o(), function()
 		local count = 0
@@ -2094,26 +2272,44 @@ do
 				end
 			end
 		end)
-		-- Also check ReplicatedStorage for clonable GUIs
+		-- Also unhide all frames inside enabled GUIs
 		pcall(function()
-			local RS = game:GetService("ReplicatedStorage")
-			for _, obj in ipairs(RS:GetDescendants()) do
-				if obj:IsA("ScreenGui") then
-					local n = obj.Name:lower()
-					if n:find("announce") or n:find("alert") or n:find("broadcast") then
-						local clone = obj:Clone()
-						clone.Parent = LocalPlayer.PlayerGui
-						clone.Enabled = true
-						count = count + 1
-						print("[SX NBTF] Cloned: " .. obj:GetFullName())
+			for _, gui in ipairs(LocalPlayer.PlayerGui:GetChildren()) do
+				if gui:IsA("ScreenGui") then
+					for _, desc in ipairs(gui:GetDescendants()) do
+						if (desc:IsA("Frame") or desc:IsA("TextButton") or desc:IsA("ImageButton")) and not desc.Visible then
+							desc.Visible = true
+							count = count + 1
+						end
 					end
 				end
 			end
 		end)
-		notify("GUIs", "Enabled/cloned " .. count .. " GUIs")
+		-- Clone announcement GUIs from ReplicatedStorage/StarterGui
+		local cloneContainers = {}
+		pcall(function() table.insert(cloneContainers, game:GetService("ReplicatedStorage")) end)
+		pcall(function() table.insert(cloneContainers, game:GetService("StarterGui")) end)
+		for _, container in ipairs(cloneContainers) do
+			pcall(function()
+				for _, obj in ipairs(container:GetDescendants()) do
+					if obj:IsA("ScreenGui") then
+						local n = obj.Name:lower()
+						if n:find("announce") or n:find("alert") or n:find("broadcast")
+							or n:find("transmission") or n:find("tablet") or n:find("control") then
+							local clone = obj:Clone()
+							clone.Parent = LocalPlayer.PlayerGui
+							clone.Enabled = true
+							count = count + 1
+							print("[SX NBTF] Cloned: " .. obj:GetFullName())
+						end
+					end
+				end
+			end)
+		end
+		notify("GUIs", "Enabled/unhidden/cloned " .. count .. " elements")
 	end)
 
-	createButton(tab, "Scan ALL GUIs (F9 Debug Dump)", o(), function()
+	createButton(tab, "Dump ALL GUIs to F9", o(), function()
 		pcall(function()
 			print("=== FULL GUI SCAN ===")
 			local containers = {
@@ -2125,11 +2321,11 @@ do
 			for _, c in ipairs(containers) do
 				print("--- " .. c.name .. " ---")
 				for _, gui in ipairs(c.obj:GetDescendants()) do
-					if gui:IsA("ScreenGui") or gui:IsA("Frame") then
+					if gui:IsA("ScreenGui") or gui:IsA("Frame") or gui:IsA("TextButton") then
 						local vis = ""
 						if gui:IsA("ScreenGui") then
 							vis = gui.Enabled and "ENABLED" or "disabled"
-						elseif gui:IsA("Frame") then
+						else
 							vis = gui.Visible and "VISIBLE" or "hidden"
 						end
 						print(vis .. " | " .. gui.ClassName .. ": " .. gui:GetFullName())
@@ -2141,7 +2337,7 @@ do
 		notify("Debug", "Full GUI scan printed to F9 console")
 	end)
 
-	createButton(tab, "List All Remotes (F9 console)", o(), function()
+	createButton(tab, "List All Remotes (F9)", o(), function()
 		pcall(function()
 			print("=== ALL REMOTES ===")
 			local containers = {}
