@@ -2096,10 +2096,213 @@ do
 	createSpacer(tab, o())
 
 	createSectionLabel(tab, "Announcement System", o())
-	createInfoLabel(tab, "Real GUI requires Council Exec/Director or Raid Leader gamepass", o())
-	createInfoLabel(tab, "This creates a replica + tries firing server remotes", o())
+	createInfoLabel(tab, "TP to Broadcast Room + auto-fire the console prompt to open GUI", o())
+	createInfoLabel(tab, "Uses noclip to bypass keycard door", o())
 
-	-- Announcement text input
+	createButton(tab, "TP to Broadcast Room + Open Console", o(), function()
+		local char = LocalPlayer.Character
+		if not char then return end
+
+		-- Enable noclip temporarily to get through keycard doors
+		local tempNoclip = RunService.Stepped:Connect(function()
+			pcall(function()
+				if not char then return end
+				for _, part in ipairs(char:GetDescendants()) do
+					if part:IsA("BasePart") then part.CanCollide = false end
+				end
+			end)
+		end)
+
+		-- Search for broadcast/announcement room
+		local searchTerms = {"broadcast", "broadcasting", "announc", "alert room",
+			"alert system", "static alert", "control room", "control tablet",
+			"facility control", "announcement center", "pirate transmission"}
+		local found = nil
+		for _, obj in ipairs(workspace:GetDescendants()) do
+			if found then break end
+			pcall(function()
+				local n = obj.Name:lower()
+				for _, term in ipairs(searchTerms) do
+					if n:find(term, 1, true) then
+						if obj:IsA("BasePart") or obj:IsA("Model") then
+							found = obj
+						end
+						return
+					end
+				end
+			end)
+		end
+
+		-- Fallback: try SCC area
+		if not found then
+			found = findLocationByName("SCC") or findLocationByName("Strategic") or findLocationByName("Executive")
+		end
+
+		if found then
+			local pos = getLocationPosition(found)
+			if not pos and found:IsA("BasePart") then pos = found.Position + Vector3.new(0, 3, 0) end
+			if pos then
+				char:PivotTo(CFrame.new(pos))
+				notify("Teleport", "TP to: " .. found.Name .. " - looking for console...")
+			end
+		else
+			notify("Error", "Broadcast Room not found - use Print Workspace Names")
+		end
+
+		-- Wait a moment then search for ProximityPrompts and ClickDetectors nearby
+		task.wait(0.5)
+
+		-- Fire ALL ProximityPrompts within 50 studs
+		local hrp = getRoot()
+		local promptsFired = 0
+		if hrp then
+			for _, obj in ipairs(workspace:GetDescendants()) do
+				pcall(function()
+					if obj:IsA("ProximityPrompt") then
+						local promptPart = obj.Parent
+						if promptPart and promptPart:IsA("BasePart") then
+							local dist = (promptPart.Position - hrp.Position).Magnitude
+							if dist < 50 then
+								-- Fire the prompt
+								local oldHold = obj.HoldDuration
+								local oldDist = obj.MaxActivationDistance
+								obj.MaxActivationDistance = 100
+								obj.HoldDuration = 0
+								-- Try multiple methods to fire
+								pcall(function()
+									if fireproximityprompt then
+										fireproximityprompt(obj)
+									end
+								end)
+								pcall(function()
+									obj:InputHoldBegin()
+									task.wait(0.1)
+									obj:InputHoldEnd()
+								end)
+								obj.MaxActivationDistance = oldDist
+								obj.HoldDuration = oldHold
+								promptsFired = promptsFired + 1
+								print("[SX NBTF] Fired prompt: " .. obj.Parent.Name .. " (" .. math.floor(dist) .. "m)")
+							end
+						end
+					elseif obj:IsA("ClickDetector") then
+						local detPart = obj.Parent
+						if detPart and detPart:IsA("BasePart") then
+							local dist = (detPart.Position - hrp.Position).Magnitude
+							if dist < 50 then
+								pcall(function()
+									if fireclickdetector then
+										fireclickdetector(obj)
+									end
+								end)
+								promptsFired = promptsFired + 1
+								print("[SX NBTF] Fired click detector: " .. obj.Parent.Name .. " (" .. math.floor(dist) .. "m)")
+							end
+						end
+					end
+				end)
+			end
+		end
+
+		-- Disable temp noclip after 3 seconds
+		task.delay(3, function()
+			pcall(function() tempNoclip:Disconnect() end)
+		end)
+
+		if promptsFired > 0 then
+			notify("Announce", "Fired " .. promptsFired .. " prompts - check your screen!")
+		else
+			notify("Announce", "No prompts found nearby - try walking up to the console")
+		end
+	end)
+
+	createButton(tab, "Fire ALL Nearby Prompts (within 30m)", o(), function()
+		local hrp = getRoot()
+		if not hrp then notify("Error", "No character") return end
+		local count = 0
+		for _, obj in ipairs(workspace:GetDescendants()) do
+			pcall(function()
+				if obj:IsA("ProximityPrompt") then
+					local promptPart = obj.Parent
+					if promptPart and promptPart:IsA("BasePart") then
+						local dist = (promptPart.Position - hrp.Position).Magnitude
+						if dist < 30 then
+							local oldHold = obj.HoldDuration
+							local oldDist = obj.MaxActivationDistance
+							obj.MaxActivationDistance = 100
+							obj.HoldDuration = 0
+							pcall(function()
+								if fireproximityprompt then fireproximityprompt(obj) end
+							end)
+							pcall(function()
+								obj:InputHoldBegin()
+								task.wait(0.1)
+								obj:InputHoldEnd()
+							end)
+							obj.MaxActivationDistance = oldDist
+							obj.HoldDuration = oldHold
+							count = count + 1
+							print("[SX NBTF] Fired: " .. obj.Parent.Name .. " [" .. (obj.ActionText ~= "" and obj.ActionText or obj.ObjectText) .. "]")
+						end
+					end
+				elseif obj:IsA("ClickDetector") then
+					local detPart = obj.Parent
+					if detPart and detPart:IsA("BasePart") then
+						local dist = (detPart.Position - hrp.Position).Magnitude
+						if dist < 30 then
+							pcall(function()
+								if fireclickdetector then fireclickdetector(obj) end
+							end)
+							count = count + 1
+							print("[SX NBTF] Fired click: " .. obj.Parent.Name)
+						end
+					end
+				end
+			end)
+		end
+		notify("Prompts", "Fired " .. count .. " nearby prompts/detectors")
+	end)
+
+	createButton(tab, "List ALL Prompts Near You (F9)", o(), function()
+		local hrp = getRoot()
+		if not hrp then notify("Error", "No character") return end
+		print("=== PROMPTS WITHIN 100m ===")
+		local count = 0
+		for _, obj in ipairs(workspace:GetDescendants()) do
+			pcall(function()
+				if obj:IsA("ProximityPrompt") then
+					local promptPart = obj.Parent
+					if promptPart and promptPart:IsA("BasePart") then
+						local dist = (promptPart.Position - hrp.Position).Magnitude
+						if dist < 100 then
+							count = count + 1
+							print(math.floor(dist) .. "m | " .. obj.Parent:GetFullName()
+								.. " | Action: " .. obj.ActionText
+								.. " | Object: " .. obj.ObjectText
+								.. " | Enabled: " .. tostring(obj.Enabled)
+								.. " | Hold: " .. tostring(obj.HoldDuration) .. "s")
+						end
+					end
+				elseif obj:IsA("ClickDetector") then
+					local detPart = obj.Parent
+					if detPart and detPart:IsA("BasePart") then
+						local dist = (detPart.Position - hrp.Position).Magnitude
+						if dist < 100 then
+							count = count + 1
+							print(math.floor(dist) .. "m | ClickDetector: " .. obj.Parent:GetFullName())
+						end
+					end
+				end
+			end)
+		end
+		print("=== " .. count .. " PROMPTS FOUND ===")
+		notify("Debug", count .. " prompts/detectors printed to F9")
+	end)
+
+	createSpacer(tab, o())
+
+	-- Keep the custom announcement for fun / local display
+	createSectionLabel(tab, "Custom Announcement (Local Only)", o())
 	local announcementText = "Alert: All personnel report to SCC immediately"
 	local announceTB = Instance.new("TextBox")
 	announceTB.Size = UDim2.new(1, 0, 0, 28)
@@ -2123,9 +2326,7 @@ do
 		announcementText = announceTB.Text
 	end)
 
-	-- Protocol selector
 	local selectedProtocol = "alert"
-	createInfoLabel(tab, "Protocol: Yellow=Alert, Red=Lockdown, Black=Core, Blue=Normal", o())
 	local protoFrame = Instance.new("Frame")
 	protoFrame.Size = UDim2.new(1, 0, 0, 26)
 	protoFrame.BackgroundTransparency = 1
@@ -2135,7 +2336,6 @@ do
 	protoLayout.FillDirection = Enum.FillDirection.Horizontal
 	protoLayout.Padding = UDim.new(0, 4)
 	protoLayout.Parent = protoFrame
-
 	local protoBtns = {}
 	local protocols = {
 		{id = "normal", label = "Normal", color = Color3.fromRGB(50, 130, 255)},
@@ -2163,98 +2363,8 @@ do
 			end
 		end)
 	end
-
-	createButton(tab, "Show Announcement (Local Display)", o(), function()
+	createButton(tab, "Show Local Announcement", o(), function()
 		showCustomAnnouncement(announcementText, selectedProtocol, 8)
-		notify("Announce", "Announcement displayed on your screen!")
-	end)
-
-	createButton(tab, "Fire Announcement Remotes (Server)", o(), function()
-		local sent = 0
-		local searchContainers = {}
-		pcall(function() table.insert(searchContainers, game:GetService("ReplicatedStorage")) end)
-		pcall(function() table.insert(searchContainers, game:GetService("ReplicatedFirst")) end)
-		pcall(function() table.insert(searchContainers, workspace) end)
-		local terms = {"announce", "broadcast", "alert", "transmission", "static",
-			"facility_alert", "notification", "message", "pirate"}
-		for _, container in ipairs(searchContainers) do
-			pcall(function()
-				for _, obj in ipairs(container:GetDescendants()) do
-					if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-						local n = obj.Name:lower()
-						for _, term in ipairs(terms) do
-							if n:find(term) then
-								-- Try multiple arg formats the game might expect
-								pcall(function() obj:FireServer(announcementText) end)
-								pcall(function() obj:FireServer(announcementText, selectedProtocol) end)
-								pcall(function() obj:FireServer({message = announcementText, protocol = selectedProtocol}) end)
-								sent = sent + 1
-								print("[SX NBTF] Fired: " .. obj:GetFullName())
-								break
-							end
-						end
-					end
-				end
-			end)
-		end
-		-- Also show locally as fallback
-		showCustomAnnouncement(announcementText, selectedProtocol, 8)
-		notify("Announce", "Fired " .. sent .. " remotes + shown locally")
-	end)
-
-	createButton(tab, "TP to Broadcast Room", o(), function()
-		local char = LocalPlayer.Character
-		if not char then return end
-		local searchTerms = {"broadcast", "broadcasting", "announc", "alert room",
-			"control room", "control tablet", "facility control"}
-		local found = nil
-		for _, obj in ipairs(workspace:GetChildren()) do
-			local n = obj.Name:lower()
-			for _, term in ipairs(searchTerms) do
-				if n:find(term, 1, true) then found = obj break end
-			end
-			if found then break end
-			if obj:IsA("Model") or obj:IsA("Folder") then
-				pcall(function()
-					for _, child in ipairs(obj:GetChildren()) do
-						if found then return end
-						local cn = child.Name:lower()
-						for _, term in ipairs(searchTerms) do
-							if cn:find(term, 1, true) then found = child return end
-						end
-						if child:IsA("Model") or child:IsA("Folder") then
-							for _, gc in ipairs(child:GetChildren()) do
-								if found then return end
-								local gn = gc.Name:lower()
-								for _, term in ipairs(searchTerms) do
-									if gn:find(term, 1, true) then found = gc return end
-								end
-							end
-						end
-					end
-				end)
-			end
-			if found then break end
-		end
-		if found then
-			local pos = getLocationPosition(found)
-			if pos then
-				char:PivotTo(CFrame.new(pos))
-				notify("Teleport", "Found: " .. found.Name)
-				return
-			end
-		end
-		-- Fallback: try SCC (where broadcast center is typically located)
-		local scc = findLocationByName("SCC") or findLocationByName("Strategic")
-		if scc then
-			local pos = getLocationPosition(scc)
-			if pos then
-				char:PivotTo(CFrame.new(pos))
-				notify("Teleport", "TP to SCC (Broadcast Room is nearby)")
-				return
-			end
-		end
-		notify("Error", "Broadcast Room not found - try SCC area")
 	end)
 
 	createSpacer(tab, o())
