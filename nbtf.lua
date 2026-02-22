@@ -2008,27 +2008,39 @@ do
 	local function o() n = n + 1 return n end
 
 	createSectionLabel(tab, "Secret / Special Locations", o())
-	createButton(tab, "TP: Secret Mod Room / Regular Lounge", o(), function()
+	createButton(tab, "TP: Mod Room / Regular Lounge", o(), function()
 		local char = LocalPlayer.Character
 		if not char then return end
-		-- Search workspace for the mod room / regular lounge / secret area
-		local searchTerms = {"secret", "mod room", "regular lounge", "lounge", "modroom", "secretarea"}
+		local searchTerms = {
+			"secret", "mod room", "regular lounge", "lounge", "modroom",
+			"secretarea", "secret area", "regularlounge", "hidden",
+			"canyon", "mod_room", "moderator"
+		}
 		local found = nil
+		-- Search workspace 3 levels deep
 		for _, obj in ipairs(workspace:GetChildren()) do
 			local n = obj.Name:lower()
 			for _, term in ipairs(searchTerms) do
 				if n:find(term, 1, true) then found = obj break end
 			end
 			if found then break end
-			-- Check one level deep
 			if obj:IsA("Model") or obj:IsA("Folder") then
 				pcall(function()
 					for _, child in ipairs(obj:GetChildren()) do
+						if found then return end
 						local cn = child.Name:lower()
 						for _, term in ipairs(searchTerms) do
-							if cn:find(term, 1, true) then found = child break end
+							if cn:find(term, 1, true) then found = child return end
 						end
-						if found then break end
+						if (child:IsA("Model") or child:IsA("Folder")) then
+							for _, gc in ipairs(child:GetChildren()) do
+								if found then return end
+								local gn = gc.Name:lower()
+								for _, term in ipairs(searchTerms) do
+									if gn:find(term, 1, true) then found = gc return end
+								end
+							end
+						end
 					end
 				end)
 			end
@@ -2038,9 +2050,9 @@ do
 			local pos = nil
 			if found:IsA("Model") then
 				local pp = found.PrimaryPart or found:FindFirstChildWhichIsA("BasePart")
-				if pp then pos = pp.Position + Vector3.new(0, 5, 0) end
+				if pp then pos = pp.Position + Vector3.new(0, 3, 0) end
 			elseif found:IsA("BasePart") then
-				pos = found.Position + Vector3.new(0, 5, 0)
+				pos = found.Position + Vector3.new(0, 3, 0)
 			end
 			if pos then
 				char:PivotTo(CFrame.new(pos))
@@ -2048,17 +2060,42 @@ do
 				return
 			end
 		end
-		-- Fallback: search for Maintenance (mod room is behind it)
+		-- Fallback: try Maintenance
 		local maint = findLocationByName("Maintenance")
 		if maint then
 			local pos = getLocationPosition(maint)
 			if pos then
 				char:PivotTo(CFrame.new(pos))
-				notify("Teleport", "TP to Maintenance (Mod Room is behind it on canyon wall)")
+				notify("Teleport", "TP to Maintenance (Mod Room behind it on canyon wall)")
 				return
 			end
 		end
-		notify("Error", "Could not find Mod Room or Maintenance in workspace")
+		notify("Error", "Not found - click 'Print Workspace Names' and check F9")
+	end)
+	createButton(tab, "Print Workspace Names (F9)", o(), function()
+		pcall(function()
+			print("=== Workspace Top-Level ===")
+			for _, obj in ipairs(workspace:GetChildren()) do
+				local info = obj.ClassName .. ": " .. obj.Name
+				if obj:IsA("BasePart") then
+					info = info .. " @ " .. tostring(obj.Position)
+				end
+				print(info)
+				if obj:IsA("Model") or obj:IsA("Folder") then
+					for _, child in ipairs(obj:GetChildren()) do
+						if child:IsA("Model") or child:IsA("Folder") or child:IsA("BasePart") then
+							local cinfo = "  " .. child.ClassName .. ": " .. child.Name
+							if child:IsA("BasePart") then
+								cinfo = cinfo .. " @ " .. tostring(child.Position)
+							end
+							print(cinfo)
+						end
+					end
+				end
+			end
+			print("=== End ===")
+		end)
+		notify("Debug", "Workspace names printed to F9 console")
 	end)
 	createInfoLabel(tab, "Behind Maintenance Offices on the Canyon Wall", o())
 
