@@ -1,7 +1,8 @@
 -- ================================================================
--- Synapse X The Revival - Elected Admin Hub v1.0
--- Auto Mine | Admin Commands | Grid-Free Build | Sign Editor
--- Player Control | Teleports | ESP | Anti-Jail | Trolling
+-- Synapse X The Revival - Elected Admin Hub v1.1
+-- Tool-Based Mining | Admin Commands | Building | Sign Editor
+-- Player Control | Teleports | ESP | Anti-Jail | Remote Spy
+-- Game uses Red networking (ReliableRedEvent) + ReplicaService
 -- ================================================================
 
 -- Cleanup old instance
@@ -27,54 +28,86 @@ local LocalPlayer = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
 -- ===================== REMOTES =====================
-local MineEvent = nil
-local EditSignEvent = nil
-local BuildEvent = nil
+-- This game uses Red networking library (ReliableRedEvent) for all game actions
+-- and ReplicaService for state replication. There are NO individual MineEvent/BuildEvent/EditSignEvent remotes.
+local RedEvent = nil -- ReplicatedStorage.ReliableRedEvent (main networking)
 local ChatRemote = nil
 
--- Step 1: Try the known path ReplicatedStorage.Remotes
+-- Find the Red networking event
 pcall(function()
-	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-	if remotes then
-		MineEvent = remotes:FindFirstChild("MineEvent")
-		EditSignEvent = remotes:FindFirstChild("EditSignEvent")
-		BuildEvent = remotes:FindFirstChild("BuildEvent")
-	end
+	RedEvent = ReplicatedStorage:FindFirstChild("ReliableRedEvent")
 end)
-
--- Step 2: Deep search for any missing remotes (search ALL descendants)
-pcall(function()
-	for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
-		local n = obj.Name:lower()
-		local isRE = obj:IsA("RemoteEvent")
-		local isRF = obj:IsA("RemoteFunction")
-		if not MineEvent and (isRE or isRF) and n:find("mine") then
-			MineEvent = obj
-		end
-		if not EditSignEvent and (isRE or isRF) and (n:find("editsign") or n:find("sign")) then
-			EditSignEvent = obj
-		end
-		if not BuildEvent and (isRE or isRF) and n:find("build") then
-			BuildEvent = obj
-		end
-	end
-end)
-
--- Step 3: Print all remotes to F9 so user can see what exists
-print("[SX Elected] === REMOTE SCAN ===")
-pcall(function()
-	for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
-		if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") or obj:IsA("BindableEvent") then
-			print("[SX Elected]   [" .. obj.ClassName .. "] " .. obj:GetFullName())
-		end
-	end
-end)
-print("[SX Elected] === END SCAN ===")
 
 pcall(function()
 	local chatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
 	if chatEvents then ChatRemote = chatEvents:FindFirstChild("SayMessageRequest") end
 end)
+
+-- ===================== REMOTE SPY =====================
+-- Hooks FireServer/InvokeServer to log all remote traffic to F9
+-- This lets the user see what remotes the game actually fires when mining/building/etc.
+local remoteSpyActive = false
+local remoteSpyHooks = {}
+
+local function startRemoteSpy()
+	remoteSpyActive = true
+	print("[SX Elected] === REMOTE SPY STARTED ===")
+	print("[SX Elected] Perform actions in-game (mine, build, edit sign) and watch F9")
+
+	pcall(function()
+		if hookfunction and getnamecallmethod then
+			-- Hook __namecall for FireServer/InvokeServer
+			local oldNamecall
+			oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+				local method = getnamecallmethod()
+				if remoteSpyActive and (method == "FireServer" or method == "InvokeServer") then
+					local args = {...}
+					local argsStr = ""
+					for i, arg in ipairs(args) do
+						local s = tostring(arg)
+						if typeof(arg) == "table" then
+							pcall(function()
+								local parts = {}
+								for k, v in pairs(arg) do
+									table.insert(parts, tostring(k) .. "=" .. tostring(v))
+								end
+								s = "{" .. table.concat(parts, ", ") .. "}"
+							end)
+						end
+						argsStr = argsStr .. (i > 1 and ", " or "") .. s
+					end
+					print("[SPY] " .. method .. " " .. self:GetFullName() .. "(" .. argsStr .. ")")
+				end
+				return oldNamecall(self, ...)
+			end)
+			table.insert(remoteSpyHooks, function()
+				-- Can't easily unhook, so just disable via flag
+			end)
+		else
+			warn("[SX Elected] hookmetamethod not available - using basic spy")
+			-- Fallback: connect to known events
+			if RedEvent then
+				local conn = RedEvent.OnClientEvent:Connect(function(...)
+					if remoteSpyActive then
+						local args = {...}
+						print("[SPY-IN] ReliableRedEvent received: " .. #args .. " args")
+						for i, arg in ipairs(args) do
+							print("  arg" .. i .. ": " .. typeof(arg) .. " = " .. tostring(arg))
+						end
+					end
+				end)
+				table.insert(remoteSpyHooks, function() conn:Disconnect() end)
+			end
+		end
+	end)
+end
+
+local function stopRemoteSpy()
+	remoteSpyActive = false
+	for _, cleanup in ipairs(remoteSpyHooks) do pcall(cleanup) end
+	remoteSpyHooks = {}
+	print("[SX Elected] === REMOTE SPY STOPPED ===")
+end
 
 -- TextChatService for modern chat
 local TextChatService = nil
@@ -249,59 +282,136 @@ local function sendAdminCmd(cmd)
 end
 
 -- ===================== AUTO MINE =====================
--- Fires MineEvent rapidly for infinite credits
--- The game grants 1 credit per fire (2x with pickaxe, 4x with silver pickaxe)
+-- Tool-based mining: equips pickaxe, TPs to Adminium, activates tool rapidly
+-- The game uses Red networking (ReliableRedEvent) - mining goes through the tool's LocalScript
+-- which fires the proper Red event when the tool is activated near Adminium
+
+local function findMiningTool()
+	-- Search backpack for any pickaxe/mining tool
+	local char = LocalPlayer.Character
+	local backpack = LocalPlayer:FindFirstChild("Backpack")
+	local searchNames = {"pickaxe", "pick", "mine", "axe", "hammer", "drill", "tool"}
+
+	-- Check equipped tools first
+	if char then
+		for _, tool in ipairs(char:GetChildren()) do
+			if tool:IsA("Tool") then
+				local n = tool.Name:lower()
+				for _, keyword in ipairs(searchNames) do
+					if n:find(keyword) then return tool end
+				end
+			end
+		end
+	end
+
+	-- Check backpack
+	if backpack then
+		for _, tool in ipairs(backpack:GetChildren()) do
+			if tool:IsA("Tool") then
+				local n = tool.Name:lower()
+				for _, keyword in ipairs(searchNames) do
+					if n:find(keyword) then return tool end
+				end
+			end
+		end
+	end
+
+	-- If no named mining tool found, return any tool from backpack
+	if backpack then
+		for _, tool in ipairs(backpack:GetChildren()) do
+			if tool:IsA("Tool") then return tool end
+		end
+	end
+	if char then
+		for _, tool in ipairs(char:GetChildren()) do
+			if tool:IsA("Tool") then return tool end
+		end
+	end
+
+	return nil
+end
+
+local function equipTool(tool)
+	if not tool then return end
+	local char = LocalPlayer.Character
+	local hum = getHumanoid()
+	if not char or not hum then return end
+
+	-- If tool is in backpack, equip it
+	if tool.Parent == LocalPlayer:FindFirstChild("Backpack") then
+		hum:EquipTool(tool)
+		task.wait(0.1)
+	end
+end
+
+local function findAdminium()
+	-- Search workspace for Adminium
+	local adminium = workspace:FindFirstChild("Adminium")
+	if adminium then return adminium end
+
+	-- Deep search
+	for _, obj in ipairs(workspace:GetDescendants()) do
+		if obj.Name:lower():find("adminium") and (obj:IsA("Model") or obj:IsA("BasePart")) then
+			return obj
+		end
+	end
+	return nil
+end
 
 local function startAutoMine()
 	autoMineActive = true
 
-	-- Try hard to find MineEvent
-	if not MineEvent then
-		pcall(function() MineEvent = ReplicatedStorage.Remotes.MineEvent end)
-	end
-	if not MineEvent then
-		-- Deep search all remotes for anything mine-related
-		pcall(function()
-			for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
-				if obj:IsA("RemoteEvent") and obj.Name:lower():find("mine") then
-					MineEvent = obj
-					print("[SX Elected] Found mine remote: " .. obj:GetFullName())
-					break
-				end
-			end
-		end)
-	end
-	if not MineEvent then
-		-- Print all remotes so user can identify the right one
-		print("[SX Elected] MineEvent NOT FOUND. All remotes in ReplicatedStorage:")
-		pcall(function()
-			for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
-				if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-					print("  [" .. obj.ClassName .. "] " .. obj:GetFullName())
-				end
-			end
-		end)
-		notify("Auto Mine", "MineEvent not found! Check F9 for remote list")
-	end
-
 	task.spawn(function()
+		local tool = findMiningTool()
+		if tool then
+			equipTool(tool)
+			print("[SX Elected] Mining with tool: " .. tool.Name)
+			notify("Auto Mine", "Mining with " .. tool.Name)
+		else
+			print("[SX Elected] No mining tool found - using click + ProximityPrompt only")
+			notify("Auto Mine", "No tool found - using prompts + clicks")
+		end
+
+		-- Find Adminium
+		local adminium = findAdminium()
+		if adminium then
+			print("[SX Elected] Found Adminium: " .. adminium:GetFullName())
+		else
+			print("[SX Elected] Adminium not found in workspace")
+		end
+
 		while autoMineActive do
 			pcall(function()
-				if MineEvent then
-					MineEvent:FireServer()
+				local char = LocalPlayer.Character
+				local hrp = getRoot()
+				local hum = getHumanoid()
+				if not char or not hrp or not hum then return end
+
+				-- Re-find adminium if needed
+				if not adminium or not adminium.Parent then
+					adminium = findAdminium()
 				end
-				-- Also fire the ProximityPrompt on Adminium
-				pcall(function()
-					local adminium = workspace:FindFirstChild("Adminium")
-					if adminium then fireAllPrompts(adminium) end
-				end)
+
+				-- Re-equip tool if it got unequipped
+				tool = findMiningTool()
+				if tool then equipTool(tool) end
+
+				-- Fire ProximityPrompts on Adminium (works from any distance with fireproximityprompt)
+				if adminium then
+					fireAllPrompts(adminium)
+				end
+
+				-- Activate the tool (triggers the tool's LocalScript mining logic)
+				if tool and tool.Parent == char then
+					pcall(function() tool:Activate() end)
+				end
+
+				-- Also simulate a click
+				mouse1click()
 			end)
 			task.wait(mineSpeed)
 		end
 	end)
-	if MineEvent then
-		notify("Auto Mine", "Mining! Remote: " .. MineEvent:GetFullName())
-	end
 end
 
 local function stopAutoMine()
@@ -371,100 +481,227 @@ local function adminPlane(target) sendAdminCmd(";plane " .. target) end
 local function adminDrone(target) sendAdminCmd(";drone " .. target) end
 
 -- ===================== SIGN EDITOR =====================
--- Bulk edit all signs you own
+-- Signs in Elected use the Red networking library (ReliableRedEvent)
+-- Method 1: Fire ProximityPrompts on signs to open edit UI, then modify
+-- Method 2: Find sign SurfaceGui TextLabels and try to trigger edit via tool interaction
+-- Method 3: TP to each sign, fire prompt, interact with edit GUI
 
-local function editAllSigns(newText)
-	if not EditSignEvent then
-		notify("Error", "EditSignEvent not found!")
-		return
-	end
-
-	local count = 0
+local function findSigns(ownerOnly)
+	local signs = {}
 	local blocks = workspace:FindFirstChild("Blocks")
-	if not blocks then
-		notify("Error", "No blocks folder found!")
-		return
-	end
+	if not blocks then return signs end
 
 	for _, block in ipairs(blocks:GetDescendants()) do
 		pcall(function()
-			if block:GetAttribute("Builder") == LocalPlayer.Name then
-				-- Check if it's a sign type
-				local name = block.Name:lower()
-				if name:find("sign") or name:find("image") or name:find("speaker") then
-					EditSignEvent:FireServer(block, newText)
-					count = count + 1
+			local name = block.Name:lower()
+			local isSign = name:find("sign") or name:find("image") or name:find("speaker")
+			if isSign and (block:IsA("BasePart") or block:IsA("Model")) then
+				if ownerOnly then
+					local builder = nil
+					pcall(function() builder = block:GetAttribute("Builder") end)
+					if builder == LocalPlayer.Name then
+						table.insert(signs, block)
+					end
+				else
+					table.insert(signs, block)
+				end
+			end
+		end)
+	end
+	return signs
+end
+
+local function editSignViaPrompt(sign)
+	-- Fire any ProximityPrompt on the sign to trigger edit UI
+	local fired = false
+	pcall(function()
+		for _, desc in ipairs(sign:GetDescendants()) do
+			if desc:IsA("ProximityPrompt") then
+				local oldHold = desc.HoldDuration
+				local oldDist = desc.MaxActivationDistance
+				desc.HoldDuration = 0
+				desc.MaxActivationDistance = 9999
+				pcall(function() if fireproximityprompt then fireproximityprompt(desc) fired = true end end)
+				pcall(function() desc:InputHoldBegin() task.wait(0.05) desc:InputHoldEnd() fired = true end)
+				desc.HoldDuration = oldHold
+				desc.MaxActivationDistance = oldDist
+			end
+		end
+	end)
+
+	-- Also try clicking on it
+	if not fired then
+		pcall(function()
+			for _, desc in ipairs(sign:GetDescendants()) do
+				if desc:IsA("ClickDetector") then
+					pcall(function() fireclickdetector(desc) fired = true end)
 				end
 			end
 		end)
 	end
 
-	notify("Signs", "Edited " .. count .. " sign(s)")
+	return fired
 end
 
--- Edit ALL signs in the game (not just yours - may not work if server validates)
-local function editAllSignsGlobal(newText)
-	if not EditSignEvent then return end
-	local count = 0
-	local blocks = workspace:FindFirstChild("Blocks")
-	if not blocks then return end
-
-	for _, block in ipairs(blocks:GetDescendants()) do
-		pcall(function()
-			local name = block.Name:lower()
-			if name:find("sign") or name:find("image") or name:find("speaker") then
-				EditSignEvent:FireServer(block, newText)
-				count = count + 1
-			end
-		end)
-	end
-	notify("Signs", "Attempted to edit " .. count .. " signs globally")
-end
-
--- ===================== GRID-FREE BUILD =====================
--- Bypasses the BuildingTool grid system
--- Places blocks at arbitrary positions using the BuildEvent RemoteFunction
-
-local function placeBlockAt(cframe, blockName)
-	if not BuildEvent then
-		notify("Error", "BuildEvent not found!")
+local function editAllSigns(newText)
+	local signs = findSigns(true) -- owner only
+	if #signs == 0 then
+		notify("Signs", "No signs found that belong to you")
 		return
 	end
 
-	pcall(function()
-		local template = nil
-		local blocksFolder = ReplicatedStorage:FindFirstChild("Blocks")
-		if blocksFolder then
-			template = blocksFolder:FindFirstChild(blockName)
-		end
-		if not template then
-			notify("Error", "Block template '" .. blockName .. "' not found!")
-			return
-		end
+	local count = 0
+	local char = LocalPlayer.Character
+	local hrp = getRoot()
+	if not char or not hrp then return end
+	local savedCF = hrp.CFrame
 
-		-- Need a nearby block reference - find closest placed block
-		local hrp = getRoot()
-		if not hrp then return end
+	notify("Signs", "Editing " .. #signs .. " signs...")
 
-		local nearestBlock = nil
-		local nearestDist = math.huge
-		local wBlocks = workspace:FindFirstChild("Blocks")
-		if wBlocks then
-			for _, b in ipairs(wBlocks:GetChildren()) do
-				pcall(function()
-					if b:IsA("BasePart") then
-						local d = (b.Position - hrp.Position).Magnitude
-						if d < nearestDist then
-							nearestBlock = b
-							nearestDist = d
+	task.spawn(function()
+		for _, sign in ipairs(signs) do
+			pcall(function()
+				-- TP to sign, fire prompt, TP back
+				local cf = getItemCFrame(sign)
+				if cf then
+					char:PivotTo(cf + Vector3.new(0, 2, 0))
+					task.wait(0.1)
+					editSignViaPrompt(sign)
+					task.wait(0.2)
+
+					-- Try to find and fill the sign edit GUI that opened
+					local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+					if playerGui then
+						for _, gui in ipairs(playerGui:GetDescendants()) do
+							pcall(function()
+								if gui:IsA("TextBox") and gui.Visible then
+									gui.Text = newText
+									-- Try to confirm/submit
+									pcall(function() gui:ReleaseFocus(true) end)
+								end
+							end)
 						end
 					end
-				end)
+
+					char:PivotTo(savedCF)
+					count = count + 1
+				end
+			end)
+			task.wait(0.3)
+		end
+		notify("Signs", "Interacted with " .. count .. " sign(s)")
+	end)
+end
+
+local function editAllSignsGlobal(newText)
+	local signs = findSigns(false) -- all signs
+	if #signs == 0 then
+		notify("Signs", "No signs found")
+		return
+	end
+
+	local count = 0
+	local char = LocalPlayer.Character
+	local hrp = getRoot()
+	if not char or not hrp then return end
+	local savedCF = hrp.CFrame
+
+	notify("Signs", "Attempting " .. #signs .. " signs globally...")
+
+	task.spawn(function()
+		for _, sign in ipairs(signs) do
+			pcall(function()
+				local cf = getItemCFrame(sign)
+				if cf then
+					char:PivotTo(cf + Vector3.new(0, 2, 0))
+					task.wait(0.1)
+					editSignViaPrompt(sign)
+					task.wait(0.2)
+
+					local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+					if playerGui then
+						for _, gui in ipairs(playerGui:GetDescendants()) do
+							pcall(function()
+								if gui:IsA("TextBox") and gui.Visible then
+									gui.Text = newText
+									pcall(function() gui:ReleaseFocus(true) end)
+								end
+							end)
+						end
+					end
+
+					char:PivotTo(savedCF)
+					count = count + 1
+				end
+			end)
+			task.wait(0.3)
+		end
+		notify("Signs", "Attempted " .. count .. " signs globally")
+	end)
+end
+
+-- ===================== BUILDING SYSTEM =====================
+-- Building in Elected works through the BuildingTool + Red networking
+-- The client-side tool handles placement and sends data via ReliableRedEvent
+-- We interact with the building system by:
+-- 1. Equipping the building tool
+-- 2. Selecting blocks through the tool's UI
+-- 3. Activating at positions
+
+local function findBuildingTool()
+	local char = LocalPlayer.Character
+	local backpack = LocalPlayer:FindFirstChild("Backpack")
+	local searchNames = {"build", "place", "hammer", "wrench"}
+
+	-- Check equipped
+	if char then
+		for _, tool in ipairs(char:GetChildren()) do
+			if tool:IsA("Tool") then
+				local n = tool.Name:lower()
+				for _, keyword in ipairs(searchNames) do
+					if n:find(keyword) then return tool end
+				end
 			end
 		end
+	end
 
-		BuildEvent:InvokeServer(cframe, template, nearestBlock)
-	end)
+	-- Check backpack
+	if backpack then
+		for _, tool in ipairs(backpack:GetChildren()) do
+			if tool:IsA("Tool") then
+				local n = tool.Name:lower()
+				for _, keyword in ipairs(searchNames) do
+					if n:find(keyword) then return tool end
+				end
+			end
+		end
+	end
+
+	return nil
+end
+
+local function placeBlockAt(cframe, blockName)
+	-- Try to use ReliableRedEvent directly if we can figure out the format
+	-- Otherwise, use the building tool
+	local tool = findBuildingTool()
+	if tool then
+		equipTool(tool)
+		task.wait(0.1)
+		-- The building tool places blocks where you click
+		-- We move the character to the position and activate the tool
+		local char = LocalPlayer.Character
+		if char then
+			local savedCF = char:GetPivot()
+			char:PivotTo(cframe)
+			task.wait(0.05)
+			pcall(function() tool:Activate() end)
+			mouse1click()
+			task.wait(0.05)
+			char:PivotTo(savedCF)
+		end
+	else
+		notify("Error", "No building tool found! Equip one first.")
+	end
 end
 
 -- ===================== CLIENT-SIDE FLING =====================
@@ -899,50 +1136,23 @@ local LETTER_PIXELS = {
 local wordBlockSize = 4 -- studs per pixel
 
 local function buildWord(text, blockColor)
-	if not BuildEvent then
-		notify("Error", "BuildEvent remote not found!")
-		return
-	end
-
 	local hrp = getRoot()
 	local char = LocalPlayer.Character
 	if not hrp or not char then notify("Error", "No character") return end
 
-	-- Find the block template to use
-	local template = nil
-	pcall(function()
-		local blocksFolder = ReplicatedStorage:FindFirstChild("Blocks")
-		if blocksFolder then
-			template = blocksFolder:FindFirstChild("Block")
-		end
-	end)
-	if not template then
-		notify("Error", "Block template not found in ReplicatedStorage.Blocks")
+	-- Find and equip building tool
+	local tool = findBuildingTool()
+	if not tool then
+		notify("Error", "No building tool found! Equip a building tool first.")
 		return
 	end
-
-	-- Find a nearby placed block as anchor reference
-	local nearestBlock = nil
-	local wBlocks = workspace:FindFirstChild("Blocks")
-	if wBlocks then
-		local nearestDist = math.huge
-		for _, b in ipairs(wBlocks:GetChildren()) do
-			pcall(function()
-				if b:IsA("BasePart") then
-					local d = (b.Position - hrp.Position).Magnitude
-					if d < nearestDist then
-						nearestBlock = b
-						nearestDist = d
-					end
-				end
-			end)
-		end
-	end
+	equipTool(tool)
 
 	text = text:upper()
 	local startPos = hrp.Position + hrp.CFrame.LookVector * 15 + Vector3.new(0, 10, 0)
 	local rightDir = hrp.CFrame.RightVector
 	local upDir = Vector3.new(0, 1, 0)
+	local savedCF = hrp.CFrame
 
 	local blocksPlaced = 0
 	local charOffset = 0
@@ -958,19 +1168,25 @@ local function buildWord(text, blockColor)
 					for col = 1, 5 do
 						if pixels[row]:sub(col, col) == "1" then
 							local x = (charOffset + col - 1) * wordBlockSize
-							local y = (5 - row) * wordBlockSize -- build upward
+							local y = (5 - row) * wordBlockSize
 							local pos = startPos + rightDir * x + upDir * y
 							pcall(function()
-								BuildEvent:InvokeServer(CFrame.new(pos), template, nearestBlock)
+								-- TP to position, place block, TP back
+								char:PivotTo(CFrame.new(pos))
+								task.wait(0.05)
+								pcall(function() tool:Activate() end)
+								mouse1click()
+								task.wait(0.05)
+								char:PivotTo(savedCF)
 							end)
 							blocksPlaced = blocksPlaced + 1
-							task.wait(0.05)
+							task.wait(0.1)
 						end
 					end
 				end
-				charOffset = charOffset + 6 -- 5 pixel width + 1 space
+				charOffset = charOffset + 6
 			else
-				charOffset = charOffset + 3 -- unknown char = small gap
+				charOffset = charOffset + 3
 			end
 		end
 		notify("Built", blocksPlaced .. " blocks placed for: " .. text)
@@ -1077,7 +1293,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "SX Revival - Elected Admin Hub v1.0"
+titleText.Text = "SX Revival - Elected Admin Hub v1.1"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 13
@@ -1379,14 +1595,14 @@ do
 	local function o() n = n + 1 return n end
 
 	createSectionLabel(tab, "Adminium Mining", o())
-	createToggle(tab, "Auto Mine (Fire MineEvent)", o(), function(on)
+	createToggle(tab, "Auto Mine (Tool + Prompts)", o(), function(on)
 		if on then startAutoMine() else stopAutoMine() end
 	end)
 	createSlider(tab, "Mine Speed (x100 ms)", 1, 50, math.floor(mineSpeed * 100), o(), function(val)
 		mineSpeed = val / 100
 	end)
-	createInfoLabel(tab, "Fires MineEvent remote rapidly - works from any distance", o())
-	createInfoLabel(tab, "1 credit/fire (2x pickaxe, 4x silver pickaxe)", o())
+	createInfoLabel(tab, "Equips pickaxe, fires ProximityPrompts + activates tool", o())
+	createInfoLabel(tab, "Works best when near Adminium with a pickaxe equipped", o())
 
 	createSpacer(tab, o())
 
@@ -1398,43 +1614,72 @@ do
 
 	createSpacer(tab, o())
 
-	createSectionLabel(tab, "Mine Adminium Directly", o())
+	createSectionLabel(tab, "Quick Actions", o())
 	createButton(tab, "TP to Adminium + Mine", o(), function()
 		local char = LocalPlayer.Character
 		if not char then return end
-		local adminium = workspace:FindFirstChild("Adminium")
+		local adminium = findAdminium()
 		if adminium then
 			local cf = getItemCFrame(adminium)
 			if cf then
 				char:PivotTo(cf + Vector3.new(0, 5, 0))
 				notify("Teleport", "TP to Adminium!")
+				-- Also equip mining tool
+				local tool = findMiningTool()
+				if tool then equipTool(tool) end
 			end
 		else
 			notify("Error", "Adminium not found in workspace")
 		end
 	end)
-	createButton(tab, "Fire MineEvent x100 Burst", o(), function()
-		if not MineEvent then
-			pcall(function() MineEvent = ReplicatedStorage.Remotes.MineEvent end)
-		end
-		if MineEvent then
-			task.spawn(function()
-				for i = 1, 100 do
-					pcall(function() MineEvent:FireServer() end)
-					task.wait(0.02)
+	createButton(tab, "Burst Mine (100 clicks)", o(), function()
+		task.spawn(function()
+			local tool = findMiningTool()
+			if tool then equipTool(tool) end
+			local adminium = findAdminium()
+			for i = 1, 100 do
+				if adminium and adminium.Parent then
+					fireAllPrompts(adminium)
 				end
-			end)
-			notify("Mine", "Fired 100 mine events!")
-		else
-			notify("Error", "MineEvent remote not found!")
+				if tool and tool.Parent == LocalPlayer.Character then
+					pcall(function() tool:Activate() end)
+				end
+				mouse1click()
+				task.wait(0.02)
+			end
+			notify("Mine", "Burst complete! 100 clicks")
+		end)
+	end)
+	createButton(tab, "List All Tools (F9)", o(), function()
+		print("=== YOUR TOOLS ===")
+		local backpack = LocalPlayer:FindFirstChild("Backpack")
+		if backpack then
+			for _, tool in ipairs(backpack:GetChildren()) do
+				if tool:IsA("Tool") then
+					print("[Backpack] " .. tool.Name .. " (" .. tool.ClassName .. ")")
+				end
+			end
 		end
+		local char = LocalPlayer.Character
+		if char then
+			for _, tool in ipairs(char:GetChildren()) do
+				if tool:IsA("Tool") then
+					print("[Equipped] " .. tool.Name .. " (" .. tool.ClassName .. ")")
+				end
+			end
+		end
+		notify("Tools", "Tool list printed to F9")
 	end)
 
 	createSpacer(tab, o())
 
-	createSectionLabel(tab, "Debug", o())
+	createSectionLabel(tab, "Debug / Remote Spy", o())
 	createButton(tab, "Scan All Remotes (F9)", o(), scanRemotes)
-	createInfoLabel(tab, "Prints all RemoteEvents/Functions to F9 console", o())
+	createToggle(tab, "Remote Spy (Log all remotes to F9)", o(), function(on)
+		if on then startRemoteSpy() else stopRemoteSpy() end
+	end)
+	createInfoLabel(tab, "Spy logs every FireServer/InvokeServer call to F9", o())
+	createInfoLabel(tab, "Use spy to find how mining/building/signs actually work", o())
 end
 
 -- ===================== BUILD ADMIN TAB =====================
@@ -1502,7 +1747,7 @@ do
 	local function o() n = n + 1 return n end
 
 	createSectionLabel(tab, "Sign Editor", o())
-	createInfoLabel(tab, "Bulk edit all YOUR signs at once", o())
+	createInfoLabel(tab, "TPs to each sign, fires ProximityPrompt to open edit UI", o())
 	local signInput = createTextInput(tab, "Enter new sign text...", o())
 	createButton(tab, "Edit All My Signs", o(), function()
 		if signInput.Text ~= "" then
@@ -1514,7 +1759,13 @@ do
 			editAllSignsGlobal(signInput.Text)
 		end
 	end)
-	createInfoLabel(tab, "Global edit may fail - server checks Builder attribute", o())
+	createButton(tab, "Count Signs (F9)", o(), function()
+		local mine = findSigns(true)
+		local all = findSigns(false)
+		print("[SX Elected] Your signs: " .. #mine .. " | All signs: " .. #all)
+		notify("Signs", "Yours: " .. #mine .. " | Total: " .. #all)
+	end)
+	createInfoLabel(tab, "Uses ProximityPrompt + edit UI interaction", o())
 
 	createSpacer(tab, o())
 
@@ -1525,7 +1776,8 @@ do
 	createSpacer(tab, o())
 
 	createSectionLabel(tab, "Word Builder", o())
-	createInfoLabel(tab, "Builds text out of blocks in front of you (A-Z, 0-9)", o())
+	createInfoLabel(tab, "Builds text out of blocks using building tool (A-Z, 0-9)", o())
+	createInfoLabel(tab, "REQUIRES building tool equipped with a block selected!", o())
 	local wordInput = createTextInput(tab, "Enter text to build...", o())
 	createSlider(tab, "Block Size (studs)", 2, 8, wordBlockSize, o(), function(val)
 		wordBlockSize = val
@@ -1537,34 +1789,67 @@ do
 			notify("Error", "Enter text first!")
 		end
 	end)
-	createInfoLabel(tab, "Builds in direction you face - uses BuildEvent remote", o())
+	createInfoLabel(tab, "TPs to each pixel position and clicks - face your build direction", o())
 
 	createSpacer(tab, o())
 
-	createSectionLabel(tab, "Grid-Free Building", o())
-	createInfoLabel(tab, "Bypasses the BuildingTool grid system", o())
-	createButton(tab, "Place Block at Position (test)", o(), function()
-		local hrp = getRoot()
-		if not hrp then return end
-		placeBlockAt(hrp.CFrame + CFrame.new(0, 5, 0), "Block")
+	createSectionLabel(tab, "Building Tools", o())
+	createButton(tab, "Find + Equip Building Tool", o(), function()
+		local tool = findBuildingTool()
+		if tool then
+			equipTool(tool)
+			notify("Build", "Equipped: " .. tool.Name)
+		else
+			notify("Error", "No building tool found in backpack")
+		end
 	end)
-
-	createSpacer(tab, o())
-
-	createSectionLabel(tab, "Block Templates (F9)", o())
-	createButton(tab, "List All Block Templates", o(), function()
+	createButton(tab, "List All Workspace Blocks (F9)", o(), function()
+		local blocks = workspace:FindFirstChild("Blocks")
+		if blocks then
+			local count = 0
+			local types = {}
+			for _, block in ipairs(blocks:GetChildren()) do
+				count = count + 1
+				local name = block.Name
+				types[name] = (types[name] or 0) + 1
+			end
+			print("=== PLACED BLOCKS (" .. count .. " total) ===")
+			for name, c in pairs(types) do
+				print("  " .. name .. ": " .. c)
+			end
+			notify("Blocks", count .. " blocks placed - see F9")
+		else
+			notify("Error", "No Blocks folder in workspace")
+		end
+	end)
+	createButton(tab, "List Block Templates (F9)", o(), function()
 		print("=== BLOCK TEMPLATES ===")
-		local blocksFolder = ReplicatedStorage:FindFirstChild("Blocks")
+		local blocksFolder = ReplicatedStorage:FindFirstChild("Assets")
+		if blocksFolder then
+			local bFolder = blocksFolder:FindFirstChild("Blocks")
+			if bFolder then
+				local count = 0
+				for _, block in ipairs(bFolder:GetChildren()) do
+					print("[Template] " .. block.Name .. " (" .. block.ClassName .. ")")
+					count = count + 1
+				end
+				print("=== " .. count .. " TEMPLATES ===")
+				notify("Blocks", count .. " templates - see F9")
+				return
+			end
+		end
+		-- Try direct path
+		blocksFolder = ReplicatedStorage:FindFirstChild("Blocks")
 		if blocksFolder then
 			local count = 0
 			for _, block in ipairs(blocksFolder:GetChildren()) do
-				print("[Block] " .. block.Name .. " (" .. block.ClassName .. ")")
+				print("[Template] " .. block.Name .. " (" .. block.ClassName .. ")")
 				count = count + 1
 			end
 			print("=== " .. count .. " TEMPLATES ===")
-			notify("Blocks", count .. " templates printed to F9")
+			notify("Blocks", count .. " templates - see F9")
 		else
-			notify("Error", "ReplicatedStorage.Blocks not found")
+			notify("Error", "No block templates found")
 		end
 	end)
 end
@@ -1917,11 +2202,13 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ===================== STARTUP =====================
-notify("SX Elected v1.0", "Loaded! Right Shift to toggle")
-print("[SX Elected v1.0] Synapse X The Revival - Elected Admin Hub")
-print("[SX Elected v1.0] Tabs: Mining | Admin | Build | Players | Movement | Visuals | Troll")
-print("[SX Elected v1.0] MineEvent: " .. (MineEvent and MineEvent:GetFullName() or "NOT FOUND"))
-print("[SX Elected v1.0] EditSignEvent: " .. (EditSignEvent and EditSignEvent:GetFullName() or "NOT FOUND"))
-print("[SX Elected v1.0] BuildEvent: " .. (BuildEvent and BuildEvent:GetFullName() or "NOT FOUND"))
-print("[SX Elected v1.0] ChatRemote: " .. (ChatRemote and "Legacy Chat" or "TextChatService"))
-print("[SX Elected v1.0] Right Shift to toggle GUI")
+notify("SX Elected v1.1", "Loaded! Right Shift to toggle")
+print("[SX Elected v1.1] Synapse X The Revival - Elected Admin Hub")
+print("[SX Elected v1.1] Tabs: Mining | Admin | Build | Players | Movement | Visuals | Troll")
+print("[SX Elected v1.1] Red Event: " .. (RedEvent and RedEvent:GetFullName() or "NOT FOUND"))
+print("[SX Elected v1.1] Chat: " .. (ChatRemote and "Legacy Chat" or "TextChatService"))
+print("[SX Elected v1.1] Mining: Tool-based (equip pickaxe + ProximityPrompt)")
+print("[SX Elected v1.1] Building: Tool-based (equip building tool)")
+print("[SX Elected v1.1] Signs: ProximityPrompt + UI interaction")
+print("[SX Elected v1.1] Use Remote Spy to discover game remotes")
+print("[SX Elected v1.1] Right Shift to toggle GUI")
