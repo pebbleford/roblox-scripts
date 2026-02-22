@@ -1036,6 +1036,121 @@ local function stopAntiHit()
 	if antiHitConnection then antiHitConnection:Disconnect() antiHitConnection = nil end
 end
 
+-- ===================== ADMIN SPAMMER (Anti-Cheat Safe) =====================
+-- Spams admin panel commands (;rocket, ;jail, ;ragdoll etc.) through chat
+-- Anti-cheat bypass: randomized delays (0.8-2s), shuffled command order,
+-- alternates targets so it doesn't look like bot spam
+-- Requires Admin Panel gamepass to work (or free admin panel bypass)
+
+local adminSpamActive = false
+local adminSpamSpeed = 1.2 -- seconds between commands (adjustable)
+local adminSpamTarget = "random" -- "random" or specific player name
+
+local ADMIN_COMMANDS = {
+	"rocket", "ragdoll", "balloon", "inverse",
+	"jail", "jumpscare", "tiny", "morph", "control"
+}
+
+-- Which commands are enabled (all on by default)
+local enabledAdminCmds = {}
+for _, cmd in ipairs(ADMIN_COMMANDS) do
+	enabledAdminCmds[cmd] = true
+end
+
+local function getEnabledCommands()
+	local cmds = {}
+	for _, cmd in ipairs(ADMIN_COMMANDS) do
+		if enabledAdminCmds[cmd] then
+			table.insert(cmds, cmd)
+		end
+	end
+	return cmds
+end
+
+local function getRandomTarget()
+	local players = Players:GetPlayers()
+	local targets = {}
+	for _, p in ipairs(players) do
+		if p ~= LocalPlayer then
+			table.insert(targets, p.Name)
+		end
+	end
+	if #targets == 0 then return nil end
+	return targets[math.random(1, #targets)]
+end
+
+local function sendChatMessage(msg)
+	pcall(function()
+		-- Try TextChatService first (new chat system)
+		local tcs = game:GetService("TextChatService")
+		if tcs then
+			local channels = tcs:FindFirstChild("TextChannels")
+			if channels then
+				local general = channels:FindFirstChild("RBXGeneral")
+				if general then
+					general:SendAsync(msg)
+					return
+				end
+			end
+		end
+	end)
+	pcall(function()
+		-- Fallback: Legacy chat system
+		local chatEvents = game:GetService("ReplicatedStorage"):FindFirstChild("DefaultChatSystemChatEvents")
+		if chatEvents then
+			local sayMsg = chatEvents:FindFirstChild("SayMessageRequest")
+			if sayMsg then
+				sayMsg:FireServer(msg, "All")
+				return
+			end
+		end
+	end)
+end
+
+local function startAdminSpam()
+	adminSpamActive = true
+	spawn(function()
+		while adminSpamActive do
+			pcall(function()
+				local cmds = getEnabledCommands()
+				if #cmds == 0 then return end
+
+				local target = nil
+				if adminSpamTarget == "random" then
+					target = getRandomTarget()
+				else
+					target = adminSpamTarget
+				end
+				if not target then return end
+
+				-- Pick random command from enabled list
+				local cmd = cmds[math.random(1, #cmds)]
+				local message = ";" .. cmd .. " " .. target
+
+				sendChatMessage(message)
+			end)
+			-- Randomized delay to avoid spam pattern detection
+			-- Base speed +/- 30% random variation
+			local jitter = adminSpamSpeed * (0.7 + math.random() * 0.6)
+			wait(jitter)
+		end
+	end)
+	notify("Admin Spam", "Spamming admin commands!")
+end
+
+local function stopAdminSpam()
+	adminSpamActive = false
+	notify("Admin Spam", "Stopped")
+end
+
+-- Single command fire (one-shot)
+local function fireAdminCommand(cmd)
+	local target = adminSpamTarget == "random" and getRandomTarget() or adminSpamTarget
+	if not target then notify("Error", "No players to target") return end
+	sendChatMessage(";" .. cmd .. " " .. target)
+	notify("Admin", ";" .. cmd .. " " .. target)
+end
+
 -- ===================== BUILD MAIN TAB =====================
 do
 	local tab = tabFrames["Main"]
@@ -1081,6 +1196,42 @@ do
 		antiHitActive = on
 		if on then startAntiHit() else stopAntiHit() end
 	end)
+
+	local spacer3 = Instance.new("Frame")
+	spacer3.Size = UDim2.new(1, 0, 0, 8)
+	spacer3.BackgroundTransparency = 1
+	spacer3.LayoutOrder = 13
+	spacer3.Parent = tab
+
+	createSectionLabel(tab, "Admin Panel Spammer", 14)
+	createInfoLabel(tab, "Requires Admin Panel gamepass (;cmds)", 15)
+	createToggle(tab, "Auto Spam All Commands", 16, function(on)
+		adminSpamActive = on
+		if on then startAdminSpam() else stopAdminSpam() end
+	end)
+	createInfoLabel(tab, "Random commands + random targets + jittered delay", 17)
+	createSlider(tab, "Spam Speed (seconds)", 3, 30, math.floor(adminSpamSpeed * 10), 18, function(val)
+		adminSpamSpeed = val / 10
+	end)
+	createInfoLabel(tab, "Lower = faster spam (careful, too fast = flagged)", 19)
+
+	local spacer4 = Instance.new("Frame")
+	spacer4.Size = UDim2.new(1, 0, 0, 8)
+	spacer4.BackgroundTransparency = 1
+	spacer4.LayoutOrder = 20
+	spacer4.Parent = tab
+
+	createSectionLabel(tab, "Quick Admin (One-Shot)", 21)
+	createButton(tab, ";rocket (Launch Player)", 22, function() fireAdminCommand("rocket") end)
+	createButton(tab, ";jail (Trap in Cage)", 23, function() fireAdminCommand("jail") end)
+	createButton(tab, ";ragdoll (Knock Down)", 24, function() fireAdminCommand("ragdoll") end)
+	createButton(tab, ";jumpscare (Scare Player)", 25, function() fireAdminCommand("jumpscare") end)
+	createButton(tab, ";tiny (Shrink Player)", 26, function() fireAdminCommand("tiny") end)
+	createButton(tab, ";morph (Transform Player)", 27, function() fireAdminCommand("morph") end)
+	createButton(tab, ";balloon (Inflate Head)", 28, function() fireAdminCommand("balloon") end)
+	createButton(tab, ";inverse (Reverse Controls)", 29, function() fireAdminCommand("inverse") end)
+	createButton(tab, ";control (Possess Player)", 30, function() fireAdminCommand("control") end)
+	createInfoLabel(tab, "Target: random player (walks through all players)", 31)
 end
 
 -- ===================== TP TO NEAREST BRAINROT (Anti-Cheat Safe) =====================
