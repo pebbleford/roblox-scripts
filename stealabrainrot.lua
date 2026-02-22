@@ -1151,6 +1151,74 @@ local function fireAdminCommand(cmd)
 	notify("Admin", ";" .. cmd .. " " .. target)
 end
 
+-- Fire a command on a specific player by name
+local function fireAdminOnPlayer(cmd, playerName)
+	sendChatMessage(";" .. cmd .. " " .. playerName)
+end
+
+-- ===================== ADMIN DEFENSE (Anti-Cheat Safe) =====================
+-- Detects players near your base/brainrots and auto-fires admin commands on them
+-- Command order: balloon first (float them away), then escalates
+-- Anti-cheat bypass: randomized delays, only fires when player is within range
+
+local adminDefenseActive = false
+local defenseRadius = 40 -- studs
+local defenseCommandOrder = {"balloon", "rocket", "jail", "ragdoll", "inverse", "tiny", "jumpscare", "morph", "control"}
+local defenseCooldowns = {} -- tracks last command time per player
+local DEFENSE_COOLDOWN = 3 -- seconds between commands on same player
+local defenseCommandIndex = {} -- tracks which command to fire next per player
+
+local function startAdminDefense()
+	adminDefenseActive = true
+	spawn(function()
+		while adminDefenseActive do
+			pcall(function()
+				local hrp = getRoot()
+				if not hrp then return end
+
+				-- Use saved base position or current position
+				local basePos = savedBasePosition or hrp.Position
+
+				for _, player in ipairs(Players:GetPlayers()) do
+					if player ~= LocalPlayer and player.Character then
+						local otherHrp = player.Character:FindFirstChild("HumanoidRootPart")
+						if otherHrp then
+							local dist = (otherHrp.Position - basePos).Magnitude
+							if dist <= defenseRadius then
+								-- Player is near our base - check cooldown
+								local now = tick()
+								local lastFire = defenseCooldowns[player.Name]
+								if not lastFire or (now - lastFire) >= DEFENSE_COOLDOWN then
+									-- Get next command in sequence (starts with balloon)
+									local idx = defenseCommandIndex[player.Name] or 1
+									local cmd = defenseCommandOrder[idx]
+
+									fireAdminOnPlayer(cmd, player.Name)
+									notify("Defense", ";" .. cmd .. " " .. player.DisplayName .. " (near base!)")
+
+									defenseCooldowns[player.Name] = now
+									-- Cycle to next command
+									defenseCommandIndex[player.Name] = (idx % #defenseCommandOrder) + 1
+								end
+							end
+						end
+					end
+				end
+			end)
+			-- Randomized scan interval (1-2s) to avoid pattern detection
+			wait(1 + math.random() * 1)
+		end
+	end)
+	notify("Admin Defense", "Guarding base! Balloon first, then escalate")
+end
+
+local function stopAdminDefense()
+	adminDefenseActive = false
+	defenseCooldowns = {}
+	defenseCommandIndex = {}
+	notify("Admin Defense", "Stopped")
+end
+
 -- ===================== BUILD MAIN TAB =====================
 do
 	local tab = tabFrames["Main"]
@@ -1205,33 +1273,169 @@ do
 
 	createSectionLabel(tab, "Admin Panel Spammer", 14)
 	createInfoLabel(tab, "Requires Admin Panel gamepass (;cmds)", 15)
-	createToggle(tab, "Auto Spam All Commands", 16, function(on)
+
+	-- ===== PLAYER TARGET PICKER =====
+	createSectionLabel(tab, "Target Player", 16)
+	local targetLabel = Instance.new("TextLabel")
+	targetLabel.Size = UDim2.new(1, 0, 0, 22)
+	targetLabel.BackgroundColor3 = COLORS.panel
+	targetLabel.BorderSizePixel = 0
+	targetLabel.Text = "  Current Target: Random"
+	targetLabel.TextColor3 = COLORS.accent
+	targetLabel.Font = Enum.Font.GothamBold
+	targetLabel.TextSize = 12
+	targetLabel.TextXAlignment = Enum.TextXAlignment.Left
+	targetLabel.LayoutOrder = 17
+	targetLabel.Parent = tab
+	addCorner(targetLabel, 5)
+
+	-- Player list container
+	local playerListFrame = Instance.new("Frame")
+	playerListFrame.Size = UDim2.new(1, 0, 0, 120)
+	playerListFrame.BackgroundColor3 = COLORS.bgSecondary
+	playerListFrame.BorderSizePixel = 0
+	playerListFrame.LayoutOrder = 18
+	playerListFrame.Parent = tab
+	addCorner(playerListFrame, 5)
+
+	local playerScroll = Instance.new("ScrollingFrame")
+	playerScroll.Size = UDim2.new(1, -4, 1, -4)
+	playerScroll.Position = UDim2.new(0, 2, 0, 2)
+	playerScroll.BackgroundTransparency = 1
+	playerScroll.BorderSizePixel = 0
+	playerScroll.ScrollBarThickness = 3
+	playerScroll.ScrollBarImageColor3 = COLORS.accent
+	playerScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+	playerScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	playerScroll.Parent = playerListFrame
+
+	local playerListLayout = Instance.new("UIListLayout")
+	playerListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	playerListLayout.Padding = UDim.new(0, 2)
+	playerListLayout.Parent = playerScroll
+
+	local function refreshPlayerList()
+		-- Clear existing buttons
+		for _, child in ipairs(playerScroll:GetChildren()) do
+			if child:IsA("TextButton") then child:Destroy() end
+		end
+
+		-- "Random" option
+		local randomBtn = Instance.new("TextButton")
+		randomBtn.Size = UDim2.new(1, -4, 0, 24)
+		randomBtn.BackgroundColor3 = adminSpamTarget == "random" and COLORS.accent or COLORS.panel
+		randomBtn.BorderSizePixel = 0
+		randomBtn.Text = "  Random (All Players)"
+		randomBtn.TextColor3 = COLORS.textPrimary
+		randomBtn.Font = adminSpamTarget == "random" and Enum.Font.GothamBold or Enum.Font.Gotham
+		randomBtn.TextSize = 11
+		randomBtn.TextXAlignment = Enum.TextXAlignment.Left
+		randomBtn.LayoutOrder = 0
+		randomBtn.Parent = playerScroll
+		addCorner(randomBtn, 4)
+		randomBtn.MouseButton1Click:Connect(function()
+			adminSpamTarget = "random"
+			targetLabel.Text = "  Current Target: Random"
+			refreshPlayerList()
+			notify("Target", "Set to random")
+		end)
+
+		-- Player buttons
+		for i, player in ipairs(Players:GetPlayers()) do
+			if player ~= LocalPlayer then
+				local isSelected = adminSpamTarget == player.Name
+				local pBtn = Instance.new("TextButton")
+				pBtn.Size = UDim2.new(1, -4, 0, 24)
+				pBtn.BackgroundColor3 = isSelected and COLORS.accent or COLORS.panel
+				pBtn.BorderSizePixel = 0
+				pBtn.Text = "  " .. player.DisplayName .. " (@" .. player.Name .. ")"
+				pBtn.TextColor3 = COLORS.textPrimary
+				pBtn.Font = isSelected and Enum.Font.GothamBold or Enum.Font.Gotham
+				pBtn.TextSize = 11
+				pBtn.TextXAlignment = Enum.TextXAlignment.Left
+				pBtn.LayoutOrder = i
+				pBtn.Parent = playerScroll
+				addCorner(pBtn, 4)
+				pBtn.MouseButton1Click:Connect(function()
+					adminSpamTarget = player.Name
+					targetLabel.Text = "  Current Target: " .. player.DisplayName
+					refreshPlayerList()
+					notify("Target", "Set to " .. player.DisplayName)
+				end)
+			end
+		end
+	end
+
+	refreshPlayerList()
+
+	-- Refresh button
+	createButton(tab, "Refresh Player List", 19, refreshPlayerList)
+
+	-- Auto-refresh when players join/leave
+	Players.PlayerAdded:Connect(function() wait(1) refreshPlayerList() end)
+	Players.PlayerRemoving:Connect(function(player)
+		if adminSpamTarget == player.Name then
+			adminSpamTarget = "random"
+			targetLabel.Text = "  Current Target: Random"
+		end
+		wait(0.5)
+		refreshPlayerList()
+	end)
+
+	local spacerTarget = Instance.new("Frame")
+	spacerTarget.Size = UDim2.new(1, 0, 0, 8)
+	spacerTarget.BackgroundTransparency = 1
+	spacerTarget.LayoutOrder = 20
+	spacerTarget.Parent = tab
+
+	-- ===== AUTO SPAM =====
+	createSectionLabel(tab, "Auto Spam", 21)
+	createToggle(tab, "Auto Spam Commands", 22, function(on)
 		adminSpamActive = on
 		if on then startAdminSpam() else stopAdminSpam() end
 	end)
-	createInfoLabel(tab, "Random commands + random targets + jittered delay", 17)
-	createSlider(tab, "Spam Speed (seconds)", 3, 30, math.floor(adminSpamSpeed * 10), 18, function(val)
+	createInfoLabel(tab, "Fires commands at selected target with jittered delay", 23)
+	createSlider(tab, "Spam Speed (seconds)", 3, 30, math.floor(adminSpamSpeed * 10), 24, function(val)
 		adminSpamSpeed = val / 10
 	end)
-	createInfoLabel(tab, "Lower = faster spam (careful, too fast = flagged)", 19)
 
-	local spacer4 = Instance.new("Frame")
-	spacer4.Size = UDim2.new(1, 0, 0, 8)
-	spacer4.BackgroundTransparency = 1
-	spacer4.LayoutOrder = 20
-	spacer4.Parent = tab
+	local spacerSpam = Instance.new("Frame")
+	spacerSpam.Size = UDim2.new(1, 0, 0, 8)
+	spacerSpam.BackgroundTransparency = 1
+	spacerSpam.LayoutOrder = 25
+	spacerSpam.Parent = tab
 
-	createSectionLabel(tab, "Quick Admin (One-Shot)", 21)
-	createButton(tab, ";rocket (Launch Player)", 22, function() fireAdminCommand("rocket") end)
-	createButton(tab, ";jail (Trap in Cage)", 23, function() fireAdminCommand("jail") end)
-	createButton(tab, ";ragdoll (Knock Down)", 24, function() fireAdminCommand("ragdoll") end)
-	createButton(tab, ";jumpscare (Scare Player)", 25, function() fireAdminCommand("jumpscare") end)
-	createButton(tab, ";tiny (Shrink Player)", 26, function() fireAdminCommand("tiny") end)
-	createButton(tab, ";morph (Transform Player)", 27, function() fireAdminCommand("morph") end)
-	createButton(tab, ";balloon (Inflate Head)", 28, function() fireAdminCommand("balloon") end)
-	createButton(tab, ";inverse (Reverse Controls)", 29, function() fireAdminCommand("inverse") end)
-	createButton(tab, ";control (Possess Player)", 30, function() fireAdminCommand("control") end)
-	createInfoLabel(tab, "Target: random player (walks through all players)", 31)
+	-- ===== ADMIN DEFENSE =====
+	createSectionLabel(tab, "Admin Defense (Auto-Guard Base)", 26)
+	createInfoLabel(tab, "Fires commands on anyone near your base", 27)
+	createInfoLabel(tab, "Order: balloon > rocket > jail > ragdoll > ...", 28)
+	createToggle(tab, "Admin Defense", 29, function(on)
+		adminDefenseActive = on
+		if on then startAdminDefense() else stopAdminDefense() end
+	end)
+	createSlider(tab, "Defense Radius (studs)", 10, 100, defenseRadius, 30, function(val)
+		defenseRadius = val
+	end)
+	createInfoLabel(tab, "Save base position first! (Main > Base tab)", 31)
+
+	local spacerDefense = Instance.new("Frame")
+	spacerDefense.Size = UDim2.new(1, 0, 0, 8)
+	spacerDefense.BackgroundTransparency = 1
+	spacerDefense.LayoutOrder = 32
+	spacerDefense.Parent = tab
+
+	-- ===== QUICK ADMIN (ONE-SHOT) =====
+	createSectionLabel(tab, "Quick Admin (One-Shot)", 33)
+	createButton(tab, ";rocket (Launch Player)", 34, function() fireAdminCommand("rocket") end)
+	createButton(tab, ";jail (Trap in Cage)", 35, function() fireAdminCommand("jail") end)
+	createButton(tab, ";ragdoll (Knock Down)", 36, function() fireAdminCommand("ragdoll") end)
+	createButton(tab, ";jumpscare (Scare Player)", 37, function() fireAdminCommand("jumpscare") end)
+	createButton(tab, ";tiny (Shrink Player)", 38, function() fireAdminCommand("tiny") end)
+	createButton(tab, ";morph (Transform Player)", 39, function() fireAdminCommand("morph") end)
+	createButton(tab, ";balloon (Inflate Head)", 40, function() fireAdminCommand("balloon") end)
+	createButton(tab, ";inverse (Reverse Controls)", 41, function() fireAdminCommand("inverse") end)
+	createButton(tab, ";control (Possess Player)", 42, function() fireAdminCommand("control") end)
+	createInfoLabel(tab, "Fires at selected target above", 43)
 end
 
 -- ===================== TP TO NEAREST BRAINROT (Anti-Cheat Safe) =====================
