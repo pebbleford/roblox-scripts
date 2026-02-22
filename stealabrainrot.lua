@@ -78,6 +78,8 @@ local autoLockActive = false
 local antiHitActive = false
 local autoFarmActive = false
 local antiRagdollActive = false
+local instaPickUpActive = false
+local instaPickUpConnection = nil
 
 local speedValue = 50
 local flySpeed = 60
@@ -426,11 +428,19 @@ local function notify(title, msg)
 end
 
 local function fireProximityPrompt(prompt)
-	local hold = prompt.HoldDuration
-	prompt.HoldDuration = 0
-	prompt:InputHoldBegin()
-	prompt:InputHoldEnd()
-	prompt.HoldDuration = hold
+	pcall(function()
+		-- Try executor global first (most reliable)
+		if fireproximityprompt then
+			fireproximityprompt(prompt)
+			return
+		end
+		-- Fallback: manual hold duration override
+		local hold = prompt.HoldDuration
+		prompt.HoldDuration = 0
+		prompt:InputHoldBegin()
+		prompt:InputHoldEnd()
+		prompt.HoldDuration = hold
+	end)
 end
 
 -- ===================== SMOOTH MOVEMENT (Anti-Cheat Safe) =====================
@@ -631,6 +641,73 @@ local function doQuickSteal()
 		notify("Quick Steal", "Grabbed " .. target.name)
 	end)
 	if not ok then warn("[QUICK STEAL ERROR] " .. tostring(err)) end
+end
+
+-- ===================== INSTA PICK UP =====================
+-- Fires ALL ProximityPrompts within activation range instantly (no hold time)
+
+local function pickUpAllNearby()
+	local hrp = getRoot()
+	if not hrp then notify("Error", "No character") return end
+	local count = 0
+	for _, obj in ipairs(workspace:GetDescendants()) do
+		if obj:IsA("ProximityPrompt") and obj.Enabled then
+			pcall(function()
+				local promptPart = obj.Parent
+				if promptPart and promptPart:IsA("BasePart") then
+					local dist = (promptPart.Position - hrp.Position).Magnitude
+					if dist <= (obj.MaxActivationDistance + 5) then
+						fireProximityPrompt(obj)
+						count = count + 1
+					end
+				elseif promptPart and promptPart:IsA("Model") then
+					local part = promptPart.PrimaryPart or promptPart:FindFirstChildWhichIsA("BasePart")
+					if part then
+						local dist = (part.Position - hrp.Position).Magnitude
+						if dist <= (obj.MaxActivationDistance + 5) then
+							fireProximityPrompt(obj)
+							count = count + 1
+						end
+					end
+				end
+			end)
+		end
+	end
+	if count > 0 then
+		notify("Pick Up", "Grabbed " .. count .. " item(s)!")
+	else
+		notify("Pick Up", "Nothing in range")
+	end
+end
+
+local function startInstaPickUp()
+	instaPickUpConnection = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			local hrp = getRoot()
+			if not hrp then return end
+			for _, obj in ipairs(workspace:GetDescendants()) do
+				if obj:IsA("ProximityPrompt") and obj.Enabled then
+					local promptPart = obj.Parent
+					local part = nil
+					if promptPart and promptPart:IsA("BasePart") then
+						part = promptPart
+					elseif promptPart and promptPart:IsA("Model") then
+						part = promptPart.PrimaryPart or promptPart:FindFirstChildWhichIsA("BasePart")
+					end
+					if part then
+						local dist = (part.Position - hrp.Position).Magnitude
+						if dist <= (obj.MaxActivationDistance + 5) then
+							fireProximityPrompt(obj)
+						end
+					end
+				end
+			end
+		end)
+	end)
+end
+
+local function stopInstaPickUp()
+	if instaPickUpConnection then instaPickUpConnection:Disconnect() instaPickUpConnection = nil end
 end
 
 -- ===================== AUTO FARM =====================
@@ -962,21 +1039,36 @@ do
 	spacer2.LayoutOrder = 8
 	spacer2.Parent = tab
 
-	createSectionLabel(tab, "Auto Farm", 9)
-	createToggle(tab, "Auto Farm (Sky Route Loop)", 10, function(on)
-		autoFarmActive = on
-		if on then startAutoFarm() else stopAutoFarm() end
+	createSectionLabel(tab, "Insta Pick Up", 9)
+	createButton(tab, "Pick Up All Nearby (One-Time)", 10, pickUpAllNearby)
+	createInfoLabel(tab, "Fires all ProximityPrompts within range instantly", 11)
+	createToggle(tab, "Auto Insta Pick Up (Loop)", 12, function(on)
+		instaPickUpActive = on
+		if on then startInstaPickUp() else stopInstaPickUp() end
 	end)
-	createSlider(tab, "Float Speed", 20, 200, floatSpeed, 11, function(val) floatSpeed = val end)
+	createInfoLabel(tab, "Auto-grabs anything you walk near - no hold needed", 13)
 
 	local spacer3 = Instance.new("Frame")
 	spacer3.Size = UDim2.new(1, 0, 0, 8)
 	spacer3.BackgroundTransparency = 1
-	spacer3.LayoutOrder = 12
+	spacer3.LayoutOrder = 14
 	spacer3.Parent = tab
 
-	createSectionLabel(tab, "Defense", 13)
-	createToggle(tab, "Auto Lock Base", 14, function(on)
+	createSectionLabel(tab, "Auto Farm", 15)
+	createToggle(tab, "Auto Farm (Sky Route Loop)", 16, function(on)
+		autoFarmActive = on
+		if on then startAutoFarm() else stopAutoFarm() end
+	end)
+	createSlider(tab, "Float Speed", 20, 200, floatSpeed, 17, function(val) floatSpeed = val end)
+
+	local spacer4 = Instance.new("Frame")
+	spacer4.Size = UDim2.new(1, 0, 0, 8)
+	spacer4.BackgroundTransparency = 1
+	spacer4.LayoutOrder = 18
+	spacer4.Parent = tab
+
+	createSectionLabel(tab, "Defense", 19)
+	createToggle(tab, "Auto Lock Base", 20, function(on)
 		autoLockActive = on
 		if on then startAutoLock() end
 	end)
@@ -1054,8 +1146,10 @@ end)
 LocalPlayer.CharacterAdded:Connect(function()
 	if noclipActive then stopNoclip() wait(0.5) startNoclip() end
 	if flyActive then stopFly() wait(0.5) startFly() end
-	if speedBoostActive then wait(0.3) startSpeedBoost() end
-	if antiRagdollActive then wait(0.3) startAntiRagdoll() end
+	if speedBoostActive then stopSpeedBoost() wait(0.3) startSpeedBoost() end
+	if antiRagdollActive then stopAntiRagdoll() wait(0.3) startAntiRagdoll() end
+	if antiHitActive then stopAntiHit() wait(0.3) startAntiHit() end
+	if instaPickUpActive then stopInstaPickUp() wait(0.3) startInstaPickUp() end
 end)
 
 -- ===================== STARTUP =====================
