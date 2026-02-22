@@ -169,22 +169,26 @@ local function getPlayerTeamInfo(player)
 	end
 
 	-- Determine color based on team/role name
+	-- NBTF teams: Radio_Rebellion = rebel, anything else = facility
+	-- Rebel roles: Rebel, Raid Leader, Overseer, Vindicator, Warlord, Insurgent, Bandit, Hostile
+	-- Facility roles: Scientist, Rocket Scientist, Intern, Security, Guard, Military, Director, Staff
 	local nameLower = (teamName .. " " .. roleName):lower()
-	if nameLower:find("facility") or nameLower:find("government") or nameLower:find("security")
-		or nameLower:find("scientist") or nameLower:find("worker") or nameLower:find("director")
-		or nameLower:find("overseer") or nameLower:find("military") or nameLower:find("guard")
-		or nameLower:find("intelligence") or nameLower:find("staff") or nameLower:find("official") then
-		color = COLORS.facilityColor
-	elseif nameLower:find("rebel") or nameLower:find("hostile") or nameLower:find("raider")
-		or nameLower:find("warlord") or nameLower:find("insurgent") or nameLower:find("bandit") then
+	if nameLower:find("rebel") or nameLower:find("rebellion") or nameLower:find("raid leader")
+		or nameLower:find("overseer") or nameLower:find("vindicator") or nameLower:find("warlord")
+		or nameLower:find("insurgent") or nameLower:find("bandit") or nameLower:find("hostile") then
 		color = COLORS.rebelColor
+	elseif nameLower:find("facility") or nameLower:find("scientist") or nameLower:find("security")
+		or nameLower:find("intern") or nameLower:find("guard") or nameLower:find("military")
+		or nameLower:find("director") or nameLower:find("staff") or nameLower:find("government")
+		or nameLower:find("intelligence") or nameLower:find("official") or nameLower:find("worker") then
+		color = COLORS.facilityColor
 	else
 		-- Fallback: use team color if available
 		if player.Team then
-			local tc = player.Team.TeamColor
-			if tc then
-				color = tc.Color
-			end
+			pcall(function()
+				local tc = player.Team.TeamColor
+				if tc then color = tc.Color end
+			end)
 		end
 	end
 
@@ -272,87 +276,113 @@ local function enableSilentAim()
 
 	-- Check if executor supports hookmetamethod
 	if not hookmetamethod then
-		notify("Silent Aim", "Your executor doesn't support hookmetamethod - using fallback")
-		-- Fallback: use RenderStepped mouse override (less reliable)
+		notify("Silent Aim", "Your executor doesn't support hookmetamethod!")
 		return
 	end
 
-	-- Hook __namecall to intercept Raycast / FindPartOnRay calls
-	-- Silent Aim: redirects bullet direction to target
-	-- Wallbang: strips wall collision from raycast so bullets pass through
-	-- Both can work independently or together
+	-- Hook __namecall to intercept ALL method calls
+	-- NBTF uses ReplicatedStorage.WeaponsSystem which fires RemoteEvents for hits
+	-- We hook both Raycast (for visual tracers) AND FireServer (to modify hit data)
 	if not oldNamecall then
 		oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
 			local args = {...}
 			local self = args[1]
 			local method = getnamecallmethod()
 
-			if (silentAimActive or wallbangActive) and self == workspace and not checkcaller() then
-
-				if method == "Raycast" then
-					local origin = args[2]
-					if typeof(origin) == "Vector3" then
-						-- Silent aim: redirect direction to target
-						if silentAimActive then
-							local target = getClosestPlayerInFOV()
-							if target and calculateChance(hitChance) then
-								args[3] = getDirection(origin, target.Position)
-							end
-						end
-						-- Wallbang: make raycast only hit player characters (whitelist mode)
-						if wallbangActive then
-							local params = RaycastParams.new()
-							params.FilterType = Enum.RaycastFilterType.Include
-							-- Only include enemy characters so bullets pass through walls
-							local includeList = {}
-							for _, p in ipairs(Players:GetPlayers()) do
-								if p ~= LocalPlayer and p.Character then
-									table.insert(includeList, p.Character)
+			if not checkcaller() then
+				-- Hook Raycast calls (visual tracers + some hit detection)
+				if (silentAimActive or wallbangActive) and self == workspace then
+					if method == "Raycast" then
+						local origin = args[2]
+						if typeof(origin) == "Vector3" then
+							if silentAimActive then
+								local target = getClosestPlayerInFOV()
+								if target and calculateChance(hitChance) then
+									args[3] = getDirection(origin, target.Position)
 								end
 							end
-							params.FilterDescendantsInstances = includeList
-							args[4] = params
+							if wallbangActive then
+								local params = RaycastParams.new()
+								params.FilterType = Enum.RaycastFilterType.Include
+								local includeList = {}
+								for _, p in ipairs(Players:GetPlayers()) do
+									if p ~= LocalPlayer and p.Character then
+										table.insert(includeList, p.Character)
+									end
+								end
+								params.FilterDescendantsInstances = includeList
+								args[4] = params
+							end
+							return oldNamecall(unpack(args))
 						end
-						return oldNamecall(unpack(args))
+					elseif method == "FindPartOnRay" or method == "findPartOnRay"
+						or method == "FindPartOnRayWithIgnoreList"
+						or method == "FindPartOnRayWithWhitelist" then
+						local ray = args[2]
+						if typeof(ray) == "Ray" then
+							if silentAimActive then
+								local target = getClosestPlayerInFOV()
+								if target and calculateChance(hitChance) then
+									args[2] = Ray.new(ray.Origin, getDirection(ray.Origin, target.Position))
+								end
+							end
+							return oldNamecall(unpack(args))
+						end
 					end
+				end
 
-				elseif method == "FindPartOnRayWithIgnoreList" then
-					local ray = args[2]
-					if typeof(ray) == "Ray" then
-						if silentAimActive then
+				-- Hook FireServer calls on weapon-related RemoteEvents
+				-- NBTF WeaponsSystem sends hit data through RemoteEvents
+				-- We intercept and modify the hit position / hit part to target enemies
+				if silentAimActive and (method == "FireServer" or method == "fireServer") then
+					if self:IsA("RemoteEvent") then
+						local remoteName = self.Name:lower()
+						-- Common NBTF weapon remote names
+						if remoteName:find("hit") or remoteName:find("damage") or remoteName:find("fire")
+							or remoteName:find("shoot") or remoteName:find("bullet") or remoteName:find("weapon")
+							or remoteName:find("attack") or remoteName:find("ray") then
 							local target = getClosestPlayerInFOV()
 							if target and calculateChance(hitChance) then
-								local direction = getDirection(ray.Origin, target.Position)
-								args[2] = Ray.new(ray.Origin, direction)
+								-- Modify args to point at the target
+								for i = 2, #args do
+									if typeof(args[i]) == "Vector3" then
+										-- Replace direction/position vectors with target position
+										args[i] = target.Position
+									elseif typeof(args[i]) == "CFrame" then
+										args[i] = target.CFrame
+									elseif typeof(args[i]) == "Instance" then
+										-- Replace hit part with target part
+										if args[i]:IsA("BasePart") and args[i].Parent then
+											if not args[i].Parent:FindFirstChildOfClass("Humanoid") then
+												args[i] = target
+											end
+										end
+									end
+								end
+								return oldNamecall(unpack(args))
 							end
 						end
-						return oldNamecall(unpack(args))
 					end
+				end
 
-				elseif method == "FindPartOnRayWithWhitelist" then
-					local ray = args[2]
-					if typeof(ray) == "Ray" then
-						if silentAimActive then
+				-- Hook InvokeServer for RemoteFunctions (some games use these)
+				if silentAimActive and (method == "InvokeServer" or method == "invokeServer") then
+					if self:IsA("RemoteFunction") then
+						local remoteName = self.Name:lower()
+						if remoteName:find("hit") or remoteName:find("damage") or remoteName:find("fire")
+							or remoteName:find("shoot") or remoteName:find("weapon") then
 							local target = getClosestPlayerInFOV()
 							if target and calculateChance(hitChance) then
-								local direction = getDirection(ray.Origin, target.Position)
-								args[2] = Ray.new(ray.Origin, direction)
+								for i = 2, #args do
+									if typeof(args[i]) == "Vector3" then
+										args[i] = target.Position
+									elseif typeof(args[i]) == "CFrame" then
+										args[i] = target.CFrame
+									end
+								end
+								return oldNamecall(unpack(args))
 							end
 						end
-						return oldNamecall(unpack(args))
-					end
-
-				elseif method == "FindPartOnRay" or method == "findPartOnRay" then
-					local ray = args[2]
-					if typeof(ray) == "Ray" then
-						if silentAimActive then
-							local target = getClosestPlayerInFOV()
-							if target and calculateChance(hitChance) then
-								local direction = getDirection(ray.Origin, target.Position)
-								args[2] = Ray.new(ray.Origin, direction)
-							end
-						end
-						return oldNamecall(unpack(args))
 					end
 				end
 			end
@@ -361,16 +391,18 @@ local function enableSilentAim()
 		end))
 	end
 
-	-- Hook __index for Mouse.Hit/Target method
+	-- Hook __index for Mouse.Hit/Target
 	if not oldIndex then
 		oldIndex = hookmetamethod(game, "__index", newcclosure(function(self, index)
-			if silentAimActive and self == Mouse and not checkcaller() and silentAimMethod == "Mouse.Hit/Target" then
-				local target = getClosestPlayerInFOV()
-				if target and calculateChance(hitChance) then
-					if index == "Hit" or index == "hit" then
-						return target.CFrame
-					elseif index == "Target" or index == "target" then
-						return target
+			if not checkcaller() then
+				if silentAimActive and self == Mouse then
+					local target = getClosestPlayerInFOV()
+					if target and calculateChance(hitChance) then
+						if index == "Hit" or index == "hit" then
+							return target.CFrame
+						elseif index == "Target" or index == "target" then
+							return target
+						end
 					end
 				end
 			end
@@ -378,7 +410,7 @@ local function enableSilentAim()
 		end))
 	end
 
-	notify("Silent Aim", "Active - bullets redirect to target!")
+	notify("Silent Aim", "Active - hooks Raycast + RemoteEvents + Mouse!")
 end
 
 local function disableSilentAim()
@@ -1550,8 +1582,8 @@ do
 		silentAimActive = on
 		if on then enableSilentAim() else disableSilentAim() end
 	end)
-	createInfoLabel(tab, "Redirects your bullets to nearest enemy in FOV", o())
-	createInfoLabel(tab, "Requires executor with hookmetamethod (Synapse/Fluxus/etc)", o())
+	createInfoLabel(tab, "Hooks Raycast + RemoteEvents + Mouse to redirect bullets", o())
+	createInfoLabel(tab, "Requires hookmetamethod (Xeno/Synapse/Fluxus)", o())
 
 	createSpacer(tab, o())
 
@@ -1560,7 +1592,7 @@ do
 		wallbangActive = on
 		if on then notify("Wallbang", "Bullets ignore walls!") else notify("Wallbang", "Disabled") end
 	end)
-	createInfoLabel(tab, "Modifies raycast to ignore wall collisions", o())
+	createInfoLabel(tab, "Makes raycasts ignore walls - bullets pass through everything", o())
 
 	createSpacer(tab, o())
 
@@ -1720,7 +1752,7 @@ do
 		espActive = on
 		if on then startESP() else clearESP() end
 	end)
-	createInfoLabel(tab, "Red = enemy, Green = teammate. Shows weapon held.", o())
+	createInfoLabel(tab, "Blue = Facility, Red = Rebel. Shows role + weapon.", o())
 
 	createSpacer(tab, o())
 
