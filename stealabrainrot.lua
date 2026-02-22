@@ -1,8 +1,8 @@
--- ╔═══════════════════════════════════════════════════════════════╗
--- ║        Steal a Brainrot - Script Hub v2.0                   ║
--- ║   Anti-Cheat Aware | Sky Route Steal | Smooth Movement      ║
--- ║   ESP | Velocity Speed | Anti-Kick | Auto Lock              ║
--- ╚═══════════════════════════════════════════════════════════════╝
+-- ================================================================
+-- Steal a Brainrot - Script Hub v2.0
+-- Anti-Cheat Aware | Sky Route Steal | Smooth Movement
+-- ESP | Velocity Speed | Anti-Kick | Auto Lock
+-- ================================================================
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
