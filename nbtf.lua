@@ -1834,13 +1834,57 @@ do
 	local function o() n = n + 1 return n end
 
 	createSectionLabel(tab, "Secret / Special Locations", o())
-	createButton(tab, "TP: Secret Mod Room (Canyon Wall)", o(), function()
-		-- Known NBTF invis/mod room coordinates
+	createButton(tab, "TP: Secret Mod Room / Regular Lounge", o(), function()
 		local char = LocalPlayer.Character
-		if char then
-			char:PivotTo(CFrame.new(Vector3.new(-25.95, 84, 3537.55)))
-			notify("Teleport", "Teleported to Secret Mod Room area!")
+		if not char then return end
+		-- Search workspace for the mod room / regular lounge / secret area
+		local searchTerms = {"secret", "mod room", "regular lounge", "lounge", "modroom", "secretarea"}
+		local found = nil
+		for _, obj in ipairs(workspace:GetChildren()) do
+			local n = obj.Name:lower()
+			for _, term in ipairs(searchTerms) do
+				if n:find(term, 1, true) then found = obj break end
+			end
+			if found then break end
+			-- Check one level deep
+			if obj:IsA("Model") or obj:IsA("Folder") then
+				pcall(function()
+					for _, child in ipairs(obj:GetChildren()) do
+						local cn = child.Name:lower()
+						for _, term in ipairs(searchTerms) do
+							if cn:find(term, 1, true) then found = child break end
+						end
+						if found then break end
+					end
+				end)
+			end
+			if found then break end
 		end
+		if found then
+			local pos = nil
+			if found:IsA("Model") then
+				local pp = found.PrimaryPart or found:FindFirstChildWhichIsA("BasePart")
+				if pp then pos = pp.Position + Vector3.new(0, 5, 0) end
+			elseif found:IsA("BasePart") then
+				pos = found.Position + Vector3.new(0, 5, 0)
+			end
+			if pos then
+				char:PivotTo(CFrame.new(pos))
+				notify("Teleport", "Found: " .. found.Name)
+				return
+			end
+		end
+		-- Fallback: search for Maintenance (mod room is behind it)
+		local maint = findLocationByName("Maintenance")
+		if maint then
+			local pos = getLocationPosition(maint)
+			if pos then
+				char:PivotTo(CFrame.new(pos))
+				notify("Teleport", "TP to Maintenance (Mod Room is behind it on canyon wall)")
+				return
+			end
+		end
+		notify("Error", "Could not find Mod Room or Maintenance in workspace")
 	end)
 	createInfoLabel(tab, "Behind Maintenance Offices on the Canyon Wall", o())
 
