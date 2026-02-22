@@ -51,6 +51,7 @@ local spinEnabled = false
 local seizureEnabled = false
 
 local flingPower = 99999
+local walkFlingPower = 10000
 local flySpeed = 80
 local speedValue = 100
 local jumpPowerValue = 50
@@ -1284,7 +1285,7 @@ local function startFling()
 
 		-- BodyAngularVelocity - spin on Y axis
 		spinBAV = Instance.new("BodyAngularVelocity")
-		spinBAV.AngularVelocity = Vector3.new(0, 99999, 0)
+		spinBAV.AngularVelocity = Vector3.new(0, flingPower, 0)
 		spinBAV.MaxTorque = Vector3.new(0, math.huge, 0)
 		spinBAV.P = math.huge
 		spinBAV.Parent = root
@@ -1302,7 +1303,7 @@ local function startFling()
 		spawn(function()
 			while flingEnabled do
 				if spinBAV and spinBAV.Parent then
-					spinBAV.AngularVelocity = Vector3.new(0, 99999, 0)
+					spinBAV.AngularVelocity = Vector3.new(0, flingPower, 0)
 				end
 				wait(0.2)
 				if spinBAV and spinBAV.Parent then
@@ -1375,7 +1376,7 @@ local function startWalkFling()
 					local vel = rt.Velocity
 
 					-- SPIKE: multiply velocity massively + huge upward burst
-					rt.Velocity = vel * 10000 + Vector3.new(0, 10000, 0)
+					rt.Velocity = vel * walkFlingPower + Vector3.new(0, walkFlingPower, 0)
 
 					RunService.RenderStepped:Wait()
 					-- RESTORE: set velocity back to normal
@@ -2062,30 +2063,32 @@ do
 			startFling()
 		else stopFling() end
 	end)
-	createToggle(tab, "Walk Fling (Dinos Anim)", 3, function(on)
+	createSlider(tab, "Spin Fling Power", 1000, 99999, flingPower, 3, function(val) flingPower = val end)
+	createToggle(tab, "Walk Fling (Dinos Anim)", 4, function(on)
 		walkFlingEnabled = on
 		if on then
 			if flingEnabled then flingEnabled = false stopFling() end
 			startWalkFling()
 		else stopWalkFling() end
 	end)
+	createSlider(tab, "Walk Fling Power", 1000, 50000, walkFlingPower, 5, function(val) walkFlingPower = val end)
 
 	local spacer = Instance.new("Frame")
 	spacer.Size = UDim2.new(1, 0, 0, 4)
 	spacer.BackgroundTransparency = 1
-	spacer.LayoutOrder = 4
+	spacer.LayoutOrder = 6
 	spacer.Parent = tab
 
-	createSectionLabel(tab, "Visual Effects", 5)
-	createToggle(tab, "Invisible", 6, function(on)
+	createSectionLabel(tab, "Visual Effects", 7)
+	createToggle(tab, "Invisible", 8, function(on)
 		invisibleEnabled = on
 		if on then startInvisible() else stopInvisible() end
 	end)
-	createToggle(tab, "Spin", 7, function(on)
+	createToggle(tab, "Spin", 9, function(on)
 		spinEnabled = on
 		if on then startSpin() else stopSpin() end
 	end)
-	createToggle(tab, "Seizure", 8, function(on)
+	createToggle(tab, "Seizure", 10, function(on)
 		seizureEnabled = on
 		if on then startSeizure() else stopSeizure() end
 	end)
