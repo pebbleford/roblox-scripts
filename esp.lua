@@ -20,6 +20,7 @@ local OUTLINE_TRANSPARENCY = 0
 -- State
 local enabled = false
 local highlights = {}
+local nametags = {}
 local connections = {}
 
 -- ===================== GUI =====================
@@ -85,6 +86,97 @@ local function addHighlight(player)
 	highlights[player] = highlight
 end
 
+local function addNametag(player)
+	if player == LocalPlayer then return end
+	if nametags[player] then return end
+
+	local character = player.Character
+	if not character then return end
+
+	local head = character:FindFirstChild("Head")
+	if not head then return end
+
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "ESPNametag"
+	billboard.Adornee = head
+	billboard.Size = UDim2.new(0, 200, 0, 50)
+	billboard.StudsOffset = Vector3.new(0, 3, 0)
+	billboard.AlwaysOnTop = true
+	billboard.Parent = screenGui
+
+	local nameLabel = Instance.new("TextLabel")
+	nameLabel.Name = "NameLabel"
+	nameLabel.Size = UDim2.new(1, 0, 0.6, 0)
+	nameLabel.Position = UDim2.new(0, 0, 0, 0)
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.Text = player.DisplayName
+	nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	nameLabel.TextStrokeTransparency = 0.3
+	nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+	nameLabel.Font = Enum.Font.GothamBold
+	nameLabel.TextSize = 14
+	nameLabel.TextScaled = false
+	nameLabel.Parent = billboard
+
+	local healthBar = Instance.new("Frame")
+	healthBar.Name = "HealthBarBG"
+	healthBar.Size = UDim2.new(0.6, 0, 0, 6)
+	healthBar.Position = UDim2.new(0.2, 0, 0.7, 0)
+	healthBar.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+	healthBar.BorderSizePixel = 0
+	healthBar.Parent = billboard
+
+	local healthBarCorner = Instance.new("UICorner")
+	healthBarCorner.CornerRadius = UDim.new(0, 3)
+	healthBarCorner.Parent = healthBar
+
+	local healthFill = Instance.new("Frame")
+	healthFill.Name = "HealthFill"
+	healthFill.Size = UDim2.new(1, 0, 1, 0)
+	healthFill.BackgroundColor3 = Color3.fromRGB(80, 255, 80)
+	healthFill.BorderSizePixel = 0
+	healthFill.Parent = healthBar
+
+	local healthFillCorner = Instance.new("UICorner")
+	healthFillCorner.CornerRadius = UDim.new(0, 3)
+	healthFillCorner.Parent = healthFill
+
+	-- Update health bar
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		local function updateHealth()
+			local pct = math.clamp(humanoid.Health / humanoid.MaxHealth, 0, 1)
+			healthFill.Size = UDim2.new(pct, 0, 1, 0)
+			if pct > 0.5 then
+				healthFill.BackgroundColor3 = Color3.fromRGB(80, 255, 80)
+			elseif pct > 0.25 then
+				healthFill.BackgroundColor3 = Color3.fromRGB(255, 200, 0)
+			else
+				healthFill.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+			end
+		end
+		updateHealth()
+		local conn = humanoid.HealthChanged:Connect(updateHealth)
+		table.insert(connections, conn)
+	end
+
+	nametags[player] = billboard
+end
+
+local function removeNametag(player)
+	local tag = nametags[player]
+	if tag then
+		tag:Destroy()
+		nametags[player] = nil
+	end
+end
+
+local function removeAllNametags()
+	for player in pairs(nametags) do
+		removeNametag(player)
+	end
+end
+
 local function removeHighlight(player)
 	local hl = highlights[player]
 	if hl then
@@ -102,15 +194,17 @@ end
 local function setupPlayer(player)
 	if player == LocalPlayer then return end
 
-	-- Highlight their current character
+	-- Highlight and nametag their current character
 	if player.Character then
 		addHighlight(player)
+		addNametag(player)
 	end
 
 	-- Re-apply on every respawn
 	local conn = player.CharacterAdded:Connect(function(character)
-		-- Remove old highlight reference
+		-- Remove old instances
 		removeHighlight(player)
+		removeNametag(player)
 
 		if not enabled then return end
 
@@ -120,6 +214,7 @@ local function setupPlayer(player)
 
 		if enabled and character.Parent then
 			addHighlight(player)
+			addNametag(player)
 		end
 	end)
 
@@ -134,6 +229,7 @@ end
 
 local function disableAll()
 	removeAllHighlights()
+	removeAllNametags()
 	-- Disconnect respawn listeners
 	for _, conn in ipairs(connections) do
 		conn:Disconnect()
@@ -171,4 +267,5 @@ end)
 
 Players.PlayerRemoving:Connect(function(player)
 	removeHighlight(player)
+	removeNametag(player)
 end)
