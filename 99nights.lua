@@ -93,6 +93,20 @@ for _, list in ipairs({RESOURCE_ITEMS, FOOD_ITEMS, WEAPON_ITEMS, AMMO_ITEMS, HEA
 	end
 end
 
+-- ===================== ARMOR ITEMS =====================
+local ARMOR_ITEMS = {
+	"Iron Body", "Leather Body", "Wolf Pelt", "Alpha Wolf Pelt",
+	"Riot Shield"
+}
+
+local FUEL_ITEMS = {
+	"Log", "Coal", "Fuel Canister", "Oil Barrel"
+}
+
+local FLOWER_ITEMS = {
+	"Flower", "Golden Flower"
+}
+
 -- ===================== STATE =====================
 local autoTreeFarmActive = false
 local killAuraActive = false
@@ -106,14 +120,22 @@ local speedBoostActive = false
 local autoFuelActive = false
 local saplingFarmActive = false
 local fullbrightActive = false
-local antiFogActive = false
 local autoPlantActive = false
-local bringActive = false
+local autoChestActive = false
+local autoCookActive = false
+local autoHealActive = false
+local autoFeedActive = false
+local godModeActive = false
+local antiAfkActive = false
+local hitboxExpandActive = false
+local freezeEntitiesActive = false
+local autoSeedBoxActive = false
 
 local flySpeed = 60
 local speedValue = 50
 local killAuraRange = 15
 local killAuraSpeed = 0.15
+local hitboxSize = 10
 local windowVisible = true
 local activeTab = "Farm"
 
@@ -124,6 +146,8 @@ local flyBG = nil
 local noclipConnection = nil
 local speedBV = nil
 local speedConnection = nil
+local godModeConnection = nil
+local hitboxConnection = nil
 local espHighlights = {}
 local entityEspDrawings = {}
 local badTrees = {} -- trees that timed out during farming
@@ -1053,81 +1077,656 @@ local function disableFullbright()
 	if savedLighting.OutdoorAmbient then Lighting.OutdoorAmbient = savedLighting.OutdoorAmbient end
 end
 
+-- ===================== AUTO CHEST =====================
+-- Finds chest models in workspace, teleports to them, clicks to open
+-- Then collects dropped items nearby
+
+local function startAutoChest()
+	autoChestActive = true
+	task.spawn(function()
+		while autoChestActive do
+			pcall(function()
+				local char = LocalPlayer.Character
+				local hrp = getRoot()
+				if not char or not hrp then return end
+
+				for _, obj in ipairs(workspace:GetDescendants()) do
+					if not autoChestActive then break end
+					if table.find(CHEST_ITEMS, obj.Name) then
+						local cf = getItemCFrame(obj)
+						if cf then
+							-- Teleport to chest
+							char:PivotTo(cf + Vector3.new(0, 3, 0))
+							task.wait(0.3)
+							-- Click to open
+							mouse1click()
+							task.wait(0.5)
+							mouse1click()
+							task.wait(0.3)
+							-- Pick up any dropped loot nearby
+							for _, loot in ipairs(workspace:GetDescendants()) do
+								local pos = getItemPosition(loot)
+								if pos and table.find(ALL_ITEMS, loot.Name) then
+									if (pos - hrp.Position).Magnitude <= 15 then
+										char:PivotTo(CFrame.new(pos + Vector3.new(0, 2, 0)))
+										task.wait(0.15)
+										mouse1click()
+									end
+								end
+							end
+						end
+					end
+				end
+			end)
+			task.wait(3)
+		end
+	end)
+	notify("Auto Chest", "Looting chests automatically!")
+end
+
+local function stopAutoChest()
+	autoChestActive = false
+end
+
+-- ===================== AUTO COOK =====================
+-- Finds food items nearby and teleports to crockpot/campfire to cook
+local function startAutoCook()
+	autoCookActive = true
+	task.spawn(function()
+		while autoCookActive do
+			pcall(function()
+				local char = LocalPlayer.Character
+				if not char then return end
+
+				-- Look for raw food items
+				local rawFoods = {"Morsel", "Meat? Sandwich", "Bunny Foot"}
+				for _, obj in ipairs(workspace:GetDescendants()) do
+					if not autoCookActive then break end
+					if table.find(rawFoods, obj.Name) then
+						local cf = getItemCFrame(obj)
+						if cf then
+							-- Pick up food
+							char:PivotTo(cf + Vector3.new(0, 2, 0))
+							task.wait(0.2)
+							mouse1click()
+							task.wait(0.2)
+							-- Go to campfire to cook
+							char:PivotTo(CFrame.new(0, 10, 0))
+							task.wait(0.3)
+							mouse1click()
+							task.wait(0.3)
+						end
+					end
+				end
+			end)
+			task.wait(4)
+		end
+	end)
+	notify("Auto Cook", "Cooking food automatically!")
+end
+
+local function stopAutoCook()
+	autoCookActive = false
+end
+
+-- ===================== AUTO HEAL =====================
+-- Finds healing items and uses them when health is low
+local function startAutoHeal()
+	autoHealActive = true
+	task.spawn(function()
+		while autoHealActive do
+			pcall(function()
+				local hum = getHumanoid()
+				local char = LocalPlayer.Character
+				if not hum or not char then return end
+
+				if hum.Health < hum.MaxHealth * 0.7 then
+					-- Find healing items
+					for _, obj in ipairs(workspace:GetDescendants()) do
+						if not autoHealActive then break end
+						if table.find(HEALING_ITEMS, obj.Name) then
+							local cf = getItemCFrame(obj)
+							if cf then
+								char:PivotTo(cf + Vector3.new(0, 2, 0))
+								task.wait(0.2)
+								mouse1click()
+								task.wait(0.3)
+								break -- only use one at a time
+							end
+						end
+					end
+				end
+			end)
+			task.wait(2)
+		end
+	end)
+	notify("Auto Heal", "Auto healing when low!")
+end
+
+local function stopAutoHeal()
+	autoHealActive = false
+end
+
+-- ===================== AUTO FEED =====================
+-- Finds food and eats it when hunger is getting low
+local function startAutoFeed()
+	autoFeedActive = true
+	task.spawn(function()
+		while autoFeedActive do
+			pcall(function()
+				local char = LocalPlayer.Character
+				if not char then return end
+
+				-- Find food items and pick them up
+				for _, obj in ipairs(workspace:GetDescendants()) do
+					if not autoFeedActive then break end
+					if table.find(FOOD_ITEMS, obj.Name) then
+						local cf = getItemCFrame(obj)
+						if cf then
+							char:PivotTo(cf + Vector3.new(0, 2, 0))
+							task.wait(0.2)
+							mouse1click()
+							task.wait(0.3)
+							mouse1click()
+							task.wait(0.2)
+							break
+						end
+					end
+				end
+			end)
+			task.wait(5)
+		end
+	end)
+	notify("Auto Feed", "Auto eating food!")
+end
+
+local function stopAutoFeed()
+	autoFeedActive = false
+end
+
+-- ===================== GOD MODE =====================
+-- Constantly resets health to max, prevents ragdoll/falling states
+local function startGodMode()
+	godModeConnection = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			local hum = getHumanoid()
+			if hum then
+				hum.Health = hum.MaxHealth
+				hum:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+				hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+				hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+			end
+		end)
+	end)
+	notify("God Mode", "Invincible!")
+end
+
+local function stopGodMode()
+	if godModeConnection then godModeConnection:Disconnect() godModeConnection = nil end
+	pcall(function()
+		local hum = getHumanoid()
+		if hum then
+			hum:SetStateEnabled(Enum.HumanoidStateType.Dead, true)
+			hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+			hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+		end
+	end)
+end
+
+-- ===================== HITBOX EXPANDER =====================
+-- Makes enemy HumanoidRootParts larger so they are easier to hit
+local function startHitboxExpand()
+	hitboxExpandActive = true
+	hitboxConnection = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			for _, obj in ipairs(workspace:GetDescendants()) do
+				if table.find(ENEMY_NAMES, obj.Name) and obj:IsA("Model") then
+					local hrp = obj:FindFirstChild("HumanoidRootPart")
+					if hrp then
+						hrp.Size = Vector3.new(hitboxSize, hitboxSize, hitboxSize)
+						hrp.Transparency = 0.8
+					end
+				end
+			end
+		end)
+	end)
+	notify("Hitbox", "Hitboxes expanded!")
+end
+
+local function stopHitboxExpand()
+	hitboxExpandActive = false
+	if hitboxConnection then hitboxConnection:Disconnect() hitboxConnection = nil end
+	-- Reset hitboxes
+	pcall(function()
+		for _, obj in ipairs(workspace:GetDescendants()) do
+			if table.find(ENEMY_NAMES, obj.Name) and obj:IsA("Model") then
+				local hrp = obj:FindFirstChild("HumanoidRootPart")
+				if hrp then
+					hrp.Size = Vector3.new(2, 2, 1)
+					hrp.Transparency = 1
+				end
+			end
+		end
+	end)
+end
+
+-- ===================== FREEZE ENTITIES =====================
+-- Anchors all enemy HumanoidRootParts so they can't move
+local function freezeAllEntities()
+	local count = 0
+	for _, obj in ipairs(workspace:GetDescendants()) do
+		if table.find(ENEMY_NAMES, obj.Name) and obj:IsA("Model") then
+			pcall(function()
+				local hrp = obj:FindFirstChild("HumanoidRootPart")
+				if hrp then
+					hrp.Anchored = true
+					count = count + 1
+				end
+			end)
+		end
+	end
+	notify("Freeze", "Froze " .. count .. " entities!")
+end
+
+local function unfreezeAllEntities()
+	local count = 0
+	for _, obj in ipairs(workspace:GetDescendants()) do
+		if table.find(ENEMY_NAMES, obj.Name) and obj:IsA("Model") then
+			pcall(function()
+				local hrp = obj:FindFirstChild("HumanoidRootPart")
+				if hrp then
+					hrp.Anchored = false
+					count = count + 1
+				end
+			end)
+		end
+	end
+	notify("Unfreeze", "Unfroze " .. count .. " entities!")
+end
+
+-- ===================== ANTI AFK =====================
+local function startAntiAfk()
+	antiAfkActive = true
+	pcall(function()
+		for _, conn in pairs(getconnections(LocalPlayer.Idled)) do
+			conn:Disable()
+		end
+	end)
+	-- Backup: virtual input every 5 min
+	task.spawn(function()
+		while antiAfkActive do
+			pcall(function()
+				VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+				task.wait(0.1)
+				VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+			end)
+			task.wait(300)
+		end
+	end)
+	notify("Anti-AFK", "AFK prevention active!")
+end
+
+local function stopAntiAfk()
+	antiAfkActive = false
+end
+
+-- ===================== AUTO OPEN SEED BOXES =====================
+-- Finds Seed Box items, teleports to them, clicks to open
+local function startAutoSeedBox()
+	autoSeedBoxActive = true
+	task.spawn(function()
+		while autoSeedBoxActive do
+			pcall(function()
+				local char = LocalPlayer.Character
+				if not char then return end
+
+				for _, obj in ipairs(workspace:GetDescendants()) do
+					if not autoSeedBoxActive then break end
+					if obj.Name == "Seed Box" then
+						local cf = getItemCFrame(obj)
+						if cf then
+							char:PivotTo(cf + Vector3.new(0, 2, 0))
+							task.wait(0.2)
+							mouse1click()
+							task.wait(0.3)
+							mouse1click()
+							task.wait(0.2)
+						end
+					end
+				end
+			end)
+			task.wait(3)
+		end
+	end)
+	notify("Seed Boxes", "Auto opening seed boxes!")
+end
+
+local function stopAutoSeedBox()
+	autoSeedBoxActive = false
+end
+
+-- ===================== PLANT SAPLINGS AROUND CAMPFIRE =====================
+-- Plants saplings in a ring around the campfire (origin point)
+local function plantSaplingsAroundCampfire()
+	local char = LocalPlayer.Character
+	if not char then notify("Error", "No character") return end
+
+	local campfirePos = Vector3.new(0, 5, 0)
+	local radius = 12
+	local count = 12
+
+	notify("Planting", "Planting saplings around campfire...")
+
+	for i = 1, count do
+		if not char or not char.Parent then break end
+		local angle = (i / count) * math.pi * 2
+		local offset = Vector3.new(math.cos(angle) * radius, 0, math.sin(angle) * radius)
+		local targetPos = campfirePos + offset
+
+		char:PivotTo(CFrame.new(targetPos + Vector3.new(0, 2, 0)))
+		task.wait(0.25)
+		mouse1click()
+		task.wait(0.3)
+		mouse1click()
+		task.wait(0.2)
+	end
+
+	-- Return to campfire
+	char:PivotTo(CFrame.new(campfirePos + Vector3.new(0, 5, 0)))
+	notify("Planted", "Saplings planted around campfire!")
+end
+
+-- ===================== BUILD LOG WALLS IN CIRCLE =====================
+-- Places log walls in a defensive ring around position
+local function buildLogWallsInCircle()
+	local char = LocalPlayer.Character
+	local hrp = getRoot()
+	if not char or not hrp then notify("Error", "No character") return end
+
+	local basePos = hrp.Position
+	local radius = 15
+	local count = 10
+
+	notify("Building", "Placing log walls in circle...")
+
+	for i = 1, count do
+		if not char or not char.Parent then break end
+		local angle = (i / count) * math.pi * 2
+		local offset = Vector3.new(math.cos(angle) * radius, 0, math.sin(angle) * radius)
+		local targetPos = basePos + offset
+
+		char:PivotTo(CFrame.new(targetPos + Vector3.new(0, 2, 0)))
+		task.wait(0.3)
+		mouse1click()
+		task.wait(0.3)
+	end
+
+	char:PivotTo(CFrame.new(basePos + Vector3.new(0, 2, 0)))
+	notify("Built", "Log walls placed!")
+end
+
+-- ===================== CLEANUP LOGS =====================
+-- Removes all log models from workspace by moving them far away
+local function cleanupLogs()
+	local count = 0
+	for _, obj in ipairs(workspace:GetDescendants()) do
+		if obj.Name == "Log" then
+			pcall(function()
+				if obj:IsA("Model") then
+					obj:PivotTo(CFrame.new(0, -500, 0))
+					count = count + 1
+				elseif obj:IsA("BasePart") and not obj.Anchored then
+					obj.CFrame = CFrame.new(0, -500, 0)
+					count = count + 1
+				end
+			end)
+		end
+	end
+	notify("Cleanup", "Moved " .. count .. " logs out of the way!")
+end
+
+-- ===================== REVEAL MAP =====================
+-- Reveals map by teleporting to distant positions briefly then returning
+local function revealMap()
+	local char = LocalPlayer.Character
+	local hrp = getRoot()
+	if not char or not hrp then notify("Error", "No character") return end
+
+	local startPos = hrp.CFrame
+	notify("Map", "Revealing map...")
+
+	-- Visit corners of the map to reveal fog of war
+	local mapPositions = {
+		Vector3.new(500, 50, 500),
+		Vector3.new(-500, 50, 500),
+		Vector3.new(500, 50, -500),
+		Vector3.new(-500, 50, -500),
+		Vector3.new(0, 50, 0),
+		Vector3.new(250, 50, 0),
+		Vector3.new(-250, 50, 0),
+		Vector3.new(0, 50, 250),
+		Vector3.new(0, 50, -250),
+	}
+
+	for _, pos in ipairs(mapPositions) do
+		if not char or not char.Parent then break end
+		char:PivotTo(CFrame.new(pos))
+		task.wait(0.5)
+	end
+
+	-- Return to start
+	char:PivotTo(startPos)
+	notify("Map", "Map revealed!")
+end
+
+-- ===================== AUTO COLLECT FLOWERS + GOLD =====================
+local function collectFlowersAndGold()
+	local char = LocalPlayer.Character
+	local hrp = getRoot()
+	if not char or not hrp then return end
+	local count = 0
+
+	for _, obj in ipairs(workspace:GetDescendants()) do
+		local name = obj.Name
+		if name == "Flower" or name == "Golden Flower" or name == "Coin Stack" or name == "Gold Stack" then
+			local cf = getItemCFrame(obj)
+			if cf then
+				char:PivotTo(cf + Vector3.new(0, 2, 0))
+				task.wait(0.15)
+				mouse1click()
+				task.wait(0.1)
+				count = count + 1
+			end
+		end
+	end
+
+	notify("Collect", "Picked up " .. count .. " flowers/gold!")
+end
+
+-- ===================== TELEPORT ALL TREES/CHESTS/ENTITIES =====================
+-- Moves all trees/chests/entities to your position
+local function teleportAllTrees()
+	local hrp = getRoot()
+	if not hrp then return end
+	local count = 0
+	for _, obj in ipairs(workspace:GetDescendants()) do
+		if (obj.Name == "Small Tree" or obj.Name == "Big Tree" or obj.Name == "Tree") and obj:IsA("Model") then
+			pcall(function()
+				obj:PivotTo(CFrame.new(hrp.Position + Vector3.new(math.random(-10, 10), 0, math.random(-10, 10))))
+				count = count + 1
+			end)
+		end
+	end
+	notify("Trees", "Brought " .. count .. " trees to you!")
+end
+
+local function teleportAllChests()
+	local hrp = getRoot()
+	if not hrp then return end
+	local count = 0
+	for _, obj in ipairs(workspace:GetDescendants()) do
+		if table.find(CHEST_ITEMS, obj.Name) then
+			pcall(function()
+				if obj:IsA("Model") then
+					obj:PivotTo(CFrame.new(hrp.Position + Vector3.new(math.random(-5, 5), 2, math.random(-5, 5))))
+					count = count + 1
+				elseif obj:IsA("BasePart") then
+					obj.CFrame = CFrame.new(hrp.Position + Vector3.new(math.random(-5, 5), 2, math.random(-5, 5)))
+					count = count + 1
+				end
+			end)
+		end
+	end
+	notify("Chests", "Brought " .. count .. " chests to you!")
+end
+
 -- ===================== BUILD FARM TAB =====================
 do
 	local tab = tabFrames["Farm"]
-	createSectionLabel(tab, "Tree Farm", 1)
-	createToggle(tab, "Auto Tree Farm (Chop Small Trees)", 2, function(on)
+	local n = 0
+	local function o() n = n + 1 return n end
+
+	createSectionLabel(tab, "Tree Farm", o())
+	createToggle(tab, "Auto Tree Farm (Chop Small Trees)", o(), function(on)
 		if on then startAutoTreeFarm() else stopAutoTreeFarm() end
 	end)
-	createInfoLabel(tab, "Teleports to trees, chops with click, skips stuck trees", 3)
+	createInfoLabel(tab, "Teleports to trees, chops with click, skips stuck trees", o())
 
-	createSpacer(tab, 4)
+	createSpacer(tab, o())
 
-	createSectionLabel(tab, "Sapling Farm", 5)
-	createToggle(tab, "Auto Collect Saplings", 6, function(on)
+	createSectionLabel(tab, "Saplings", o())
+	createToggle(tab, "Auto Collect Saplings", o(), function(on)
 		saplingFarmActive = on
 		if on then startSaplingFarm() else stopSaplingFarm() end
 	end)
-	createInfoLabel(tab, "Teleports to saplings and collects them automatically", 7)
-	createButton(tab, "Plant Saplings in Circle", 8, plantSaplingsInCircle)
-	createInfoLabel(tab, "Places saplings in a ring around your position", 9)
+	createButton(tab, "Plant Saplings in Circle (Around You)", o(), plantSaplingsInCircle)
+	createButton(tab, "Plant Saplings Around Campfire", o(), plantSaplingsAroundCampfire)
+	createToggle(tab, "Auto Open Seed Boxes", o(), function(on)
+		autoSeedBoxActive = on
+		if on then startAutoSeedBox() else stopAutoSeedBox() end
+	end)
 
-	createSpacer(tab, 10)
+	createSpacer(tab, o())
 
-	createSectionLabel(tab, "Auto Fuel Campfire", 11)
-	createToggle(tab, "Auto Fuel (Logs/Coal/Fuel)", 12, function(on)
+	createSectionLabel(tab, "Chests", o())
+	createToggle(tab, "Auto Chest (Open + Loot)", o(), function(on)
+		autoChestActive = on
+		if on then startAutoChest() else stopAutoChest() end
+	end)
+	createInfoLabel(tab, "Teleports to chests, opens them, collects loot", o())
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Campfire & Survival", o())
+	createToggle(tab, "Auto Fuel Campfire", o(), function(on)
 		autoFuelActive = on
 		if on then startAutoFuel() else stopAutoFuel() end
 	end)
-	createInfoLabel(tab, "Collects fuel and brings to campfire", 13)
+	createToggle(tab, "Auto Cook (Raw Food)", o(), function(on)
+		autoCookActive = on
+		if on then startAutoCook() else stopAutoCook() end
+	end)
+	createToggle(tab, "Auto Feed (Eat Food)", o(), function(on)
+		autoFeedActive = on
+		if on then startAutoFeed() else stopAutoFeed() end
+	end)
+	createToggle(tab, "Auto Heal (Use Bandage/Medkit)", o(), function(on)
+		autoHealActive = on
+		if on then startAutoHeal() else stopAutoHeal() end
+	end)
 
-	createSpacer(tab, 14)
+	createSpacer(tab, o())
 
-	createSectionLabel(tab, "Auto Pickup", 15)
-	createToggle(tab, "Auto Pickup Nearby Items", 16, function(on)
+	createSectionLabel(tab, "Auto Pickup", o())
+	createToggle(tab, "Auto Pickup Nearby Items", o(), function(on)
 		autoPickupActive = on
 		if on then startAutoPickup() else stopAutoPickup() end
 	end)
+	createButton(tab, "Collect Flowers & Gold", o(), collectFlowersAndGold)
 
-	createSpacer(tab, 17)
+	createSpacer(tab, o())
 
-	createSectionLabel(tab, "Bring Items to You", 18)
-	createButton(tab, "Bring Resources (Logs/Coal/Scrap)", 19, function()
+	createSectionLabel(tab, "Bring Items to You", o())
+	createButton(tab, "Bring Resources (Logs/Coal/Scrap)", o(), function()
 		bringItemsByName(RESOURCE_ITEMS)
 	end)
-	createButton(tab, "Bring Food", 20, function()
+	createButton(tab, "Bring Food", o(), function()
 		bringItemsByName(FOOD_ITEMS)
 	end)
-	createButton(tab, "Bring Weapons + Ammo", 21, function()
+	createButton(tab, "Bring Weapons + Ammo", o(), function()
 		local combined = {}
 		for _, v in ipairs(WEAPON_ITEMS) do table.insert(combined, v) end
 		for _, v in ipairs(AMMO_ITEMS) do table.insert(combined, v) end
 		bringItemsByName(combined)
 	end)
-	createButton(tab, "Bring Healing", 22, function()
+	createButton(tab, "Bring Healing", o(), function()
 		bringItemsByName(HEALING_ITEMS)
 	end)
-	createButton(tab, "Bring ALL Items", 23, function()
+	createButton(tab, "Bring Armor", o(), function()
+		bringItemsByName(ARMOR_ITEMS)
+	end)
+	createButton(tab, "Bring Fuel", o(), function()
+		bringItemsByName(FUEL_ITEMS)
+	end)
+	createButton(tab, "Bring ALL Items", o(), function()
 		bringItemsByName(ALL_ITEMS)
 	end)
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "World", o())
+	createButton(tab, "Teleport All Trees to You", o(), teleportAllTrees)
+	createButton(tab, "Teleport All Chests to You", o(), teleportAllChests)
+	createButton(tab, "Build Log Walls in Circle", o(), buildLogWallsInCircle)
+	createButton(tab, "Cleanup Logs (Move Away)", o(), cleanupLogs)
+	createButton(tab, "Reveal Map", o(), revealMap)
 end
 
 -- ===================== BUILD COMBAT TAB =====================
 do
 	local tab = tabFrames["Combat"]
-	createSectionLabel(tab, "Kill Aura", 1)
-	createToggle(tab, "Kill Aura (Auto Attack Enemies)", 2, function(on)
+	local n = 0
+	local function o() n = n + 1 return n end
+
+	createSectionLabel(tab, "Kill Aura", o())
+	createToggle(tab, "Kill Aura (Auto Attack Enemies)", o(), function(on)
 		killAuraActive = on
 		if on then startKillAura() else stopKillAura() end
 	end)
-	createSlider(tab, "Kill Range (studs)", 5, 50, killAuraRange, 3, function(val)
+	createSlider(tab, "Kill Range (studs)", 5, 50, killAuraRange, o(), function(val)
 		killAuraRange = val
 	end)
-	createSlider(tab, "Attack Speed (x100 ms)", 5, 50, math.floor(killAuraSpeed * 100), 4, function(val)
+	createSlider(tab, "Attack Speed (x100 ms)", 5, 50, math.floor(killAuraSpeed * 100), o(), function(val)
 		killAuraSpeed = val / 100
 	end)
-	createInfoLabel(tab, "Faces and clicks nearby enemies to attack", 5)
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Protection", o())
+	createToggle(tab, "God Mode (Infinite Health)", o(), function(on)
+		godModeActive = on
+		if on then startGodMode() else stopGodMode() end
+	end)
+	createInfoLabel(tab, "Constantly heals to max, prevents death", o())
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Hitbox", o())
+	createToggle(tab, "Hitbox Expander", o(), function(on)
+		hitboxExpandActive = on
+		if on then startHitboxExpand() else stopHitboxExpand() end
+	end)
+	createSlider(tab, "Hitbox Size", 5, 30, hitboxSize, o(), function(val)
+		hitboxSize = val
+	end)
+	createInfoLabel(tab, "Makes enemy hitboxes larger for easier hits", o())
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Entity Control", o())
+	createButton(tab, "Freeze All Entities", o(), freezeAllEntities)
+	createButton(tab, "Unfreeze All Entities", o(), unfreezeAllEntities)
+	createInfoLabel(tab, "Anchors/unanchors all enemy HumanoidRootParts", o())
 end
 
 -- ===================== BUILD MOVEMENT TAB =====================
@@ -1160,6 +1759,15 @@ do
 	createToggle(tab, "Infinite Jump", 12, function(on)
 		infJumpActive = on
 	end)
+
+	createSpacer(tab, 13)
+
+	createSectionLabel(tab, "AFK", 14)
+	createToggle(tab, "Anti-AFK (Prevent Kick)", 15, function(on)
+		antiAfkActive = on
+		if on then startAntiAfk() else stopAntiAfk() end
+	end)
+	createInfoLabel(tab, "Disables idle kick + sends periodic input", 16)
 end
 
 -- ===================== BUILD VISUALS TAB =====================
