@@ -34,7 +34,9 @@ public partial class MainWindow : Window
         ("Rejoin Server", "Quickly rejoin the current server",
             "local TeleportService = game:GetService('TeleportService')\nlocal Players = game:GetService('Players')\nTeleportService:Teleport(game.PlaceId, Players.LocalPlayer)\nprint('[Rejoin] Teleporting...')"),
         ("Spin Fling", "Spin your character to fling nearby players (V to toggle)",
-            "loadstring(game:HttpGet('https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/spinfling.lua'))()")
+            "loadstring(game:HttpGet('https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/spinfling.lua'))()"),
+        ("Steal a Brainrot Hub", "Instant steal, auto farm, ESP, fly, noclip for Steal a Brainrot",
+            "loadstring(game:HttpGet('https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/stealabrainrot.lua'))()")
     ];
 
     public MainWindow()

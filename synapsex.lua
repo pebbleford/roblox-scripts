@@ -945,6 +945,7 @@ do
 			{"Fullbright", 'game.Lighting.Brightness = 2\ngame.Lighting.ClockTime = 14\ngame.Lighting.FogEnd = 100000\ngame.Lighting.GlobalShadows = false\ngame.Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)'},
 			{"Spin Fling", "loadstring(game:HttpGet('https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/spinfling.lua'))()"},
 			{"ESP Loader", "loadstring(game:HttpGet('https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/esp.lua'))()"},
+			{"Steal a Brainrot Hub", "loadstring(game:HttpGet('https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/stealabrainrot.lua'))()"},
 		}
 
 		for i, preset in ipairs(presets) do
