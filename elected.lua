@@ -32,6 +32,7 @@ local EditSignEvent = nil
 local BuildEvent = nil
 local ChatRemote = nil
 
+-- Step 1: Try the known path ReplicatedStorage.Remotes
 pcall(function()
 	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
 	if remotes then
@@ -40,22 +41,36 @@ pcall(function()
 		BuildEvent = remotes:FindFirstChild("BuildEvent")
 	end
 end)
--- Also search deeper in case remotes are nested differently
-if not MineEvent then
-	pcall(function()
-		for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
-			if obj:IsA("RemoteEvent") and obj.Name:lower():find("mine") then
-				MineEvent = obj
-			end
-			if obj:IsA("RemoteEvent") and obj.Name:lower():find("editsign") then
-				EditSignEvent = obj
-			end
-			if obj:IsA("RemoteFunction") and obj.Name:lower():find("build") then
-				BuildEvent = obj
-			end
+
+-- Step 2: Deep search for any missing remotes (search ALL descendants)
+pcall(function()
+	for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
+		local n = obj.Name:lower()
+		local isRE = obj:IsA("RemoteEvent")
+		local isRF = obj:IsA("RemoteFunction")
+		if not MineEvent and (isRE or isRF) and n:find("mine") then
+			MineEvent = obj
 		end
-	end)
-end
+		if not EditSignEvent and (isRE or isRF) and (n:find("editsign") or n:find("sign")) then
+			EditSignEvent = obj
+		end
+		if not BuildEvent and (isRE or isRF) and n:find("build") then
+			BuildEvent = obj
+		end
+	end
+end)
+
+-- Step 3: Print all remotes to F9 so user can see what exists
+print("[SX Elected] === REMOTE SCAN ===")
+pcall(function()
+	for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
+		if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") or obj:IsA("BindableEvent") then
+			print("[SX Elected]   [" .. obj.ClassName .. "] " .. obj:GetFullName())
+		end
+	end
+end)
+print("[SX Elected] === END SCAN ===")
+
 pcall(function()
 	local chatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
 	if chatEvents then ChatRemote = chatEvents:FindFirstChild("SayMessageRequest") end
