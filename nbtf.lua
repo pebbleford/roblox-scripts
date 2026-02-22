@@ -114,7 +114,13 @@ local function equipGun(gun)
 end
 
 local function fireWeaponHit(targetPlayer, gun)
-	if not WeaponHitRemote then return false end
+	if not WeaponHitRemote then
+		-- Try to find it again in case game loaded late
+		pcall(function()
+			WeaponHitRemote = game:GetService("ReplicatedStorage").WeaponsSystem.Network.WeaponHit
+		end)
+		if not WeaponHitRemote then return false end
+	end
 	if not targetPlayer or not targetPlayer.Character then return false end
 	local head = targetPlayer.Character:FindFirstChild("Head")
 	if not head then return false end
@@ -124,31 +130,30 @@ local function fireWeaponHit(targetPlayer, gun)
 	-- Gun must be equipped for server to accept the hit
 	equipGun(gun)
 
-	-- Use realistic hit data - actual positions for server validation
-	local myRoot = getRoot()
-	local hitPos = head.Position
-	local dir = myRoot and (hitPos - myRoot.Position).Unit or Vector3.new(0, 0, -1)
-	local dist = myRoot and (hitPos - myRoot.Position).Magnitude or 10
-
+	-- d=0 and maxDist=0 bypasses server distance checks
+	-- p=zero and t=0 bypasses position/timing validation
 	local args = {
 		[1] = gun,
 		[2] = {
-			["p"] = hitPos,
+			["p"] = Vector3.new(0, 0, 0),
 			["pid"] = 1,
 			["part"] = head,
-			["d"] = dist,
-			["maxDist"] = 1000,
+			["d"] = 0,
+			["maxDist"] = 0,
 			["h"] = head,
-			["m"] = head.Material,
+			["m"] = Enum.Material.Plastic,
 			["sid"] = 2,
-			["t"] = tick(),
-			["n"] = dir
+			["t"] = 0,
+			["n"] = Vector3.new(0, 0, 0)
 		}
 	}
-	pcall(function()
+	local ok, err = pcall(function()
 		WeaponHitRemote:FireServer(unpack(args))
 	end)
-	return true
+	if not ok then
+		warn("[SX NBTF] FireServer failed: " .. tostring(err))
+	end
+	return ok
 end
 
 -- Click simulation fallback
@@ -2922,11 +2927,14 @@ do
 							notify("Error", player.DisplayName .. " is dead or not in game")
 							return
 						end
-						-- Equip the gun first so server accepts the hit
 						equipGun(gun)
+						print("[SX NBTF] Killing " .. player.DisplayName .. " with " .. gun.Name .. " (equipped: " .. tostring(gun.Parent == LocalPlayer.Character) .. ")")
+						print("[SX NBTF] Remote: " .. tostring(WeaponHitRemote))
+						print("[SX NBTF] Target head: " .. tostring(player.Character and player.Character:FindFirstChild("Head")))
 						task.spawn(function()
 							for i = 1, 3 do
-								fireWeaponHit(player, gun)
+								local ok = fireWeaponHit(player, gun)
+								print("[SX NBTF] Round " .. i .. " fired: " .. tostring(ok))
 								task.wait(killAllDelay)
 							end
 							notify("Kill", "Fired 3 rounds at " .. player.DisplayName)
