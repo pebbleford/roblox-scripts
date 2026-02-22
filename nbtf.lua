@@ -299,22 +299,18 @@ local function enableSilentAim()
 								args[3] = getDirection(origin, target.Position)
 							end
 						end
-						-- Wallbang: remove wall filtering so bullets go through everything
+						-- Wallbang: make raycast only hit player characters (whitelist mode)
 						if wallbangActive then
 							local params = RaycastParams.new()
-							params.FilterType = Enum.RaycastFilterType.Exclude
-							-- Exclude all non-character parts (walls, terrain, etc)
-							local excludeList = {}
-							for _, obj in ipairs(workspace:GetChildren()) do
-								if not obj:IsA("Model") or not obj:FindFirstChildOfClass("Humanoid") then
-									table.insert(excludeList, obj)
+							params.FilterType = Enum.RaycastFilterType.Include
+							-- Only include enemy characters so bullets pass through walls
+							local includeList = {}
+							for _, p in ipairs(Players:GetPlayers()) do
+								if p ~= LocalPlayer and p.Character then
+									table.insert(includeList, p.Character)
 								end
 							end
-							-- Also exclude local player
-							if LocalPlayer.Character then
-								table.insert(excludeList, LocalPlayer.Character)
-							end
-							params.FilterDescendantsInstances = excludeList
+							params.FilterDescendantsInstances = includeList
 							args[4] = params
 						end
 						return oldNamecall(unpack(args))
@@ -1145,32 +1141,35 @@ local NBTF_SEARCH_NAMES = {
 	"Helipad", "Helicopter",
 }
 
--- Find a part/model in workspace by name (case-insensitive partial match)
+-- Find a part/model in workspace by name - only checks direct children and 2 levels deep
 local function findLocationByName(searchName)
 	local best = nil
-	local bestSize = math.huge
 	local searchLower = searchName:lower()
 
-	for _, obj in ipairs(workspace:GetDescendants()) do
-		if (obj:IsA("BasePart") or obj:IsA("Model") or obj:IsA("SpawnLocation")) then
-			local nameLower = obj.Name:lower()
-			if nameLower:find(searchLower, 1, true) then
-				-- Prefer SpawnLocations, then bigger parts (they're usually floors/rooms)
-				if obj:IsA("SpawnLocation") then
-					return obj
-				end
-				if obj:IsA("BasePart") then
-					local size = obj.Size.X * obj.Size.Y * obj.Size.Z
-					if size > 10 then -- skip tiny parts
-						if best == nil or obj:IsA("SpawnLocation") then
-							best = obj
-						end
-					end
-				elseif obj:IsA("Model") then
-					best = best or obj
-				end
+	-- Only search top-level children and their immediate children (2 levels max)
+	for _, obj in ipairs(workspace:GetChildren()) do
+		local nameLower = obj.Name:lower()
+		if nameLower:find(searchLower, 1, true) then
+			if obj:IsA("SpawnLocation") then return obj end
+			if obj:IsA("BasePart") or obj:IsA("Model") then
+				best = best or obj
 			end
 		end
+		-- Check one level deeper
+		if obj:IsA("Model") or obj:IsA("Folder") then
+			pcall(function()
+				for _, child in ipairs(obj:GetChildren()) do
+					local cName = child.Name:lower()
+					if cName:find(searchLower, 1, true) then
+						if child:IsA("SpawnLocation") then best = best or child return end
+						if child:IsA("BasePart") or child:IsA("Model") then
+							best = best or child
+						end
+					end
+				end
+			end)
+		end
+		if best then break end
 	end
 	return best
 end
@@ -1189,6 +1188,7 @@ local function getLocationPosition(obj)
 end
 
 -- Scan workspace and build a list of all found teleportable locations
+-- Only checks top-level + 1 level deep to avoid timeout
 local function scanLocations()
 	local found = {}
 	local seen = {} -- avoid duplicates
@@ -1204,8 +1204,8 @@ local function scanLocations()
 		end
 	end
 
-	-- Also add all SpawnLocations
-	for _, obj in ipairs(workspace:GetDescendants()) do
+	-- Also add SpawnLocations from top-level children only
+	for _, obj in ipairs(workspace:GetChildren()) do
 		if obj:IsA("SpawnLocation") and not seen[obj] then
 			seen[obj] = true
 			table.insert(found, {name = "Spawn: " .. obj.Name, pos = obj.Position + Vector3.new(0, 5, 0), obj = obj})
@@ -1787,11 +1787,6 @@ do
 	end
 
 	createButton(tab, "Scan Facility Locations", o(), refreshLocations)
-	-- Auto-scan on load
-	task.spawn(function()
-		task.wait(2)
-		refreshLocations()
-	end)
 
 	createSpacer(tab, o())
 
