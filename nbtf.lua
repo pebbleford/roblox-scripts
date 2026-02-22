@@ -6,10 +6,18 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 local Mouse = LocalPlayer:GetMouse()
+
+-- ===================== CLICK SIMULATION =====================
+local function mouse1click()
+	VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+	task.wait(0.05)
+	VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+end
 
 -- ===================== COLOR PALETTE =====================
 local COLORS = {
@@ -198,62 +206,85 @@ local function enableSilentAim()
 	end
 
 	-- Hook __namecall to intercept Raycast / FindPartOnRay calls
+	-- Silent Aim: redirects bullet direction to target
+	-- Wallbang: strips wall collision from raycast so bullets pass through
+	-- Both can work independently or together
 	if not oldNamecall then
 		oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
 			local args = {...}
 			local self = args[1]
 			local method = getnamecallmethod()
 
-			if silentAimActive and self == workspace and not checkcaller() then
-				local target = getClosestPlayerInFOV()
-				if target and calculateChance(hitChance) then
+			if (silentAimActive or wallbangActive) and self == workspace and not checkcaller() then
 
-					if method == "Raycast" and (silentAimMethod == "Raycast" or wallbangActive) then
-						local origin = args[2]
-						if typeof(origin) == "Vector3" then
-							-- Redirect ray direction to target
-							args[3] = getDirection(origin, target.Position)
-
-							-- Wallbang: modify RaycastParams to ignore walls
-							if wallbangActive and typeof(args[4]) == "RaycastParams" then
-								local params = RaycastParams.new()
-								params.FilterType = Enum.RaycastFilterType.Include
-								-- Only include target character parts
-								if target.Parent then
-									params.FilterDescendantsInstances = {target.Parent}
-								end
-								args[4] = params
+				if method == "Raycast" then
+					local origin = args[2]
+					if typeof(origin) == "Vector3" then
+						-- Silent aim: redirect direction to target
+						if silentAimActive then
+							local target = getClosestPlayerInFOV()
+							if target and calculateChance(hitChance) then
+								args[3] = getDirection(origin, target.Position)
 							end
-
-							return oldNamecall(unpack(args))
 						end
-
-					elseif method == "FindPartOnRayWithIgnoreList" and silentAimMethod == "FindPartOnRay" then
-						local ray = args[2]
-						if typeof(ray) == "Ray" then
-							local origin = ray.Origin
-							local direction = getDirection(origin, target.Position)
-							args[2] = Ray.new(origin, direction)
-							return oldNamecall(unpack(args))
+						-- Wallbang: remove wall filtering so bullets go through everything
+						if wallbangActive then
+							local params = RaycastParams.new()
+							params.FilterType = Enum.RaycastFilterType.Exclude
+							-- Exclude all non-character parts (walls, terrain, etc)
+							local excludeList = {}
+							for _, obj in ipairs(workspace:GetChildren()) do
+								if not obj:IsA("Model") or not obj:FindFirstChildOfClass("Humanoid") then
+									table.insert(excludeList, obj)
+								end
+							end
+							-- Also exclude local player
+							if LocalPlayer.Character then
+								table.insert(excludeList, LocalPlayer.Character)
+							end
+							params.FilterDescendantsInstances = excludeList
+							args[4] = params
 						end
+						return oldNamecall(unpack(args))
+					end
 
-					elseif method == "FindPartOnRayWithWhitelist" and silentAimMethod == "FindPartOnRay" then
-						local ray = args[2]
-						if typeof(ray) == "Ray" then
-							local origin = ray.Origin
-							local direction = getDirection(origin, target.Position)
-							args[2] = Ray.new(origin, direction)
-							return oldNamecall(unpack(args))
+				elseif method == "FindPartOnRayWithIgnoreList" then
+					local ray = args[2]
+					if typeof(ray) == "Ray" then
+						if silentAimActive then
+							local target = getClosestPlayerInFOV()
+							if target and calculateChance(hitChance) then
+								local direction = getDirection(ray.Origin, target.Position)
+								args[2] = Ray.new(ray.Origin, direction)
+							end
 						end
+						return oldNamecall(unpack(args))
+					end
 
-					elseif (method == "FindPartOnRay" or method == "findPartOnRay") and silentAimMethod == "FindPartOnRay" then
-						local ray = args[2]
-						if typeof(ray) == "Ray" then
-							local origin = ray.Origin
-							local direction = getDirection(origin, target.Position)
-							args[2] = Ray.new(origin, direction)
-							return oldNamecall(unpack(args))
+				elseif method == "FindPartOnRayWithWhitelist" then
+					local ray = args[2]
+					if typeof(ray) == "Ray" then
+						if silentAimActive then
+							local target = getClosestPlayerInFOV()
+							if target and calculateChance(hitChance) then
+								local direction = getDirection(ray.Origin, target.Position)
+								args[2] = Ray.new(ray.Origin, direction)
+							end
 						end
+						return oldNamecall(unpack(args))
+					end
+
+				elseif method == "FindPartOnRay" or method == "findPartOnRay" then
+					local ray = args[2]
+					if typeof(ray) == "Ray" then
+						if silentAimActive then
+							local target = getClosestPlayerInFOV()
+							if target and calculateChance(hitChance) then
+								local direction = getDirection(ray.Origin, target.Position)
+								args[2] = Ray.new(ray.Origin, direction)
+							end
+						end
+						return oldNamecall(unpack(args))
 					end
 				end
 			end
@@ -288,23 +319,35 @@ local function disableSilentAim()
 end
 
 -- ===================== AIMBOT (Camera Lock) =====================
--- Smoothly locks camera to nearest enemy - visual aimbot
+-- Locks camera to nearest enemy when holding right-click OR always-on mode
 local aimbotConnection = nil
+local aimbotAlwaysOn = false
 
 local function startAimbot()
 	aimbotConnection = RunService.RenderStepped:Connect(function()
 		pcall(function()
 			if not aimbotActive then return end
-			if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then return end
+			-- Work in both modes: always-on or hold right-click
+			if not aimbotAlwaysOn and not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then return end
 
 			local target = getClosestPlayerInFOV()
+			if not target then
+				-- Fallback: try 3D closest if FOV finds nothing
+				target = getClosestPlayer3D()
+			end
 			if target then
-				local targetCF = CFrame.new(camera.CFrame.Position, target.Position)
-				camera.CFrame = camera.CFrame:Lerp(targetCF, aimbotSmooth)
+				local camPos = camera.CFrame.Position
+				local targetCF = CFrame.new(camPos, target.Position)
+				-- Direct snap for low smoothness, lerp for high
+				if aimbotSmooth >= 0.9 then
+					camera.CFrame = targetCF
+				else
+					camera.CFrame = camera.CFrame:Lerp(targetCF, aimbotSmooth)
+				end
 			end
 		end)
 	end)
-	notify("Aimbot", "Hold right-click to lock on!")
+	notify("Aimbot", "Active! Right-click to lock on")
 end
 
 local function stopAimbot()
@@ -892,33 +935,41 @@ local function bringAllPlayers()
 end
 
 -- ===================== KILL ALL =====================
--- Rapidly teleports to each enemy, clicks to attack, then moves on
+-- Rapidly teleports to each enemy, attacks with every method available
 local function killAllPlayers()
 	local char = LocalPlayer.Character
 	if not char then return end
 
+	local startCF = getRoot() and getRoot().CFrame or nil
+
 	task.spawn(function()
+		local killed = 0
 		for _, player in ipairs(Players:GetPlayers()) do
 			if isEnemy(player) and isAlive(player) then
 				pcall(function()
 					local theirHRP = player.Character:FindFirstChild("HumanoidRootPart")
 					if theirHRP then
-						char:PivotTo(CFrame.new(theirHRP.Position + Vector3.new(0, 0, -3), theirHRP.Position))
+						-- Teleport right in front of them facing them
+						char:PivotTo(CFrame.new(theirHRP.Position + Vector3.new(0, 0, -2), theirHRP.Position))
 						task.wait(0.1)
-						-- Activate equipped weapon
+						-- Attack with all methods
 						local tool = char:FindFirstChildOfClass("Tool")
-						if tool then
-							tool:Activate()
+						for i = 1, 5 do
+							if tool then tool:Activate() end
+							mouse1click()
 							task.wait(0.05)
-							tool:Activate()
 						end
-						task.wait(0.15)
+						killed = killed + 1
+						task.wait(0.1)
 					end
 				end)
 			end
 		end
-		-- Return to original position
-		notify("Kill All", "Attacked all enemies!")
+		-- Return to start
+		if startCF and char and char.Parent then
+			char:PivotTo(startCF)
+		end
+		notify("Kill All", "Attacked " .. killed .. " enemies!")
 	end)
 end
 
@@ -976,19 +1027,102 @@ local function teleportToPlayer(playerName)
 end
 
 -- ===================== NBTF LOCATION TELEPORTS =====================
--- Key locations in Nuclear Blast Testing Facility
-local NBTF_LOCATIONS = {
-	-- These are approximate positions - actual positions depend on map version
-	{name = "Spawn / Lobby", pos = Vector3.new(0, 10, 0)},
-	{name = "Main Control Room", pos = Vector3.new(100, 15, 0)},
-	{name = "Reactor Core", pos = Vector3.new(-50, -20, 50)},
-	{name = "Weapons Research Center", pos = Vector3.new(150, 10, -80)},
-	{name = "Military Barracks", pos = Vector3.new(-120, 10, -100)},
-	{name = "Strategic Command (SCC)", pos = Vector3.new(200, 20, 50)},
-	{name = "Exterior Checkpoint", pos = Vector3.new(-200, 10, 0)},
-	{name = "Ammo Station 1", pos = Vector3.new(80, 10, -30)},
-	{name = "Ammo Station 2", pos = Vector3.new(-80, 10, 60)},
+-- Dynamically finds locations by searching workspace for named parts/models
+-- This works regardless of map version because it searches by name
+
+-- Keywords to search for in workspace descendants
+local NBTF_SEARCH_NAMES = {
+	"Spawn", "Lobby",
+	"Core", "Reactor", "ReactorCore",
+	"SCC", "StrategicCommand", "Strategic Command",
+	"Control", "ControlRoom", "MainControl",
+	"Barracks", "MilitaryBarracks",
+	"Checkpoint", "ExteriorCheckpoint", "InteriorCheckpoint",
+	"Datacenter", "DataCenter",
+	"PowerFacility", "Power",
+	"Weapons", "WeaponsResearch", "Armory", "Arsenal",
+	"Terminal", "TerminalA", "TerminalB", "TerminalC",
+	"AmmoStation", "Ammo", "BulletReloader",
+	"ShootingRange", "Range",
+	"NukeLaunch", "LaunchCenter", "Silo",
+	"Cooler", "Pump", "HazmatSuit",
+	"SafetyOverride", "OverridePanel",
+	"TeleportPad", "Teleporter",
+	"Garage", "Vehicle", "Car",
+	"Helipad", "Helicopter",
 }
+
+-- Find a part/model in workspace by name (case-insensitive partial match)
+local function findLocationByName(searchName)
+	local best = nil
+	local bestSize = math.huge
+	local searchLower = searchName:lower()
+
+	for _, obj in ipairs(workspace:GetDescendants()) do
+		if (obj:IsA("BasePart") or obj:IsA("Model") or obj:IsA("SpawnLocation")) then
+			local nameLower = obj.Name:lower()
+			if nameLower:find(searchLower, 1, true) then
+				-- Prefer SpawnLocations, then bigger parts (they're usually floors/rooms)
+				if obj:IsA("SpawnLocation") then
+					return obj
+				end
+				if obj:IsA("BasePart") then
+					local size = obj.Size.X * obj.Size.Y * obj.Size.Z
+					if size > 10 then -- skip tiny parts
+						if best == nil or obj:IsA("SpawnLocation") then
+							best = obj
+						end
+					end
+				elseif obj:IsA("Model") then
+					best = best or obj
+				end
+			end
+		end
+	end
+	return best
+end
+
+-- Get position from a found object
+local function getLocationPosition(obj)
+	if obj:IsA("Model") then
+		local primary = obj.PrimaryPart
+		if primary then return primary.Position + Vector3.new(0, 5, 0) end
+		local part = obj:FindFirstChildWhichIsA("BasePart")
+		if part then return part.Position + Vector3.new(0, 5, 0) end
+	elseif obj:IsA("BasePart") then
+		return obj.Position + Vector3.new(0, 5, 0)
+	end
+	return nil
+end
+
+-- Scan workspace and build a list of all found teleportable locations
+local function scanLocations()
+	local found = {}
+	local seen = {} -- avoid duplicates
+
+	for _, searchName in ipairs(NBTF_SEARCH_NAMES) do
+		local obj = findLocationByName(searchName)
+		if obj and not seen[obj] then
+			seen[obj] = true
+			local pos = getLocationPosition(obj)
+			if pos then
+				table.insert(found, {name = obj.Name, pos = pos, obj = obj})
+			end
+		end
+	end
+
+	-- Also add all SpawnLocations
+	for _, obj in ipairs(workspace:GetDescendants()) do
+		if obj:IsA("SpawnLocation") and not seen[obj] then
+			seen[obj] = true
+			table.insert(found, {name = "Spawn: " .. obj.Name, pos = obj.Position + Vector3.new(0, 5, 0), obj = obj})
+		end
+	end
+
+	-- Sort alphabetically
+	table.sort(found, function(a, b) return a.name < b.name end)
+	return found
+end
 
 -- ===================== GUI SETUP =====================
 local screenGui = Instance.new("ScreenGui")
@@ -1352,10 +1486,14 @@ do
 		aimbotActive = on
 		if on then startAimbot() else stopAimbot() end
 	end)
+	createToggle(tab, "Aimbot Always-On (No Right-Click)", o(), function(on)
+		aimbotAlwaysOn = on
+		if on then notify("Aimbot", "Always-on mode!") end
+	end)
 	createSlider(tab, "Aim Smoothness", 10, 100, math.floor(aimbotSmooth * 100), o(), function(val)
 		aimbotSmooth = val / 100
 	end)
-	createInfoLabel(tab, "Hold right-click to lock camera onto nearest enemy", o())
+	createInfoLabel(tab, "Locks camera on nearest enemy. Always-on = no click needed.", o())
 end
 
 -- ===================== BUILD COMBAT TAB =====================
@@ -1507,18 +1645,60 @@ do
 	local n = 0
 	local function o() n = n + 1 return n end
 
-	createSectionLabel(tab, "Facility Locations", o())
-	createInfoLabel(tab, "Teleport to key areas in the facility", o())
+	createSectionLabel(tab, "Facility Locations (Auto-Scanned)", o())
+	createInfoLabel(tab, "Scans workspace for named areas - click Scan to find them", o())
 
-	for _, loc in ipairs(NBTF_LOCATIONS) do
-		createButton(tab, "TP: " .. loc.name, o(), function()
-			local char = LocalPlayer.Character
-			if char then
-				char:PivotTo(CFrame.new(loc.pos))
-				notify("Teleport", loc.name)
-			end
-		end)
+	-- Location list container
+	local locListFrame = Instance.new("Frame")
+	locListFrame.Size = UDim2.new(1, 0, 0, 0)
+	locListFrame.AutomaticSize = Enum.AutomaticSize.Y
+	locListFrame.BackgroundTransparency = 1
+	locListFrame.LayoutOrder = o()
+	locListFrame.Parent = tab
+
+	local locListLayout = Instance.new("UIListLayout")
+	locListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	locListLayout.Padding = UDim.new(0, 3)
+	locListLayout.Parent = locListFrame
+
+	local function refreshLocations()
+		for _, child in ipairs(locListFrame:GetChildren()) do
+			if child:IsA("TextButton") then child:Destroy() end
+		end
+		local locations = scanLocations()
+		if #locations == 0 then
+			notify("Scan", "No named locations found in workspace")
+			return
+		end
+		for i, loc in ipairs(locations) do
+			local locBtn = Instance.new("TextButton")
+			locBtn.Size = UDim2.new(1, 0, 0, 26)
+			locBtn.BackgroundColor3 = COLORS.panel
+			locBtn.BorderSizePixel = 0
+			locBtn.Text = "TP: " .. loc.name .. " (" .. math.floor(loc.pos.X) .. ", " .. math.floor(loc.pos.Y) .. ", " .. math.floor(loc.pos.Z) .. ")"
+			locBtn.TextColor3 = COLORS.accent
+			locBtn.Font = Enum.Font.Gotham
+			locBtn.TextSize = 10
+			locBtn.LayoutOrder = i
+			locBtn.Parent = locListFrame
+			addCorner(locBtn, 4)
+			locBtn.MouseButton1Click:Connect(function()
+				local char = LocalPlayer.Character
+				if char then
+					char:PivotTo(CFrame.new(loc.pos))
+					notify("Teleport", loc.name)
+				end
+			end)
+		end
+		notify("Scan", "Found " .. #locations .. " locations!")
 	end
+
+	createButton(tab, "Scan Facility Locations", o(), refreshLocations)
+	-- Auto-scan on load
+	task.spawn(function()
+		task.wait(2)
+		refreshLocations()
+	end)
 
 	createSpacer(tab, o())
 
