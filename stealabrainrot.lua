@@ -1,13 +1,55 @@
 -- ╔═══════════════════════════════════════════════════════════════╗
--- ║        Steal a Brainrot - Script Hub                        ║
--- ║   Instant Steal | Auto Farm | ESP | Speed | Noclip | Fly    ║
+-- ║        Steal a Brainrot - Script Hub v2.0                   ║
+-- ║   Anti-Cheat Aware | Sky Route Steal | Smooth Movement      ║
+-- ║   ESP | Velocity Speed | Anti-Kick | Auto Lock              ║
 -- ╚═══════════════════════════════════════════════════════════════╝
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local ProximityPromptService = game:GetService("ProximityPromptService")
 local LocalPlayer = Players.LocalPlayer
+
+-- ===================== ANTI-KICK (Run First) =====================
+-- Hook ObserveTag connections to prevent anti-cheat kicks
+pcall(function()
+	for _, connection in pairs(getconnections(LocalPlayer.Idled)) do
+		connection:Disable()
+	end
+end)
+
+pcall(function()
+	local mt = getrawmetatable(game)
+	if mt and setreadonly then
+		local oldNamecall = mt.__namecall
+		setreadonly(mt, false)
+		mt.__namecall = newcclosure(function(self, ...)
+			local method = getnamecallmethod()
+			if method == "Kick" or method == "kick" then
+				return wait(9e9)
+			end
+			return oldNamecall(self, ...)
+		end)
+		setreadonly(mt, true)
+	end
+end)
+
+-- Disconnect ObserveTag anti-cheat listeners
+pcall(function()
+	for _, v in pairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
+		if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
+			pcall(function()
+				for _, conn in pairs(getconnections(v.OnClientEvent or v.OnClientInvoke)) do
+					if conn.Function and debug.getinfo then
+						local info = debug.getinfo(conn.Function)
+						if info and info.source and info.source:find("ObserveTag") then
+							conn:Disable()
+						end
+					end
+				end
+			end)
+		end
+	end
+end)
 
 -- ===================== COLOR PALETTE =====================
 local COLORS = {
@@ -27,8 +69,6 @@ local COLORS = {
 }
 
 -- ===================== STATE =====================
-local instantStealActive = false
-local autoFarmActive = false
 local espActive = false
 local brainrotEspActive = false
 local noclipActive = false
@@ -36,26 +76,27 @@ local flyActive = false
 local speedBoostActive = false
 local autoLockActive = false
 local antiHitActive = false
+local autoFarmActive = false
+local antiRagdollActive = false
 
 local speedValue = 50
 local flySpeed = 60
+local floatSpeed = 80
 local savedBasePosition = nil
 local noclipConnection = nil
 local flyConnection = nil
 local speedConnection = nil
-local autoFarmConnection = nil
 local autoLockConnection = nil
 local antiHitConnection = nil
+local antiRagdollConnection = nil
 local espHighlights = {}
 local brainrotHighlights = {}
 local windowVisible = true
 local activeTab = "Main"
-local logLines = {}
-local MAX_LOG_LINES = 30
 
 -- ===================== GUI SETUP =====================
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "StealBrainrotHub"
+screenGui.Name = "SABHub"
 screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 pcall(function() screenGui.Parent = game:GetService("CoreGui") end)
@@ -68,15 +109,10 @@ local function addCorner(inst, radius)
 	return c
 end
 
-local function addLog(msg, color)
-	table.insert(logLines, {text = msg, color = color or COLORS.textSecondary})
-	if #logLines > MAX_LOG_LINES then table.remove(logLines, 1) end
-end
-
 -- ===================== MAIN FRAME =====================
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 480, 0, 380)
-mainFrame.Position = UDim2.new(0.5, -240, 0.5, -190)
+mainFrame.Size = UDim2.new(0, 480, 0, 400)
+mainFrame.Position = UDim2.new(0.5, -240, 0.5, -200)
 mainFrame.BackgroundColor3 = COLORS.bg
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
@@ -84,13 +120,12 @@ mainFrame.Draggable = true
 mainFrame.Parent = screenGui
 addCorner(mainFrame, 8)
 
--- Border
-local borderFrame = Instance.new("UIStroke")
-borderFrame.Color = COLORS.border
-borderFrame.Thickness = 1
-borderFrame.Parent = mainFrame
+local borderStroke = Instance.new("UIStroke")
+borderStroke.Color = COLORS.border
+borderStroke.Thickness = 1
+borderStroke.Parent = mainFrame
 
--- ===================== TITLE BAR =====================
+-- Title bar
 local titleBar = Instance.new("Frame")
 titleBar.Size = UDim2.new(1, 0, 0, 30)
 titleBar.BackgroundColor3 = Color3.fromRGB(13, 13, 13)
@@ -98,7 +133,6 @@ titleBar.BorderSizePixel = 0
 titleBar.Parent = mainFrame
 addCorner(titleBar, 8)
 
--- Fix bottom corners of title bar
 local titleFix = Instance.new("Frame")
 titleFix.Size = UDim2.new(1, 0, 0, 10)
 titleFix.Position = UDim2.new(0, 0, 1, -10)
@@ -110,24 +144,13 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "Steal a Brainrot Hub"
+titleText.Text = "Steal a Brainrot Hub v2"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 13
 titleText.TextXAlignment = Enum.TextXAlignment.Left
 titleText.Parent = titleBar
 
-local versionLabel = Instance.new("TextLabel")
-versionLabel.Size = UDim2.new(0, 30, 1, 0)
-versionLabel.Position = UDim2.new(1, -75, 0, 0)
-versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v1.0"
-versionLabel.TextColor3 = COLORS.textDim
-versionLabel.Font = Enum.Font.Gotham
-versionLabel.TextSize = 10
-versionLabel.Parent = titleBar
-
--- Close/minimize buttons
 local closeBtn = Instance.new("TextButton")
 closeBtn.Size = UDim2.new(0, 30, 0, 30)
 closeBtn.Position = UDim2.new(1, -30, 0, 0)
@@ -149,7 +172,6 @@ minimizeBtn.Font = Enum.Font.GothamBold
 minimizeBtn.TextSize = 16
 minimizeBtn.Parent = titleBar
 
--- Orange accent line
 local accentLine = Instance.new("Frame")
 accentLine.Size = UDim2.new(1, 0, 0, 2)
 accentLine.Position = UDim2.new(0, 0, 0, 30)
@@ -213,18 +235,13 @@ end
 
 local function setActiveTab(name)
 	activeTab = name
-	for tabName, frame in pairs(tabFrames) do
-		frame.Visible = tabName == name
-	end
+	for tabName, frame in pairs(tabFrames) do frame.Visible = tabName == name end
 	for tabName, btn in pairs(tabButtons) do
 		btn.TextColor3 = tabName == name and COLORS.accent or COLORS.textSecondary
 		btn.Font = tabName == name and Enum.Font.GothamBold or Enum.Font.GothamMedium
 	end
 end
-
-for name, btn in pairs(tabButtons) do
-	btn.MouseButton1Click:Connect(function() setActiveTab(name) end)
-end
+for name, btn in pairs(tabButtons) do btn.MouseButton1Click:Connect(function() setActiveTab(name) end) end
 
 -- ===================== UI BUILDERS =====================
 local function createSectionLabel(parent, text, order)
@@ -235,6 +252,19 @@ local function createSectionLabel(parent, text, order)
 	lbl.TextColor3 = COLORS.accent
 	lbl.Font = Enum.Font.GothamBold
 	lbl.TextSize = 13
+	lbl.TextXAlignment = Enum.TextXAlignment.Left
+	lbl.LayoutOrder = order or 0
+	lbl.Parent = parent
+end
+
+local function createInfoLabel(parent, text, order)
+	local lbl = Instance.new("TextLabel")
+	lbl.Size = UDim2.new(1, 0, 0, 18)
+	lbl.BackgroundTransparency = 1
+	lbl.Text = text
+	lbl.TextColor3 = COLORS.textSecondary
+	lbl.Font = Enum.Font.Gotham
+	lbl.TextSize = 11
 	lbl.TextXAlignment = Enum.TextXAlignment.Left
 	lbl.LayoutOrder = order or 0
 	lbl.Parent = parent
@@ -283,19 +313,12 @@ local function createToggle(parent, text, order, callback)
 	btn.Text = ""
 	btn.Parent = row
 
-	local function setVisual(on)
-		isOn = on
-		toggleFrame.BackgroundColor3 = on and COLORS.toggleOn or COLORS.toggleOff
-		circle.Position = on and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
-	end
-
 	btn.MouseButton1Click:Connect(function()
 		isOn = not isOn
-		setVisual(isOn)
+		toggleFrame.BackgroundColor3 = isOn and COLORS.toggleOn or COLORS.toggleOff
+		circle.Position = isOn and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
 		if callback then callback(isOn) end
 	end)
-
-	return {row = row, setVisualState = setVisual}
 end
 
 local function createButton(parent, text, order, callback)
@@ -310,12 +333,9 @@ local function createButton(parent, text, order, callback)
 	btn.LayoutOrder = order or 0
 	btn.Parent = parent
 	addCorner(btn, 5)
-
 	btn.MouseEnter:Connect(function() btn.BackgroundColor3 = COLORS.accentHover end)
 	btn.MouseLeave:Connect(function() btn.BackgroundColor3 = COLORS.accent end)
-	btn.MouseButton1Click:Connect(function()
-		if callback then callback() end
-	end)
+	btn.MouseButton1Click:Connect(function() if callback then callback() end end)
 	return btn
 end
 
@@ -359,8 +379,7 @@ local function createSlider(parent, text, min, max, default, order, callback)
 	addCorner(track, 3)
 
 	local fill = Instance.new("Frame")
-	local pct = (default - min) / (max - min)
-	fill.Size = UDim2.new(pct, 0, 1, 0)
+	fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
 	fill.BackgroundColor3 = COLORS.accent
 	fill.BorderSizePixel = 0
 	fill.Parent = track
@@ -380,8 +399,7 @@ local function createSlider(parent, text, min, max, default, order, callback)
 	end)
 	UserInputService.InputChanged:Connect(function(input)
 		if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-			local rel = (input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X
-			rel = math.clamp(rel, 0, 1)
+			local rel = math.clamp((input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
 			fill.Size = UDim2.new(rel, 0, 1, 0)
 			local val = math.floor(min + (max - min) * rel)
 			valLabel.Text = tostring(val)
@@ -390,20 +408,7 @@ local function createSlider(parent, text, min, max, default, order, callback)
 	end)
 end
 
-local function createInfoLabel(parent, text, order)
-	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.new(1, 0, 0, 18)
-	lbl.BackgroundTransparency = 1
-	lbl.Text = text
-	lbl.TextColor3 = COLORS.textSecondary
-	lbl.Font = Enum.Font.Gotham
-	lbl.TextSize = 11
-	lbl.TextXAlignment = Enum.TextXAlignment.Left
-	lbl.LayoutOrder = order or 0
-	lbl.Parent = parent
-end
-
--- ===================== HELPER FUNCTIONS =====================
+-- ===================== HELPERS =====================
 local function getRoot()
 	local char = LocalPlayer.Character
 	return char and char:FindFirstChild("HumanoidRootPart")
@@ -416,35 +421,111 @@ end
 
 local function notify(title, msg)
 	pcall(function()
-		game:GetService("StarterGui"):SetCore("SendNotification", {
-			Title = title,
-			Text = msg,
-			Duration = 3
-		})
+		game:GetService("StarterGui"):SetCore("SendNotification", {Title = title, Text = msg, Duration = 3})
 	end)
 end
 
 local function fireProximityPrompt(prompt)
-	local holdDuration = prompt.HoldDuration
+	local hold = prompt.HoldDuration
 	prompt.HoldDuration = 0
 	prompt:InputHoldBegin()
 	prompt:InputHoldEnd()
-	prompt.HoldDuration = holdDuration
+	prompt.HoldDuration = hold
 end
 
--- Find all brainrots in workspace (they have ProximityPrompts)
+-- ===================== SMOOTH MOVEMENT (Anti-Cheat Safe) =====================
+-- Uses velocity-based movement instead of instant CFrame teleport
+-- Moves in small steps to avoid server-side position validation flags
+
+local function smoothMoveTo(targetPos, speed, timeout)
+	local hrp = getRoot()
+	local hum = getHumanoid()
+	if not hrp or not hum then return false end
+
+	speed = speed or floatSpeed
+	timeout = timeout or 15
+	local startTime = tick()
+
+	-- Put humanoid in freefall so it doesn't fight movement
+	hum:ChangeState(Enum.HumanoidStateType.Freefall)
+
+	while true do
+		hrp = getRoot()
+		if not hrp then return false end
+
+		local direction = (targetPos - hrp.Position)
+		local distance = direction.Magnitude
+
+		if distance < 5 then
+			hrp.Velocity = Vector3.new(0, 0, 0)
+			return true
+		end
+
+		if tick() - startTime > timeout then
+			hrp.Velocity = Vector3.new(0, 0, 0)
+			return false
+		end
+
+		hrp.Velocity = direction.Unit * speed
+		RunService.Heartbeat:Wait()
+	end
+end
+
+-- Sky route: go up -> move horizontally -> come down
+-- Much harder for anti-cheat to flag than direct teleport
+local function skyRouteTo(targetPos, speed)
+	local hrp = getRoot()
+	if not hrp then return false end
+
+	local startPos = hrp.Position
+	local skyHeight = 200
+	local upTarget = Vector3.new(startPos.X, startPos.Y + skyHeight, startPos.Z)
+	local acrossTarget = Vector3.new(targetPos.X, startPos.Y + skyHeight, targetPos.Z)
+	local downTarget = Vector3.new(targetPos.X, targetPos.Y, targetPos.Z)
+
+	-- Enable temp noclip for the journey
+	local tempNoclip = RunService.Stepped:Connect(function()
+		pcall(function()
+			local char = LocalPlayer.Character
+			if char then
+				for _, part in ipairs(char:GetDescendants()) do
+					if part:IsA("BasePart") then part.CanCollide = false end
+				end
+			end
+		end
+	end)
+
+	notify("Sky Route", "Going up...")
+
+	-- Phase 1: Go up
+	local ok = smoothMoveTo(upTarget, speed or floatSpeed, 5)
+	if not ok then tempNoclip:Disconnect() return false end
+
+	-- Phase 2: Float across at sky height
+	notify("Sky Route", "Moving to target...")
+	ok = smoothMoveTo(acrossTarget, speed or floatSpeed, 10)
+	if not ok then tempNoclip:Disconnect() return false end
+
+	-- Phase 3: Drop down
+	notify("Sky Route", "Dropping down...")
+	ok = smoothMoveTo(downTarget, speed or floatSpeed, 5)
+
+	tempNoclip:Disconnect()
+	return ok
+end
+
+-- ===================== FIND BRAINROTS =====================
 local function findBrainrots()
 	local brainrots = {}
 	for _, obj in ipairs(workspace:GetDescendants()) do
 		if obj:IsA("ProximityPrompt") then
 			local parent = obj.Parent
-			if parent and parent:IsA("BasePart") or parent:IsA("Model") then
-				-- Check if it's likely a brainrot (not a shop/button)
+			if parent then
 				local root = parent
 				if parent:IsA("Model") then
 					root = parent:FindFirstChild("HumanoidRootPart") or parent.PrimaryPart or parent:FindFirstChildWhichIsA("BasePart")
 				end
-				if root then
+				if root and root:IsA("BasePart") then
 					table.insert(brainrots, {prompt = obj, part = root, name = parent.Name})
 				end
 			end
@@ -453,62 +534,83 @@ local function findBrainrots()
 	return brainrots
 end
 
--- Find brainrots NOT in our base
 local function findStealableBrainrots()
-	local brainrots = findBrainrots()
-	local myBase = nil
 	local hrp = getRoot()
 	if not hrp then return {} end
-
-	-- Filter: skip brainrots too close to us (our own base)
+	local brainrots = findBrainrots()
 	local stealable = {}
 	for _, b in ipairs(brainrots) do
-		-- Only include brainrots that are in other players' bases
 		if b.part and (b.part.Position - hrp.Position).Magnitude > 30 then
 			table.insert(stealable, b)
 		end
 	end
+	table.sort(stealable, function(a, b)
+		return (a.part.Position - hrp.Position).Magnitude < (b.part.Position - hrp.Position).Magnitude
+	end)
 	return stealable
 end
 
--- ===================== INSTANT STEAL =====================
-local function doInstantSteal()
+-- ===================== STEAL FUNCTIONS =====================
+
+-- Sky Route Steal: safe method using velocity movement through sky
+local function doSkyRouteSteal()
 	local ok, err = pcall(function()
 		local hrp = getRoot()
-		if not hrp then
-			notify("Error", "No character found")
-			return
-		end
+		if not hrp then notify("Error", "No character") return end
 
 		if not savedBasePosition then
 			savedBasePosition = hrp.Position
-			notify("Base Saved", "Current position saved as base")
+			notify("Base Saved", "Position saved as base")
 		end
 
-		local originalPos = hrp.CFrame
-
-		-- Find nearest stealable brainrot
 		local brainrots = findStealableBrainrots()
-		if #brainrots == 0 then
-			notify("No Brainrots", "No stealable brainrots found nearby")
-			return
-		end
-
-		-- Sort by distance
-		table.sort(brainrots, function(a, b)
-			return (a.part.Position - hrp.Position).Magnitude < (b.part.Position - hrp.Position).Magnitude
-		end)
+		if #brainrots == 0 then notify("No Targets", "No stealable brainrots found") return end
 
 		local target = brainrots[1]
-		notify("Stealing", "Going for: " .. target.name)
+		local targetPos = target.part.Position
+		notify("Sky Steal", "Target: " .. target.name .. " (" .. math.floor((targetPos - hrp.Position).Magnitude) .. "m)")
 
-		-- Enable noclip temporarily
+		-- Sky route to the brainrot
+		local reached = skyRouteTo(targetPos + Vector3.new(0, 0, -3), floatSpeed)
+		if not reached then notify("Failed", "Couldn't reach target") return end
+
+		wait(0.2)
+
+		-- Fire the proximity prompt instantly
+		fireProximityPrompt(target.prompt)
+		wait(0.3)
+
+		-- Sky route back to base
+		notify("Escaping", "Heading back to base...")
+		skyRouteTo(savedBasePosition, floatSpeed)
+
+		notify("Success!", "Stole " .. target.name)
+	end)
+	if not ok then warn("[SKY STEAL ERROR] " .. tostring(err)) end
+end
+
+-- Quick Steal: faster but riskier - small CFrame jump + prompt
+local function doQuickSteal()
+	local ok, err = pcall(function()
+		local hrp = getRoot()
+		if not hrp then return end
+
+		if not savedBasePosition then
+			savedBasePosition = hrp.Position
+		end
+
+		local brainrots = findStealableBrainrots()
+		if #brainrots == 0 then notify("No Targets", "No stealable brainrots found") return end
+
+		local target = brainrots[1]
+
+		-- Enable temp noclip
 		local tempNoclip = RunService.Stepped:Connect(function()
 			pcall(function()
 				local char = LocalPlayer.Character
 				if char then
-					for _, part in ipairs(char:GetDescendants()) do
-						if part:IsA("BasePart") then part.CanCollide = false end
+					for _, p in ipairs(char:GetDescendants()) do
+						if p:IsA("BasePart") then p.CanCollide = false end
 					end
 				end
 			end)
@@ -518,24 +620,17 @@ local function doInstantSteal()
 		hrp.CFrame = target.part.CFrame * CFrame.new(0, 0, -3)
 		wait(0.3)
 
-		-- Fire the proximity prompt instantly
+		-- Fire prompt
 		fireProximityPrompt(target.prompt)
 		wait(0.2)
 
-		-- Teleport back to base
+		-- Teleport back
 		hrp.CFrame = CFrame.new(savedBasePosition)
-		wait(0.1)
 
-		-- Disable temp noclip
 		tempNoclip:Disconnect()
-
-		notify("Stolen!", "Grabbed " .. target.name)
-		addLog("[STEAL] Grabbed: " .. target.name, COLORS.success)
+		notify("Quick Steal", "Grabbed " .. target.name)
 	end)
-	if not ok then
-		warn("[STEAL ERROR] " .. tostring(err))
-		notify("Error", tostring(err))
-	end
+	if not ok then warn("[QUICK STEAL ERROR] " .. tostring(err)) end
 end
 
 -- ===================== AUTO FARM =====================
@@ -543,18 +638,14 @@ local function startAutoFarm()
 	autoFarmActive = true
 	spawn(function()
 		while autoFarmActive do
-			pcall(function()
-				doInstantSteal()
-			end)
-			wait(3)
+			pcall(doSkyRouteSteal)
+			wait(5)
 		end
 	end)
-	addLog("[AUTO FARM] ON", COLORS.success)
 end
 
 local function stopAutoFarm()
 	autoFarmActive = false
-	addLog("[AUTO FARM] OFF", COLORS.error)
 end
 
 -- ===================== NOCLIP =====================
@@ -568,12 +659,10 @@ local function startNoclip()
 			end
 		end)
 	end)
-	addLog("[NOCLIP] ON", COLORS.success)
 end
 
 local function stopNoclip()
 	if noclipConnection then noclipConnection:Disconnect() noclipConnection = nil end
-	addLog("[NOCLIP] OFF", COLORS.error)
 end
 
 -- ===================== FLY =====================
@@ -581,59 +670,75 @@ local function startFly()
 	local hrp = getRoot()
 	local hum = getHumanoid()
 	if not hrp or not hum then return end
-
 	hum:ChangeState(Enum.HumanoidStateType.Freefall)
 
 	flyConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
-			local cam = workspace.CurrentCamera
-			local look = cam.CFrame.LookVector
 			local moveDir = hum.MoveDirection
-
 			local velocity = Vector3.new(0, 0, 0)
 			if moveDir.Magnitude > 0 then
 				velocity = Vector3.new(moveDir.X, 0, moveDir.Z).Unit * flySpeed
 			end
-
-			-- Up/down with jump/crouch
 			if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
 				velocity = velocity + Vector3.new(0, flySpeed, 0)
 			end
 			if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
 				velocity = velocity + Vector3.new(0, -flySpeed, 0)
 			end
-
 			hrp.Velocity = velocity
 		end)
 	end)
-	addLog("[FLY] ON", COLORS.success)
 end
 
 local function stopFly()
 	if flyConnection then flyConnection:Disconnect() flyConnection = nil end
-	addLog("[FLY] OFF", COLORS.error)
 end
 
--- ===================== SPEED BOOST =====================
+-- ===================== SPEED (Velocity-Based) =====================
+-- Uses velocity to boost speed instead of WalkSpeed to avoid detection
 local function startSpeedBoost()
-	local hum = getHumanoid()
-	if hum then hum.WalkSpeed = speedValue end
 	speedConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
-			local h = getHumanoid()
-			if h then h.WalkSpeed = speedValue end
+			local hrp = getRoot()
+			local hum = getHumanoid()
+			if not hrp or not hum then return end
+			local moveDir = hum.MoveDirection
+			if moveDir.Magnitude > 0 then
+				local flatVel = Vector3.new(moveDir.X, 0, moveDir.Z).Unit * speedValue
+				hrp.Velocity = Vector3.new(flatVel.X, hrp.Velocity.Y, flatVel.Z)
+			end
 		end)
 	end)
-	addLog("[SPEED] ON - " .. speedValue, COLORS.success)
 end
 
 local function stopSpeedBoost()
 	if speedConnection then speedConnection:Disconnect() speedConnection = nil end
-	pcall(function()
-		local h = getHumanoid()
-		if h then h.WalkSpeed = 16 end
+end
+
+-- ===================== ANTI RAGDOLL =====================
+local function startAntiRagdoll()
+	antiRagdollConnection = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			local hum = getHumanoid()
+			if hum then
+				hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+				hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+				hum:SetStateEnabled(Enum.HumanoidStateType.GettingUp, false)
+			end
+		end)
 	end)
-	addLog("[SPEED] OFF", COLORS.error)
+end
+
+local function stopAntiRagdoll()
+	if antiRagdollConnection then antiRagdollConnection:Disconnect() antiRagdollConnection = nil end
+	pcall(function()
+		local hum = getHumanoid()
+		if hum then
+			hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+			hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+			hum:SetStateEnabled(Enum.HumanoidStateType.GettingUp, true)
+		end
+	end)
 end
 
 -- ===================== ESP =====================
@@ -645,17 +750,15 @@ end
 local function updatePlayerESP()
 	clearESP()
 	if not espActive then return end
-
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player ~= LocalPlayer and player.Character then
 			pcall(function()
 				local highlight = Instance.new("Highlight")
-				highlight.Name = "PlayerESP"
+				highlight.Name = "ESP"
 				highlight.Adornee = player.Character
 				highlight.FillColor = Color3.fromRGB(255, 0, 0)
 				highlight.FillTransparency = 0.5
 				highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-				highlight.OutlineTransparency = 0
 				highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 				highlight.Parent = player.Character
 				table.insert(espHighlights, highlight)
@@ -663,7 +766,7 @@ local function updatePlayerESP()
 				local hrp = player.Character:FindFirstChild("HumanoidRootPart")
 				if hrp then
 					local bb = Instance.new("BillboardGui")
-					bb.Name = "ESP_Name"
+					bb.Name = "ESP_BB"
 					bb.AlwaysOnTop = true
 					bb.Size = UDim2.new(4, 0, 1, 0)
 					bb.StudsOffset = Vector3.new(0, 3, 0)
@@ -671,15 +774,16 @@ local function updatePlayerESP()
 					bb.Parent = hrp
 					table.insert(espHighlights, bb)
 
-					local nameLabel = Instance.new("TextLabel")
-					nameLabel.Text = player.DisplayName .. " [" .. math.floor((hrp.Position - (getRoot() and getRoot().Position or hrp.Position)).Magnitude) .. "m]"
-					nameLabel.TextColor3 = Color3.new(1, 1, 1)
-					nameLabel.TextStrokeTransparency = 0
-					nameLabel.TextSize = 14
-					nameLabel.Font = Enum.Font.GothamBold
-					nameLabel.BackgroundTransparency = 1
-					nameLabel.Size = UDim2.new(1, 0, 1, 0)
-					nameLabel.Parent = bb
+					local dist = getRoot() and math.floor((hrp.Position - getRoot().Position).Magnitude) or 0
+					local lbl = Instance.new("TextLabel")
+					lbl.Text = player.DisplayName .. " [" .. dist .. "m]"
+					lbl.TextColor3 = Color3.new(1, 1, 1)
+					lbl.TextStrokeTransparency = 0
+					lbl.TextSize = 14
+					lbl.Font = Enum.Font.GothamBold
+					lbl.BackgroundTransparency = 1
+					lbl.Size = UDim2.new(1, 0, 1, 0)
+					lbl.Parent = bb
 				end
 			end)
 		end
@@ -687,22 +791,14 @@ local function updatePlayerESP()
 end
 
 local function startESP()
-	updatePlayerESP()
 	spawn(function()
-		while espActive do
-			updatePlayerESP()
-			wait(2)
-		end
+		while espActive do updatePlayerESP() wait(2) end
 	end)
-	addLog("[ESP] ON", COLORS.success)
 end
 
-local function stopESP()
-	clearESP()
-	addLog("[ESP] OFF", COLORS.error)
-end
+local function stopESP() clearESP() end
 
--- ===================== BRAINROT ESP =====================
+-- Brainrot ESP
 local function clearBrainrotESP()
 	for _, h in pairs(brainrotHighlights) do pcall(function() h:Destroy() end) end
 	brainrotHighlights = {}
@@ -711,25 +807,20 @@ end
 local function updateBrainrotESP()
 	clearBrainrotESP()
 	if not brainrotEspActive then return end
-
-	local brainrots = findBrainrots()
-	for _, b in ipairs(brainrots) do
+	for _, b in ipairs(findBrainrots()) do
 		pcall(function()
 			local parent = b.part.Parent
 			if parent and parent:IsA("Model") then
-				local highlight = Instance.new("Highlight")
-				highlight.Name = "BrainrotESP"
-				highlight.Adornee = parent
-				highlight.FillColor = Color3.fromRGB(255, 165, 0)
-				highlight.FillTransparency = 0.3
-				highlight.OutlineColor = COLORS.accent
-				highlight.OutlineTransparency = 0
-				highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-				highlight.Parent = parent
-				table.insert(brainrotHighlights, highlight)
+				local hl = Instance.new("Highlight")
+				hl.Adornee = parent
+				hl.FillColor = Color3.fromRGB(255, 165, 0)
+				hl.FillTransparency = 0.3
+				hl.OutlineColor = COLORS.accent
+				hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+				hl.Parent = parent
+				table.insert(brainrotHighlights, hl)
 
 				local bb = Instance.new("BillboardGui")
-				bb.Name = "BrainrotESP_Name"
 				bb.AlwaysOnTop = true
 				bb.Size = UDim2.new(4, 0, 0.6, 0)
 				bb.StudsOffset = Vector3.new(0, 3, 0)
@@ -737,49 +828,40 @@ local function updateBrainrotESP()
 				bb.Parent = b.part
 				table.insert(brainrotHighlights, bb)
 
-				local nameLabel = Instance.new("TextLabel")
-				nameLabel.Text = b.name
-				nameLabel.TextColor3 = COLORS.accent
-				nameLabel.TextStrokeTransparency = 0
-				nameLabel.TextSize = 12
-				nameLabel.Font = Enum.Font.GothamBold
-				nameLabel.BackgroundTransparency = 1
-				nameLabel.Size = UDim2.new(1, 0, 1, 0)
-				nameLabel.Parent = bb
+				local lbl = Instance.new("TextLabel")
+				lbl.Text = b.name
+				lbl.TextColor3 = COLORS.accent
+				lbl.TextStrokeTransparency = 0
+				lbl.TextSize = 12
+				lbl.Font = Enum.Font.GothamBold
+				lbl.BackgroundTransparency = 1
+				lbl.Size = UDim2.new(1, 0, 1, 0)
+				lbl.Parent = bb
 			end
 		end)
 	end
 end
 
 local function startBrainrotESP()
-	updateBrainrotESP()
 	spawn(function()
-		while brainrotEspActive do
-			updateBrainrotESP()
-			wait(3)
-		end
+		while brainrotEspActive do updateBrainrotESP() wait(3) end
 	end)
-	addLog("[BRAINROT ESP] ON", COLORS.success)
 end
 
-local function stopBrainrotESP()
-	clearBrainrotESP()
-	addLog("[BRAINROT ESP] OFF", COLORS.error)
-end
+local function stopBrainrotESP() clearBrainrotESP() end
 
--- ===================== AUTO LOCK BASE =====================
+-- ===================== AUTO LOCK =====================
 local function startAutoLock()
-	autoLockConnection = spawn(function()
+	spawn(function()
 		while autoLockActive do
 			pcall(function()
-				-- Find lock prompts near our base
 				local hrp = getRoot()
 				if not hrp then return end
 				for _, obj in ipairs(workspace:GetDescendants()) do
-					if obj:IsA("ProximityPrompt") and obj.ActionText and obj.ActionText:lower():find("lock") then
-						local promptPart = obj.Parent
-						if promptPart and promptPart:IsA("BasePart") then
-							if (promptPart.Position - hrp.Position).Magnitude < 50 then
+					if obj:IsA("ProximityPrompt") then
+						local txt = (obj.ActionText or ""):lower()
+						if txt:find("lock") and obj.Parent and obj.Parent:IsA("BasePart") then
+							if (obj.Parent.Position - hrp.Position).Magnitude < 50 then
 								fireProximityPrompt(obj)
 							end
 						end
@@ -789,12 +871,6 @@ local function startAutoLock()
 			wait(5)
 		end
 	end)
-	addLog("[AUTO LOCK] ON", COLORS.success)
-end
-
-local function stopAutoLock()
-	autoLockActive = false
-	addLog("[AUTO LOCK] OFF", COLORS.error)
 end
 
 -- ===================== ANTI HIT =====================
@@ -804,20 +880,16 @@ local function startAntiHit()
 			for _, player in ipairs(Players:GetPlayers()) do
 				if player ~= LocalPlayer and player.Character then
 					for _, part in ipairs(player.Character:GetDescendants()) do
-						if part:IsA("BasePart") then
-							part.CanCollide = false
-						end
+						if part:IsA("BasePart") then part.CanCollide = false end
 					end
 				end
 			end
 		end)
 	end)
-	addLog("[ANTI HIT] ON", COLORS.success)
 end
 
 local function stopAntiHit()
 	if antiHitConnection then antiHitConnection:Disconnect() antiHitConnection = nil end
-	addLog("[ANTI HIT] OFF", COLORS.error)
 end
 
 -- ===================== BUILD MAIN TAB =====================
@@ -825,7 +897,7 @@ do
 	local tab = tabFrames["Main"]
 	createSectionLabel(tab, "Info", 1)
 	createInfoLabel(tab, "Player: " .. LocalPlayer.DisplayName .. " (@" .. LocalPlayer.Name .. ")", 2)
-	createInfoLabel(tab, "Game: Steal a Brainrot", 3)
+	createInfoLabel(tab, "Anti-Cheat Aware - Sky Route + Velocity Movement", 3)
 	createInfoLabel(tab, "Right Shift to toggle window", 4)
 
 	local spacer = Instance.new("Frame")
@@ -834,34 +906,45 @@ do
 	spacer.LayoutOrder = 5
 	spacer.Parent = tab
 
-	createSectionLabel(tab, "Quick Actions", 6)
+	createSectionLabel(tab, "Base", 6)
 	createButton(tab, "Save Base Position", 7, function()
 		local hrp = getRoot()
 		if hrp then
 			savedBasePosition = hrp.Position
 			notify("Saved", "Base position saved!")
-			addLog("[BASE] Position saved", COLORS.success)
 		end
 	end)
-	createButton(tab, "Teleport to Base", 8, function()
+	createButton(tab, "Teleport to Base (Smooth)", 8, function()
 		if savedBasePosition then
-			local hrp = getRoot()
-			if hrp then hrp.CFrame = CFrame.new(savedBasePosition) end
+			smoothMoveTo(savedBasePosition, floatSpeed, 10)
 		else
 			notify("Error", "Save base position first!")
 		end
+	end)
+
+	local spacer2 = Instance.new("Frame")
+	spacer2.Size = UDim2.new(1, 0, 0, 8)
+	spacer2.BackgroundTransparency = 1
+	spacer2.LayoutOrder = 9
+	spacer2.Parent = tab
+
+	createSectionLabel(tab, "Protection", 10)
+	createToggle(tab, "Anti Ragdoll", 11, function(on)
+		antiRagdollActive = on
+		if on then startAntiRagdoll() else stopAntiRagdoll() end
+	end)
+	createToggle(tab, "Anti Hit (No Collision)", 12, function(on)
+		antiHitActive = on
+		if on then startAntiHit() else stopAntiHit() end
 	end)
 end
 
 -- ===================== BUILD STEAL TAB =====================
 do
 	local tab = tabFrames["Steal"]
-	createSectionLabel(tab, "Stealing", 1)
-	createButton(tab, "Instant Steal (Nearest)", 2, doInstantSteal)
-	createToggle(tab, "Auto Farm (Loop Steal)", 3, function(on)
-		autoFarmActive = on
-		if on then startAutoFarm() else stopAutoFarm() end
-	end)
+	createSectionLabel(tab, "Safe Steal (Anti-Cheat Aware)", 1)
+	createButton(tab, "Sky Route Steal (Recommended)", 2, doSkyRouteSteal)
+	createInfoLabel(tab, "Goes up 200 studs, floats to target, drops down", 3)
 
 	local spacer = Instance.new("Frame")
 	spacer.Size = UDim2.new(1, 0, 0, 8)
@@ -869,14 +952,33 @@ do
 	spacer.LayoutOrder = 4
 	spacer.Parent = tab
 
-	createSectionLabel(tab, "Defense", 5)
-	createToggle(tab, "Auto Lock Base", 6, function(on)
-		autoLockActive = on
-		if on then startAutoLock() else stopAutoLock() end
+	createSectionLabel(tab, "Risky Steal (May Get Detected)", 5)
+	createButton(tab, "Quick Steal (Instant TP)", 6, doQuickSteal)
+	createInfoLabel(tab, "Direct teleport - faster but anti-cheat may catch", 7)
+
+	local spacer2 = Instance.new("Frame")
+	spacer2.Size = UDim2.new(1, 0, 0, 8)
+	spacer2.BackgroundTransparency = 1
+	spacer2.LayoutOrder = 8
+	spacer2.Parent = tab
+
+	createSectionLabel(tab, "Auto Farm", 9)
+	createToggle(tab, "Auto Farm (Sky Route Loop)", 10, function(on)
+		autoFarmActive = on
+		if on then startAutoFarm() else stopAutoFarm() end
 	end)
-	createToggle(tab, "Anti Hit (No Player Collision)", 7, function(on)
-		antiHitActive = on
-		if on then startAntiHit() else stopAntiHit() end
+	createSlider(tab, "Float Speed", 20, 200, floatSpeed, 11, function(val) floatSpeed = val end)
+
+	local spacer3 = Instance.new("Frame")
+	spacer3.Size = UDim2.new(1, 0, 0, 8)
+	spacer3.BackgroundTransparency = 1
+	spacer3.LayoutOrder = 12
+	spacer3.Parent = tab
+
+	createSectionLabel(tab, "Defense", 13)
+	createToggle(tab, "Auto Lock Base", 14, function(on)
+		autoLockActive = on
+		if on then startAutoLock() end
 	end)
 end
 
@@ -884,7 +986,7 @@ end
 do
 	local tab = tabFrames["Movement"]
 	createSectionLabel(tab, "Movement", 1)
-	createToggle(tab, "Noclip", 2, function(on)
+	createToggle(tab, "Noclip (Walk Through Walls)", 2, function(on)
 		noclipActive = on
 		if on then startNoclip() else stopNoclip() end
 	end)
@@ -900,12 +1002,13 @@ do
 	spacer.LayoutOrder = 5
 	spacer.Parent = tab
 
-	createSectionLabel(tab, "Speed", 6)
-	createToggle(tab, "Speed Boost", 7, function(on)
+	createSectionLabel(tab, "Speed (Velocity-Based)", 6)
+	createInfoLabel(tab, "Uses velocity instead of WalkSpeed to avoid detection", 7)
+	createToggle(tab, "Speed Boost", 8, function(on)
 		speedBoostActive = on
 		if on then startSpeedBoost() else stopSpeedBoost() end
 	end)
-	createSlider(tab, "Walk Speed", 16, 350, speedValue, 8, function(val) speedValue = val end)
+	createSlider(tab, "Speed Value", 20, 150, speedValue, 9, function(val) speedValue = val end)
 end
 
 -- ===================== BUILD ESP TAB =====================
@@ -934,15 +1037,12 @@ end
 local contentVisible = true
 minimizeBtn.MouseButton1Click:Connect(function()
 	contentVisible = not contentVisible
-	for _, frame in pairs(tabFrames) do
-		frame.Visible = contentVisible and frame == tabFrames[activeTab]
-	end
+	for _, frame in pairs(tabFrames) do frame.Visible = contentVisible and frame == tabFrames[activeTab] end
 	tabBar.Visible = contentVisible
-	mainFrame.Size = contentVisible and UDim2.new(0, 480, 0, 380) or UDim2.new(0, 480, 0, 32)
+	mainFrame.Size = contentVisible and UDim2.new(0, 480, 0, 400) or UDim2.new(0, 480, 0, 32)
 	minimizeBtn.Text = contentVisible and "-" or "+"
 end)
 
--- Right Shift to toggle visibility
 UserInputService.InputBegan:Connect(function(input, processed)
 	if processed then return end
 	if input.KeyCode == Enum.KeyCode.RightShift then
@@ -951,16 +1051,14 @@ UserInputService.InputBegan:Connect(function(input, processed)
 	end
 end)
 
--- Cleanup on respawn
 LocalPlayer.CharacterAdded:Connect(function()
 	if noclipActive then stopNoclip() wait(0.5) startNoclip() end
 	if flyActive then stopFly() wait(0.5) startFly() end
 	if speedBoostActive then wait(0.3) startSpeedBoost() end
+	if antiRagdollActive then wait(0.3) startAntiRagdoll() end
 end)
 
 -- ===================== STARTUP =====================
-notify("Steal a Brainrot Hub", "Loaded! Right Shift to toggle")
-addLog("Steal a Brainrot Hub v1.0 loaded", COLORS.accent)
-addLog("Save your base position first!", COLORS.textSecondary)
-print("[Steal a Brainrot Hub] Loaded v1.0")
-print("[Steal a Brainrot Hub] Right Shift to toggle window")
+notify("SAB Hub v2", "Loaded! Anti-cheat aware mode")
+print("[SAB Hub v2] Loaded - Right Shift to toggle")
+print("[SAB Hub v2] SAVE YOUR BASE POSITION FIRST!")
