@@ -35,8 +35,8 @@ local COLORS = {
 	error = Color3.fromRGB(255, 60, 60),
 	success = Color3.fromRGB(60, 255, 120),
 	warning = Color3.fromRGB(255, 200, 60),
-	enemyColor = Color3.fromRGB(255, 50, 50),
-	teamColor = Color3.fromRGB(50, 255, 50),
+	facilityColor = Color3.fromRGB(50, 130, 255),
+	rebelColor = Color3.fromRGB(255, 50, 50),
 }
 
 -- ===================== STATE =====================
@@ -125,6 +125,78 @@ local function isAlive(player)
 	if not player or not player.Character then return false end
 	local hum = player.Character:FindFirstChildOfClass("Humanoid")
 	return hum and hum.Health > 0
+end
+
+-- Detect if player is Facility (blue) or Rebel (red)
+-- NBTF uses team names like "Facility", "Rebel", "Government", etc.
+local function getPlayerTeamInfo(player)
+	local teamName = ""
+	local roleName = ""
+	local color = COLORS.rebelColor -- default red
+
+	-- Get team name
+	if player.Team then
+		teamName = player.Team.Name or ""
+	end
+
+	-- Get role from leaderboard stats or character name tags
+	pcall(function()
+		local leaderstats = player:FindFirstChild("leaderstats")
+		if leaderstats then
+			for _, stat in ipairs(leaderstats:GetChildren()) do
+				local sName = stat.Name:lower()
+				if sName == "role" or sName == "rank" or sName == "class" or sName == "job" or sName == "team" then
+					roleName = tostring(stat.Value)
+					break
+				end
+			end
+		end
+	end)
+
+	-- Also check for role in other common value locations
+	if roleName == "" then
+		pcall(function()
+			for _, child in ipairs(player:GetChildren()) do
+				if child:IsA("StringValue") or child:IsA("ObjectValue") then
+					local cName = child.Name:lower()
+					if cName == "role" or cName == "rank" or cName == "class" or cName == "job" then
+						roleName = tostring(child.Value)
+						break
+					end
+				end
+			end
+		end)
+	end
+
+	-- Determine color based on team/role name
+	local nameLower = (teamName .. " " .. roleName):lower()
+	if nameLower:find("facility") or nameLower:find("government") or nameLower:find("security")
+		or nameLower:find("scientist") or nameLower:find("worker") or nameLower:find("director")
+		or nameLower:find("overseer") or nameLower:find("military") or nameLower:find("guard")
+		or nameLower:find("intelligence") or nameLower:find("staff") or nameLower:find("official") then
+		color = COLORS.facilityColor
+	elseif nameLower:find("rebel") or nameLower:find("hostile") or nameLower:find("raider")
+		or nameLower:find("warlord") or nameLower:find("insurgent") or nameLower:find("bandit") then
+		color = COLORS.rebelColor
+	else
+		-- Fallback: use team color if available
+		if player.Team then
+			local tc = player.Team.TeamColor
+			if tc then
+				color = tc.Color
+			end
+		end
+	end
+
+	-- Build display role text
+	local displayRole = ""
+	if roleName ~= "" then
+		displayRole = roleName
+	elseif teamName ~= "" then
+		displayRole = teamName
+	end
+
+	return color, displayRole, teamName
 end
 
 local function getTargetPartFromPlayer(player)
@@ -372,10 +444,10 @@ local function updateESP()
 				local hum = char:FindFirstChildOfClass("Humanoid")
 				if not hrp or not hum then return end
 
-				local isTeammate = player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team
-				local color = isTeammate and COLORS.teamColor or COLORS.enemyColor
+				-- Get team color: Facility = blue, Rebel = red
+				local color, roleName, teamName = getPlayerTeamInfo(player)
 
-				-- Highlight
+				-- Highlight with team color
 				if not char:FindFirstChild("NBTF_HL") then
 					local hl = Instance.new("Highlight")
 					hl.Name = "NBTF_HL"
@@ -389,7 +461,7 @@ local function updateESP()
 					table.insert(espHighlights, hl)
 				end
 
-				-- Name + Health + Distance billboard
+				-- Name + Role + Health + Distance billboard
 				local myRoot = getRoot()
 				local dist = myRoot and math.floor((hrp.Position - myRoot.Position).Magnitude) or 0
 				local healthPct = math.floor((hum.Health / hum.MaxHealth) * 100)
@@ -398,12 +470,13 @@ local function updateESP()
 					local bb = Instance.new("BillboardGui")
 					bb.Name = "NBTF_BB"
 					bb.AlwaysOnTop = true
-					bb.Size = UDim2.new(6, 0, 1.2, 0)
+					bb.Size = UDim2.new(8, 0, 1.6, 0)
 					bb.StudsOffset = Vector3.new(0, 3.5, 0)
 					bb.Adornee = hrp
 					bb.Parent = char
 					table.insert(espHighlights, bb)
 
+					-- Name line
 					local lbl = Instance.new("TextLabel")
 					lbl.Text = player.DisplayName .. " [" .. healthPct .. "%] " .. dist .. "m"
 					lbl.TextColor3 = color
@@ -411,13 +484,33 @@ local function updateESP()
 					lbl.TextSize = 12
 					lbl.Font = Enum.Font.GothamBold
 					lbl.BackgroundTransparency = 1
-					lbl.Size = UDim2.new(1, 0, 0.5, 0)
+					lbl.Size = UDim2.new(1, 0, 0.3, 0)
 					lbl.Parent = bb
+
+					-- Role / Team line
+					local roleText = ""
+					if roleName ~= "" then
+						roleText = roleName
+					elseif teamName ~= "" then
+						roleText = teamName
+					end
+					if roleText ~= "" then
+						local roleLbl = Instance.new("TextLabel")
+						roleLbl.Text = "[" .. roleText .. "]"
+						roleLbl.TextColor3 = color
+						roleLbl.TextStrokeTransparency = 0
+						roleLbl.TextSize = 10
+						roleLbl.Font = Enum.Font.GothamBold
+						roleLbl.BackgroundTransparency = 1
+						roleLbl.Size = UDim2.new(1, 0, 0.2, 0)
+						roleLbl.Position = UDim2.new(0, 0, 0.3, 0)
+						roleLbl.Parent = bb
+					end
 
 					-- Health bar
 					local barBg = Instance.new("Frame")
 					barBg.Size = UDim2.new(0.6, 0, 0, 4)
-					barBg.Position = UDim2.new(0.2, 0, 0.6, 0)
+					barBg.Position = UDim2.new(0.2, 0, 0.55, 0)
 					barBg.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 					barBg.BorderSizePixel = 0
 					barBg.Parent = bb
@@ -440,8 +533,8 @@ local function updateESP()
 						weaponLbl.TextSize = 10
 						weaponLbl.Font = Enum.Font.Gotham
 						weaponLbl.BackgroundTransparency = 1
-						weaponLbl.Size = UDim2.new(1, 0, 0.3, 0)
-						weaponLbl.Position = UDim2.new(0, 0, 0.75, 0)
+						weaponLbl.Size = UDim2.new(1, 0, 0.2, 0)
+						weaponLbl.Position = UDim2.new(0, 0, 0.65, 0)
 						weaponLbl.Parent = bb
 					end
 				end
@@ -1724,13 +1817,19 @@ do
 		end
 		for i, player in ipairs(Players:GetPlayers()) do
 			if player ~= LocalPlayer then
-				local isTeammate = player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team
+				local color, roleName, teamName = getPlayerTeamInfo(player)
+				local roleDisplay = ""
+				if roleName ~= "" then
+					roleDisplay = " [" .. roleName .. "]"
+				elseif teamName ~= "" then
+					roleDisplay = " [" .. teamName .. "]"
+				end
 				local pBtn = Instance.new("TextButton")
 				pBtn.Size = UDim2.new(1, 0, 0, 26)
 				pBtn.BackgroundColor3 = COLORS.panel
 				pBtn.BorderSizePixel = 0
-				pBtn.Text = player.DisplayName .. " (@" .. player.Name .. ")"
-				pBtn.TextColor3 = isTeammate and COLORS.teamColor or COLORS.enemyColor
+				pBtn.Text = player.DisplayName .. " (@" .. player.Name .. ")" .. roleDisplay
+				pBtn.TextColor3 = color
 				pBtn.Font = Enum.Font.Gotham
 				pBtn.TextSize = 11
 				pBtn.LayoutOrder = i
