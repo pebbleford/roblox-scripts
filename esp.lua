@@ -626,6 +626,9 @@ local function flingPart(hit)
 				end
 			end
 		end
+
+		-- Cancel pushback on yourself so you don't fly backwards
+		myHRP.Velocity = Vector3.new(myHRP.Velocity.X, 0, myHRP.Velocity.Z)
 	end)
 end
 
