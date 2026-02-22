@@ -40,6 +40,7 @@ local COLORS = {
 local espEnabled = false
 local flyEnabled = false
 local flingEnabled = false
+local walkFlingEnabled = false
 local speedEnabled = false
 local noclipEnabled = false
 local godEnabled = false
@@ -49,7 +50,7 @@ local invisibleEnabled = false
 local spinEnabled = false
 local seizureEnabled = false
 
-local flingPower = 500
+local flingPower = 99999
 local flySpeed = 80
 local speedValue = 100
 local jumpPowerValue = 50
@@ -69,6 +70,9 @@ local noclipConnection = nil
 local infJumpConnection = nil
 local killAuraConnection = nil
 local spinConnection = nil
+local spinBAV = nil
+local walkFlingThread = nil
+local savedPhysProps = {}
 local seizureConnection = nil
 local selectedPlayer = nil
 local windowVisible = true
@@ -1229,58 +1233,156 @@ local function stopFly()
 	addLog("[FLY] OFF", COLORS.error)
 end
 
--- ===================== FLING LOGIC =====================
-local function flingPart(hit)
-	if not flingEnabled then return end
-	if not hit or not hit.Parent then return end
-	local myChar = LocalPlayer.Character
-	if not myChar then return end
-	if hit:IsDescendantOf(myChar) then return end
-	if hit.Anchored then return end
-	pcall(function()
-		local myHRP = myChar:FindFirstChild("HumanoidRootPart")
-		if not myHRP then return end
-		local direction = (hit.Position - myHRP.Position)
-		if direction.Magnitude < 0.1 then
-			direction = Vector3.new(math.random() - 0.5, 1, math.random() - 0.5)
-		end
-		direction = direction.Unit
-		local launchVel = direction * flingPower + Vector3.new(0, flingPower * 0.5, 0)
-		hit.Velocity = launchVel
-		hit.RotVelocity = Vector3.new(
-			(math.random() - 0.5) * flingPower,
-			(math.random() - 0.5) * flingPower,
-			(math.random() - 0.5) * flingPower
-		)
-		local hitChar = hit.Parent
-		local hitHumanoid = hitChar and hitChar:FindFirstChildOfClass("Humanoid")
-		if hitHumanoid then
-			for _, part in ipairs(hitChar:GetDescendants()) do
-				if part:IsA("BasePart") and not part.Anchored then
-					part.Velocity = launchVel
-				end
-			end
-		end
-		myHRP.Velocity = Vector3.new(myHRP.Velocity.X, 0, myHRP.Velocity.Z)
-	end)
-end
+-- ===================== SPIN FLING LOGIC (Infinite Yield Style) =====================
+-- High density + BodyAngularVelocity + noclip + massless + pulse spin
 
 local function startFling()
 	local character = LocalPlayer.Character
 	if not character then return end
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+
+	-- Set density to 100 (super heavy = others get launched on contact)
+	savedPhysProps = {}
 	for _, part in ipairs(character:GetDescendants()) do
 		if part:IsA("BasePart") then
-			local conn = part.Touched:Connect(flingPart)
-			table.insert(touchConnections, conn)
+			savedPhysProps[part] = part.CustomPhysicalProperties
+			part.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
 		end
 	end
-	addLog("[FLING] ON - Power: " .. flingPower, COLORS.success)
+
+	-- Enable noclip
+	if not noclipEnabled then noclipEnabled = true startNoclip() end
+	_wait(0.1)
+
+	-- BodyAngularVelocity - spin on Y axis
+	spinBAV = Instance.new("BodyAngularVelocity")
+	spinBAV.AngularVelocity = Vector3.new(0, 99999, 0)
+	spinBAV.MaxTorque = Vector3.new(0, math.huge, 0)
+	spinBAV.P = math.huge
+	spinBAV.Parent = root
+
+	-- Set all parts massless + zero velocity
+	for _, part in ipairs(character:GetChildren()) do
+		if part:IsA("BasePart") then
+			part.CanCollide = false
+			part.Massless = true
+			part.Velocity = Vector3.new(0, 0, 0)
+		end
+	end
+
+	-- Pulse spin on/off (0.2s on, 0.1s off) to create repeated impulse spikes
+	_spawn(function()
+		while flingEnabled do
+			if spinBAV and spinBAV.Parent then
+				spinBAV.AngularVelocity = Vector3.new(0, 99999, 0)
+			end
+			_wait(0.2)
+			if spinBAV and spinBAV.Parent then
+				spinBAV.AngularVelocity = Vector3.new(0, 0, 0)
+			end
+			_wait(0.1)
+		end
+	end)
+
+	addLog("[SPIN FLING] ON - Walk into players!", COLORS.success)
 end
 
 local function stopFling()
-	for _, conn in ipairs(touchConnections) do pcall(function() conn:Disconnect() end) end
-	touchConnections = {}
-	addLog("[FLING] OFF", COLORS.error)
+	-- Remove BodyAngularVelocity
+	if spinBAV then pcall(function() spinBAV:Destroy() end) spinBAV = nil end
+
+	-- Restore physics properties
+	local character = LocalPlayer.Character
+	if character then
+		for _, part in ipairs(character:GetDescendants()) do
+			if part:IsA("BasePart") then
+				if savedPhysProps[part] then
+					part.CustomPhysicalProperties = savedPhysProps[part]
+				else
+					part.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
+				end
+				part.Massless = false
+			end
+		end
+		-- Break velocity
+		for _, part in ipairs(character:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.Velocity = Vector3.new(0, 0, 0)
+				part.RotVelocity = Vector3.new(0, 0, 0)
+			end
+		end
+	end
+	savedPhysProps = {}
+
+	addLog("[SPIN FLING] OFF", COLORS.error)
+end
+
+-- ===================== WALK FLING LOGIC (Dinos Anim Style) =====================
+-- Velocity spike each physics frame - walk normally while flinging
+
+local function startWalkFling()
+	local character = LocalPlayer.Character
+	if not character then return end
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+
+	-- Enable noclip
+	if not noclipEnabled then noclipEnabled = true startNoclip() end
+
+	-- Velocity spike loop
+	walkFlingThread = _spawn(function()
+		local movel = 0.1
+		while walkFlingEnabled do
+			RunService.Heartbeat:Wait()
+			local char = LocalPlayer.Character
+			local rt = char and char:FindFirstChild("HumanoidRootPart")
+			if not (char and char.Parent and rt and rt.Parent) then continue end
+
+			-- Save current velocity
+			local vel = rt.Velocity
+
+			-- SPIKE: multiply velocity massively + huge upward burst
+			rt.Velocity = vel * 10000 + Vector3.new(0, 10000, 0)
+
+			RunService.RenderStepped:Wait()
+			-- RESTORE: set velocity back to normal
+			char = LocalPlayer.Character
+			rt = char and char:FindFirstChild("HumanoidRootPart")
+			if char and char.Parent and rt and rt.Parent then
+				rt.Velocity = vel
+			end
+
+			RunService.Stepped:Wait()
+			-- MICRO-OSCILLATE: tiny bounce to keep physics alive
+			char = LocalPlayer.Character
+			rt = char and char:FindFirstChild("HumanoidRootPart")
+			if char and char.Parent and rt and rt.Parent then
+				rt.Velocity = vel + Vector3.new(0, movel, 0)
+				movel = movel * -1
+			end
+		end
+	end)
+
+	addLog("[WALK FLING] ON - Dinos Anim style!", COLORS.success)
+end
+
+local function stopWalkFling()
+	-- Break velocity
+	pcall(function()
+		local character = LocalPlayer.Character
+		if character then
+			local V3 = Vector3.new(0, 0, 0)
+			for _, part in ipairs(character:GetDescendants()) do
+				if part:IsA("BasePart") then
+					part.Velocity = V3
+					part.RotVelocity = V3
+				end
+			end
+		end
+	end)
+
+	addLog("[WALK FLING] OFF", COLORS.error)
 end
 
 -- ===================== SPEED LOGIC =====================
@@ -1941,11 +2043,20 @@ do
 	local tab = tabFrames["Fun"]
 
 	createSectionLabel(tab, "Fling", 1)
-	createToggle(tab, "Fling (Touch)", 2, function(on)
+	createToggle(tab, "Spin Fling (IY Style)", 2, function(on)
 		flingEnabled = on
-		if on then startFling() else stopFling() end
+		if on then
+			if walkFlingEnabled then walkFlingEnabled = false stopWalkFling() end
+			startFling()
+		else stopFling() end
 	end)
-	createSlider(tab, "Fling Power", 100, 9999, flingPower, 3, function(val) flingPower = val end)
+	createToggle(tab, "Walk Fling (Dinos Anim)", 3, function(on)
+		walkFlingEnabled = on
+		if on then
+			if flingEnabled then flingEnabled = false stopFling() end
+			startWalkFling()
+		else stopWalkFling() end
+	end)
 
 	local spacer = Instance.new("Frame")
 	spacer.Size = UDim2.new(1, 0, 0, 4)
@@ -2000,8 +2111,10 @@ commands["gravity"] = function(args)
 	if v then gravityValue = v setGravity(v) addLog("[CMD] Gravity: " .. v, COLORS.success)
 	else addLog("[CMD] Usage: ;gravity <value>", COLORS.error) end
 end
-commands["fling"] = function(args) local v = tonumber(args[1]) if v then flingPower = v end flingEnabled = true startFling() end
+commands["fling"] = function() if walkFlingEnabled then walkFlingEnabled = false stopWalkFling() end flingEnabled = true startFling() end
 commands["unfling"] = function() flingEnabled = false stopFling() end
+commands["walkfling"] = function() if flingEnabled then flingEnabled = false stopFling() end walkFlingEnabled = true startWalkFling() end
+commands["unwalkfling"] = function() walkFlingEnabled = false stopWalkFling() end
 commands["infjump"] = function() infJumpEnabled = true startInfJump() end
 commands["uninfjump"] = function() infJumpEnabled = false stopInfJump() end
 commands["killaura"] = function() killAuraEnabled = true startKillAura() end
@@ -2025,7 +2138,8 @@ commands["cmds"] = function()
 	addLog(";noclip / ;unnoclip    ;god / ;ungod", COLORS.textSecondary)
 	addLog(";tp <player>    ;invisible / ;visible", COLORS.textSecondary)
 	addLog(";jp <val>    ;gravity <val>", COLORS.textSecondary)
-	addLog(";fling [power] / ;unfling", COLORS.textSecondary)
+	addLog(";fling / ;unfling (spin fling)", COLORS.textSecondary)
+	addLog(";walkfling / ;unwalkfling (dinos anim)", COLORS.textSecondary)
 	addLog(";infjump / ;uninfjump", COLORS.textSecondary)
 	addLog(";killaura / ;unkillaura", COLORS.textSecondary)
 	addLog(";spectate <player> / ;unspectate", COLORS.textSecondary)
@@ -2076,6 +2190,9 @@ LocalPlayer.CharacterAdded:Connect(function()
 		if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then startFly() end
 	end
 	if flingEnabled then stopFling() _wait(0.5) startFling() end
+	if walkFlingEnabled then stopWalkFling() _wait(0.5) startWalkFling() end
+	spinBAV = nil
+	savedPhysProps = {}
 	if speedEnabled then _wait(0.3) startSpeed() end
 	if godEnabled then _wait(0.3) startGod() end
 	if jumpPowerValue ~= 50 then _wait(0.3) setJumpPower(jumpPowerValue) end
