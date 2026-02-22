@@ -38,7 +38,9 @@ public partial class MainWindow : Window
         ("Steal a Brainrot Hub (Only for Steal a Brainrot)", "Auto steal, admin spammer, ESP, fly, noclip - ONLY works in Steal a Brainrot",
             "loadstring(game:HttpGet('https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/stealabrainrot.lua'))()"),
         ("SAB Admin Tool (Only for Steal a Brainrot)", "Standalone admin spammer + defense mechanism - ONLY works in Steal a Brainrot",
-            "loadstring(game:HttpGet('https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/stealabrainrot-admin.lua'))()")
+            "loadstring(game:HttpGet('https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/stealabrainrot-admin.lua'))()"),
+        ("99 Nights Hub (Only for 99 Nights in the Forest)", "Auto farm, kill aura, bring items, ESP, fly, saplings - ONLY works in 99 Nights in the Forest",
+            "loadstring(game:HttpGet('https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/99nights.lua'))()")
     ];
 
     public MainWindow()
