@@ -32,10 +32,34 @@ local EditSignEvent = nil
 local BuildEvent = nil
 local ChatRemote = nil
 
-pcall(function() MineEvent = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("MineEvent") end)
-pcall(function() EditSignEvent = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("EditSignEvent") end)
-pcall(function() BuildEvent = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("BuildEvent") end)
-pcall(function() ChatRemote = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents") and ReplicatedStorage.DefaultChatSystemChatEvents:FindFirstChild("SayMessageRequest") end)
+pcall(function()
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	if remotes then
+		MineEvent = remotes:FindFirstChild("MineEvent")
+		EditSignEvent = remotes:FindFirstChild("EditSignEvent")
+		BuildEvent = remotes:FindFirstChild("BuildEvent")
+	end
+end)
+-- Also search deeper in case remotes are nested differently
+if not MineEvent then
+	pcall(function()
+		for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
+			if obj:IsA("RemoteEvent") and obj.Name:lower():find("mine") then
+				MineEvent = obj
+			end
+			if obj:IsA("RemoteEvent") and obj.Name:lower():find("editsign") then
+				EditSignEvent = obj
+			end
+			if obj:IsA("RemoteFunction") and obj.Name:lower():find("build") then
+				BuildEvent = obj
+			end
+		end
+	end)
+end
+pcall(function()
+	local chatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+	if chatEvents then ChatRemote = chatEvents:FindFirstChild("SayMessageRequest") end
+end)
 
 -- TextChatService for modern chat
 local TextChatService = nil
@@ -173,6 +197,8 @@ end
 
 -- Send a chat message (used for admin commands)
 local function sendChat(text)
+	local sent = false
+	-- Try modern TextChatService first
 	pcall(function()
 		if TextChatService then
 			local channel = TextChatService:FindFirstChild("TextChannels")
@@ -180,21 +206,28 @@ local function sendChat(text)
 				local rbxGeneral = channel:FindFirstChild("RBXGeneral")
 				if rbxGeneral then
 					rbxGeneral:SendAsync(text)
-					return
+					sent = true
 				end
 			end
 		end
 	end)
-	pcall(function()
-		if ChatRemote then
-			ChatRemote:FireServer(text, "All")
-		end
-	end)
+	-- Fallback to legacy chat remote
+	if not sent then
+		pcall(function()
+			if ChatRemote then
+				ChatRemote:FireServer(text, "All")
+				sent = true
+			end
+		end)
+	end
+	if not sent then
+		warn("[SX Elected] Could not send chat: no chat system found")
+	end
 end
 
 -- Send admin command (prepends ; if needed)
 local function sendAdminCmd(cmd)
-	if not cmd:sub(1, 1) == ";" then
+	if cmd:sub(1, 1) ~= ";" then
 		cmd = ";" .. cmd
 	end
 	sendChat(cmd)
@@ -207,11 +240,33 @@ end
 local function startAutoMine()
 	autoMineActive = true
 
-	-- Try to find MineEvent if not found at startup
+	-- Try hard to find MineEvent
 	if not MineEvent then
+		pcall(function() MineEvent = ReplicatedStorage.Remotes.MineEvent end)
+	end
+	if not MineEvent then
+		-- Deep search all remotes for anything mine-related
 		pcall(function()
-			MineEvent = ReplicatedStorage.Remotes.MineEvent
+			for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
+				if obj:IsA("RemoteEvent") and obj.Name:lower():find("mine") then
+					MineEvent = obj
+					print("[SX Elected] Found mine remote: " .. obj:GetFullName())
+					break
+				end
+			end
 		end)
+	end
+	if not MineEvent then
+		-- Print all remotes so user can identify the right one
+		print("[SX Elected] MineEvent NOT FOUND. All remotes in ReplicatedStorage:")
+		pcall(function()
+			for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
+				if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+					print("  [" .. obj.ClassName .. "] " .. obj:GetFullName())
+				end
+			end
+		end)
+		notify("Auto Mine", "MineEvent not found! Check F9 for remote list")
 	end
 
 	task.spawn(function()
@@ -229,7 +284,9 @@ local function startAutoMine()
 			task.wait(mineSpeed)
 		end
 	end)
-	notify("Auto Mine", "Mining at " .. (1/mineSpeed) .. " fires/sec!")
+	if MineEvent then
+		notify("Auto Mine", "Mining! Remote: " .. MineEvent:GetFullName())
+	end
 end
 
 local function stopAutoMine()
@@ -776,6 +833,133 @@ end
 local function stopChatSpam()
 	chatSpamActive = false
 	notify("Chat Spam", "Stopped")
+end
+
+-- ===================== WORD BUILDER =====================
+-- Builds text out of blocks in the game world
+-- Each letter is a 5x5 pixel grid made of blocks
+
+local LETTER_PIXELS = {
+	A = {"01110","10001","11111","10001","10001"},
+	B = {"11110","10001","11110","10001","11110"},
+	C = {"01111","10000","10000","10000","01111"},
+	D = {"11110","10001","10001","10001","11110"},
+	E = {"11111","10000","11110","10000","11111"},
+	F = {"11111","10000","11110","10000","10000"},
+	G = {"01111","10000","10011","10001","01110"},
+	H = {"10001","10001","11111","10001","10001"},
+	I = {"11111","00100","00100","00100","11111"},
+	J = {"00111","00010","00010","10010","01100"},
+	K = {"10001","10010","11100","10010","10001"},
+	L = {"10000","10000","10000","10000","11111"},
+	M = {"10001","11011","10101","10001","10001"},
+	N = {"10001","11001","10101","10011","10001"},
+	O = {"01110","10001","10001","10001","01110"},
+	P = {"11110","10001","11110","10000","10000"},
+	Q = {"01110","10001","10101","10010","01101"},
+	R = {"11110","10001","11110","10010","10001"},
+	S = {"01111","10000","01110","00001","11110"},
+	T = {"11111","00100","00100","00100","00100"},
+	U = {"10001","10001","10001","10001","01110"},
+	V = {"10001","10001","10001","01010","00100"},
+	W = {"10001","10001","10101","11011","10001"},
+	X = {"10001","01010","00100","01010","10001"},
+	Y = {"10001","01010","00100","00100","00100"},
+	Z = {"11111","00010","00100","01000","11111"},
+	["0"] = {"01110","10011","10101","11001","01110"},
+	["1"] = {"00100","01100","00100","00100","01110"},
+	["2"] = {"01110","10001","00110","01000","11111"},
+	["3"] = {"11110","00001","01110","00001","11110"},
+	["4"] = {"10010","10010","11111","00010","00010"},
+	["5"] = {"11111","10000","11110","00001","11110"},
+	["6"] = {"01110","10000","11110","10001","01110"},
+	["7"] = {"11111","00001","00010","00100","01000"},
+	["8"] = {"01110","10001","01110","10001","01110"},
+	["9"] = {"01110","10001","01111","00001","01110"},
+	["!"] = {"00100","00100","00100","00000","00100"},
+	["?"] = {"01110","10001","00110","00000","00100"},
+	[" "] = {"00000","00000","00000","00000","00000"},
+}
+
+local wordBlockSize = 4 -- studs per pixel
+
+local function buildWord(text, blockColor)
+	if not BuildEvent then
+		notify("Error", "BuildEvent remote not found!")
+		return
+	end
+
+	local hrp = getRoot()
+	local char = LocalPlayer.Character
+	if not hrp or not char then notify("Error", "No character") return end
+
+	-- Find the block template to use
+	local template = nil
+	pcall(function()
+		local blocksFolder = ReplicatedStorage:FindFirstChild("Blocks")
+		if blocksFolder then
+			template = blocksFolder:FindFirstChild("Block")
+		end
+	end)
+	if not template then
+		notify("Error", "Block template not found in ReplicatedStorage.Blocks")
+		return
+	end
+
+	-- Find a nearby placed block as anchor reference
+	local nearestBlock = nil
+	local wBlocks = workspace:FindFirstChild("Blocks")
+	if wBlocks then
+		local nearestDist = math.huge
+		for _, b in ipairs(wBlocks:GetChildren()) do
+			pcall(function()
+				if b:IsA("BasePart") then
+					local d = (b.Position - hrp.Position).Magnitude
+					if d < nearestDist then
+						nearestBlock = b
+						nearestDist = d
+					end
+				end
+			end)
+		end
+	end
+
+	text = text:upper()
+	local startPos = hrp.Position + hrp.CFrame.LookVector * 15 + Vector3.new(0, 10, 0)
+	local rightDir = hrp.CFrame.RightVector
+	local upDir = Vector3.new(0, 1, 0)
+
+	local blocksPlaced = 0
+	local charOffset = 0
+
+	notify("Building", "Building: " .. text)
+
+	task.spawn(function()
+		for ci = 1, #text do
+			local ch = text:sub(ci, ci)
+			local pixels = LETTER_PIXELS[ch]
+			if pixels then
+				for row = 1, 5 do
+					for col = 1, 5 do
+						if pixels[row]:sub(col, col) == "1" then
+							local x = (charOffset + col - 1) * wordBlockSize
+							local y = (5 - row) * wordBlockSize -- build upward
+							local pos = startPos + rightDir * x + upDir * y
+							pcall(function()
+								BuildEvent:InvokeServer(CFrame.new(pos), template, nearestBlock)
+							end)
+							blocksPlaced = blocksPlaced + 1
+							task.wait(0.05)
+						end
+					end
+				end
+				charOffset = charOffset + 6 -- 5 pixel width + 1 space
+			else
+				charOffset = charOffset + 3 -- unknown char = small gap
+			end
+		end
+		notify("Built", blocksPlaced .. " blocks placed for: " .. text)
+	end)
 end
 
 -- ===================== DEMOLISH OWN BLOCKS =====================
@@ -1325,6 +1509,23 @@ do
 
 	createSpacer(tab, o())
 
+	createSectionLabel(tab, "Word Builder", o())
+	createInfoLabel(tab, "Builds text out of blocks in front of you (A-Z, 0-9)", o())
+	local wordInput = createTextInput(tab, "Enter text to build...", o())
+	createSlider(tab, "Block Size (studs)", 2, 8, wordBlockSize, o(), function(val)
+		wordBlockSize = val
+	end)
+	createButton(tab, "Build Word", o(), function()
+		if wordInput.Text ~= "" then
+			buildWord(wordInput.Text)
+		else
+			notify("Error", "Enter text first!")
+		end
+	end)
+	createInfoLabel(tab, "Builds in direction you face - uses BuildEvent remote", o())
+
+	createSpacer(tab, o())
+
 	createSectionLabel(tab, "Grid-Free Building", o())
 	createInfoLabel(tab, "Bypasses the BuildingTool grid system", o())
 	createButton(tab, "Place Block at Position (test)", o(), function()
@@ -1704,5 +1905,8 @@ end)
 notify("SX Elected v1.0", "Loaded! Right Shift to toggle")
 print("[SX Elected v1.0] Synapse X The Revival - Elected Admin Hub")
 print("[SX Elected v1.0] Tabs: Mining | Admin | Build | Players | Movement | Visuals | Troll")
-print("[SX Elected v1.0] Remotes: MineEvent=" .. tostring(MineEvent ~= nil) .. " EditSign=" .. tostring(EditSignEvent ~= nil) .. " Build=" .. tostring(BuildEvent ~= nil))
+print("[SX Elected v1.0] MineEvent: " .. (MineEvent and MineEvent:GetFullName() or "NOT FOUND"))
+print("[SX Elected v1.0] EditSignEvent: " .. (EditSignEvent and EditSignEvent:GetFullName() or "NOT FOUND"))
+print("[SX Elected v1.0] BuildEvent: " .. (BuildEvent and BuildEvent:GetFullName() or "NOT FOUND"))
+print("[SX Elected v1.0] ChatRemote: " .. (ChatRemote and "Legacy Chat" or "TextChatService"))
 print("[SX Elected v1.0] Right Shift to toggle GUI")
