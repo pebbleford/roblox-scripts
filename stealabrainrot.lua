@@ -1083,6 +1083,79 @@ do
 	end)
 end
 
+-- ===================== TP TO NEAREST BRAINROT (Anti-Cheat Safe) =====================
+-- Uses velocity-based smooth movement to get close to the nearest brainrot
+-- Anti-cheat bypass: smooth velocity movement (not instant CFrame), noclip for transit
+local function doSmoothTpToNearest()
+	local ok, err = pcall(function()
+		local hrp = getRoot()
+		if not hrp then notify("Error", "No character") return end
+
+		local brainrots = findBrainrots()
+		if #brainrots == 0 then notify("No Brainrots", "None found in workspace") return end
+
+		-- Sort by distance, pick closest
+		table.sort(brainrots, function(a, b)
+			return (a.part.Position - hrp.Position).Magnitude < (b.part.Position - hrp.Position).Magnitude
+		end)
+		local target = brainrots[1]
+		local dist = math.floor((target.part.Position - hrp.Position).Magnitude)
+		notify("TP to Brainrot", target.name .. " (" .. dist .. "m)")
+
+		-- Enable temp noclip for transit
+		local tempNoclip = RunService.Stepped:Connect(function()
+			pcall(function()
+				local char = LocalPlayer.Character
+				if char then
+					for _, part in ipairs(char:GetDescendants()) do
+						if part:IsA("BasePart") then part.CanCollide = false end
+					end
+				end
+			end)
+		end)
+
+		-- Smooth velocity move to 3 studs away from the brainrot
+		local targetPos = target.part.Position + Vector3.new(0, 0, -3)
+		local reached = smoothMoveTo(targetPos, floatSpeed, 15)
+
+		tempNoclip:Disconnect()
+
+		if reached then
+			notify("Arrived!", "Near " .. target.name)
+		else
+			notify("Failed", "Couldn't reach " .. target.name)
+		end
+	end)
+	if not ok then warn("[TP BRAINROT ERROR] " .. tostring(err)) end
+end
+
+local function doSkyRouteTpToNearest()
+	local ok, err = pcall(function()
+		local hrp = getRoot()
+		if not hrp then notify("Error", "No character") return end
+
+		local brainrots = findBrainrots()
+		if #brainrots == 0 then notify("No Brainrots", "None found in workspace") return end
+
+		table.sort(brainrots, function(a, b)
+			return (a.part.Position - hrp.Position).Magnitude < (b.part.Position - hrp.Position).Magnitude
+		end)
+		local target = brainrots[1]
+		local dist = math.floor((target.part.Position - hrp.Position).Magnitude)
+		notify("Sky TP", target.name .. " (" .. dist .. "m)")
+
+		local targetPos = target.part.Position + Vector3.new(0, 0, -3)
+		local reached = skyRouteTo(targetPos, floatSpeed)
+
+		if reached then
+			notify("Arrived!", "Near " .. target.name)
+		else
+			notify("Failed", "Couldn't reach " .. target.name)
+		end
+	end)
+	if not ok then warn("[SKY TP BRAINROT ERROR] " .. tostring(err)) end
+end
+
 -- ===================== BUILD STEAL TAB =====================
 do
 	local tab = tabFrames["Steal"]
@@ -1096,46 +1169,58 @@ do
 	spacer.LayoutOrder = 4
 	spacer.Parent = tab
 
-	createSectionLabel(tab, "Risky Steal (May Get Detected)", 5)
-	createButton(tab, "Quick Steal (Instant TP)", 6, doQuickSteal)
-	createInfoLabel(tab, "Direct teleport - faster but anti-cheat may catch", 7)
+	createSectionLabel(tab, "TP to Nearest Brainrot", 5)
+	createButton(tab, "Smooth TP (Velocity Movement)", 6, doSmoothTpToNearest)
+	createInfoLabel(tab, "Velocity-based glide to closest brainrot (safe)", 7)
+	createButton(tab, "Sky Route TP (Up + Across + Down)", 8, doSkyRouteTpToNearest)
+	createInfoLabel(tab, "Sky route to closest brainrot (safest)", 9)
+
+	local spacerTP = Instance.new("Frame")
+	spacerTP.Size = UDim2.new(1, 0, 0, 8)
+	spacerTP.BackgroundTransparency = 1
+	spacerTP.LayoutOrder = 10
+	spacerTP.Parent = tab
+
+	createSectionLabel(tab, "Risky Steal (May Get Detected)", 11)
+	createButton(tab, "Quick Steal (Instant TP)", 12, doQuickSteal)
+	createInfoLabel(tab, "Direct teleport - faster but anti-cheat may catch", 13)
 
 	local spacer2 = Instance.new("Frame")
 	spacer2.Size = UDim2.new(1, 0, 0, 8)
 	spacer2.BackgroundTransparency = 1
-	spacer2.LayoutOrder = 8
+	spacer2.LayoutOrder = 14
 	spacer2.Parent = tab
 
-	createSectionLabel(tab, "Insta Pick Up", 9)
-	createButton(tab, "Pick Up All Nearby (One-Time)", 10, pickUpAllNearby)
-	createInfoLabel(tab, "Cooldown + range check to avoid detection", 11)
-	createToggle(tab, "Auto Insta Pick Up (Loop)", 12, function(on)
+	createSectionLabel(tab, "Insta Pick Up", 15)
+	createButton(tab, "Pick Up All Nearby (One-Time)", 16, pickUpAllNearby)
+	createInfoLabel(tab, "Cooldown + range check to avoid detection", 17)
+	createToggle(tab, "Auto Insta Pick Up (Loop)", 18, function(on)
 		instaPickUpActive = on
 		if on then startInstaPickUp() else stopInstaPickUp() end
 	end)
-	createInfoLabel(tab, "Throttled scan + random delays = anti-cheat safe", 13)
+	createInfoLabel(tab, "Throttled scan + random delays = anti-cheat safe", 19)
 
 	local spacer3 = Instance.new("Frame")
 	spacer3.Size = UDim2.new(1, 0, 0, 8)
 	spacer3.BackgroundTransparency = 1
-	spacer3.LayoutOrder = 14
+	spacer3.LayoutOrder = 20
 	spacer3.Parent = tab
 
-	createSectionLabel(tab, "Auto Farm", 15)
-	createToggle(tab, "Auto Farm (Sky Route Loop)", 16, function(on)
+	createSectionLabel(tab, "Auto Farm", 21)
+	createToggle(tab, "Auto Farm (Sky Route Loop)", 22, function(on)
 		autoFarmActive = on
 		if on then startAutoFarm() else stopAutoFarm() end
 	end)
-	createSlider(tab, "Float Speed", 20, 200, floatSpeed, 17, function(val) floatSpeed = val end)
+	createSlider(tab, "Float Speed", 20, 200, floatSpeed, 23, function(val) floatSpeed = val end)
 
 	local spacer4 = Instance.new("Frame")
 	spacer4.Size = UDim2.new(1, 0, 0, 8)
 	spacer4.BackgroundTransparency = 1
-	spacer4.LayoutOrder = 18
+	spacer4.LayoutOrder = 24
 	spacer4.Parent = tab
 
-	createSectionLabel(tab, "Defense", 19)
-	createToggle(tab, "Auto Lock Base", 20, function(on)
+	createSectionLabel(tab, "Defense", 25)
+	createToggle(tab, "Auto Lock Base", 26, function(on)
 		autoLockActive = on
 		if on then startAutoLock() end
 	end)
