@@ -136,6 +136,7 @@ local speedValue = 50
 local killAuraRange = 15
 local killAuraSpeed = 0.15
 local hitboxSize = 10
+local chopAuraRange = 50
 local windowVisible = true
 local activeTab = "Farm"
 
@@ -191,6 +192,48 @@ local function getItemCFrame(obj)
 		return obj.CFrame
 	end
 	return nil
+end
+
+-- Fire all ProximityPrompts on an object (and descendants)
+local function fireAllPrompts(obj)
+	pcall(function()
+		if obj:IsA("ProximityPrompt") then
+			local oldHold = obj.HoldDuration
+			local oldDist = obj.MaxActivationDistance
+			obj.HoldDuration = 0
+			obj.MaxActivationDistance = 9999
+			pcall(function() if fireproximityprompt then fireproximityprompt(obj) end end)
+			pcall(function() obj:InputHoldBegin() task.wait(0.05) obj:InputHoldEnd() end)
+			obj.HoldDuration = oldHold
+			obj.MaxActivationDistance = oldDist
+			return
+		end
+	end)
+	for _, child in ipairs(obj:GetDescendants()) do
+		pcall(function()
+			if child:IsA("ProximityPrompt") then
+				local oldHold = child.HoldDuration
+				local oldDist = child.MaxActivationDistance
+				child.HoldDuration = 0
+				child.MaxActivationDistance = 9999
+				pcall(function() if fireproximityprompt then fireproximityprompt(child) end end)
+				pcall(function() child:InputHoldBegin() task.wait(0.05) child:InputHoldEnd() end)
+				child.HoldDuration = oldHold
+				child.MaxActivationDistance = oldDist
+			end
+		end)
+	end
+end
+
+-- Fire all ClickDetectors on an object
+local function fireAllClicks(obj)
+	for _, child in ipairs(obj:GetDescendants()) do
+		pcall(function()
+			if child:IsA("ClickDetector") then
+				pcall(function() if fireclickdetector then fireclickdetector(child) end end)
+			end
+		end)
+	end
 end
 
 -- ===================== GUI SETUP =====================
@@ -515,9 +558,10 @@ local function createSpacer(parent, order)
 	s.Parent = parent
 end
 
--- ===================== AUTO TREE FARM =====================
--- Finds "Small Tree" models, teleports to trunk, simulates click until chopped
--- Based on Raygull technique: PivotTo + VirtualInputManager click + timeout
+-- ===================== CHOP AURA (Voidware-style) =====================
+-- Stays in place - rapidly cycles through nearby trees:
+-- Save position -> TP to tree -> swing -> TP back -> next tree
+-- Also fires ProximityPrompts on trees if they have them
 
 local function startAutoTreeFarm()
 	autoTreeFarmActive = true
@@ -528,47 +572,67 @@ local function startAutoTreeFarm()
 				local hrp = getRoot()
 				if not char or not hrp then return end
 
-				-- Find all small trees sorted by distance
+				local savedCF = hrp.CFrame
+
+				-- Find trees within chop aura range, sorted by distance
 				local trees = {}
 				for _, obj in ipairs(workspace:GetDescendants()) do
-					if obj.Name == "Trunk" and obj.Parent and obj.Parent.Name == "Small Tree" then
-						if not badTrees[obj:GetFullName()] then
-							table.insert(trees, obj)
+					if obj.Name == "Trunk" and obj:IsA("BasePart") and obj.Parent then
+						local treeName = obj.Parent.Name
+						if treeName == "Small Tree" or treeName == "Big Tree" or treeName == "Tree" then
+							if not badTrees[obj:GetFullName()] then
+								local dist = (obj.Position - savedCF.Position).Magnitude
+								if dist <= chopAuraRange then
+									table.insert(trees, {trunk = obj, dist = dist})
+								end
+							end
 						end
 					end
 				end
 
-				table.sort(trees, function(a, b)
-					return (a.Position - hrp.Position).Magnitude < (b.Position - hrp.Position).Magnitude
-				end)
+				table.sort(trees, function(a, b) return a.dist < b.dist end)
 
-				for _, trunk in ipairs(trees) do
+				for _, data in ipairs(trees) do
 					if not autoTreeFarmActive then break end
-					-- Teleport to tree
-					char:PivotTo(trunk.CFrame + Vector3.new(0, 3, 0))
-					task.wait(0.2)
-					-- Chop until tree is gone or timeout (12s)
-					local startTime = tick()
-					while autoTreeFarmActive and trunk and trunk.Parent and trunk.Parent.Name == "Small Tree" do
+					local trunk = data.trunk
+					if not trunk or not trunk.Parent then continue end
+
+					-- Try firing ProximityPrompts on the tree first (no TP needed)
+					fireAllPrompts(trunk.Parent)
+					fireAllClicks(trunk.Parent)
+
+					-- Rapid TP-swing-return: briefly go to tree, click, come back
+					local swings = 0
+					local maxSwings = 15 -- enough for any axe type
+					while autoTreeFarmActive and trunk and trunk.Parent and swings < maxSwings do
+						-- TP to tree
+						char:PivotTo(trunk.CFrame + Vector3.new(0, 3, 0))
+						task.wait(0.05)
 						mouse1click()
-						task.wait(0.2)
-						if tick() - startTime > 12 then
-							badTrees[trunk:GetFullName()] = true
-							break
-						end
+						task.wait(0.05)
+						-- TP back to saved position
+						char:PivotTo(savedCF)
+						swings = swings + 1
+						task.wait(0.05)
+
+						-- Check if tree is gone
+						if not trunk.Parent or trunk.Parent.Parent == nil then break end
 					end
-					task.wait(0.3)
+
+					if swings >= maxSwings and trunk and trunk.Parent then
+						badTrees[trunk:GetFullName()] = true
+					end
 				end
 			end)
-			task.wait(1.5)
+			task.wait(0.5)
 		end
 	end)
-	notify("Tree Farm", "Auto chopping trees!")
+	notify("Chop Aura", "Chopping trees in " .. chopAuraRange .. " stud radius!")
 end
 
 local function stopAutoTreeFarm()
 	autoTreeFarmActive = false
-	notify("Tree Farm", "Stopped")
+	notify("Chop Aura", "Stopped")
 end
 
 -- ===================== INFINITE SAPLINGS / AUTO PLANT =====================
@@ -582,34 +646,30 @@ local function startSaplingFarm()
 		while saplingFarmActive do
 			pcall(function()
 				local hrp = getRoot()
-				if not hrp then return end
+				local char = LocalPlayer.Character
+				if not hrp or not char then return end
+
+				local savedCF = hrp.CFrame
 				local count = 0
 
 				for _, obj in ipairs(workspace:GetDescendants()) do
 					if not saplingFarmActive then break end
-					if obj.Name == "Sapling" and obj:IsA("BasePart") then
-						-- Teleport to sapling, pick it up
-						local char = LocalPlayer.Character
-						if char then
-							char:PivotTo(obj.CFrame + Vector3.new(0, 2, 0))
-							task.wait(0.15)
-							mouse1click()
-							task.wait(0.1)
-							mouse1click()
-							count = count + 1
-						end
-					elseif obj.Name == "Sapling" and obj:IsA("Model") then
+					if obj.Name == "Sapling" then
 						local cf = getItemCFrame(obj)
-						if cf then
-							local char = LocalPlayer.Character
-							if char then
-								char:PivotTo(cf + Vector3.new(0, 2, 0))
-								task.wait(0.15)
-								mouse1click()
-								task.wait(0.1)
-								mouse1click()
-								count = count + 1
-							end
+						if not cf and obj:IsA("BasePart") then cf = obj.CFrame end
+						if cf and (cf.Position - savedCF.Position).Magnitude <= chopAuraRange then
+							-- Try fireproximityprompt from distance first
+							fireAllPrompts(obj)
+							fireAllClicks(obj)
+							-- Rapid TP-click-return
+							char:PivotTo(cf + Vector3.new(0, 2, 0))
+							task.wait(0.05)
+							mouse1click()
+							task.wait(0.05)
+							mouse1click()
+							char:PivotTo(savedCF)
+							task.wait(0.05)
+							count = count + 1
 						end
 					end
 				end
@@ -676,15 +736,26 @@ local function bringItemsByName(itemNames)
 	for _, obj in ipairs(workspace:GetDescendants()) do
 		if table.find(itemNames, obj.Name) then
 			pcall(function()
+				local offset = Vector3.new(math.random(-3, 3), 0, math.random(-3, 3))
 				if obj:IsA("Model") then
-					obj:PivotTo(CFrame.new(targetPos + Vector3.new(math.random(-3, 3), 0, math.random(-3, 3))))
+					obj:PivotTo(CFrame.new(targetPos + offset))
 					count = count + 1
 				elseif obj:IsA("BasePart") and not obj.Anchored then
-					obj.CFrame = CFrame.new(targetPos + Vector3.new(math.random(-3, 3), 0, math.random(-3, 3)))
+					obj.CFrame = CFrame.new(targetPos + offset)
 					count = count + 1
 				end
+				-- Fire ProximityPrompts to actually collect the item
+				fireAllPrompts(obj)
+				fireAllClicks(obj)
 			end)
+			task.wait(0.05) -- small delay to avoid lag
 		end
+	end
+
+	-- Also click at player position to pick up anything that landed nearby
+	if count > 0 then
+		task.wait(0.2)
+		mouse1click()
 	end
 
 	notify("Bring", "Brought " .. count .. " item(s)")
@@ -786,15 +857,22 @@ local function startAutoPickup()
 				local char = LocalPlayer.Character
 				if not hrp or not char then return end
 
+				local savedCF = hrp.CFrame
+
 				for _, obj in ipairs(workspace:GetDescendants()) do
 					if not autoPickupActive then break end
 					if table.find(ALL_ITEMS, obj.Name) then
 						local pos = getItemPosition(obj)
-						if pos and (pos - hrp.Position).Magnitude <= 20 then
+						if pos and (pos - savedCF.Position).Magnitude <= chopAuraRange then
+							-- Try firing prompts from distance (no TP needed)
+							fireAllPrompts(obj)
+							fireAllClicks(obj)
+							-- Fallback: rapid TP-click-return
 							char:PivotTo(CFrame.new(pos + Vector3.new(0, 2, 0)))
-							task.wait(0.1)
+							task.wait(0.05)
 							mouse1click()
-							task.wait(0.1)
+							char:PivotTo(savedCF)
+							task.wait(0.05)
 						end
 					end
 				end
@@ -802,7 +880,7 @@ local function startAutoPickup()
 			task.wait(1)
 		end
 	end)
-	notify("Auto Pickup", "Collecting nearby items!")
+	notify("Auto Pickup", "Collecting items in " .. chopAuraRange .. " stud radius!")
 end
 
 local function stopAutoPickup()
@@ -1090,38 +1168,46 @@ local function startAutoChest()
 				local hrp = getRoot()
 				if not char or not hrp then return end
 
+				local savedCF = hrp.CFrame
+
 				for _, obj in ipairs(workspace:GetDescendants()) do
 					if not autoChestActive then break end
 					if table.find(CHEST_ITEMS, obj.Name) then
 						local cf = getItemCFrame(obj)
-						if cf then
-							-- Teleport to chest
+						if cf and (cf.Position - savedCF.Position).Magnitude <= chopAuraRange then
+							-- Fire prompts from distance first
+							fireAllPrompts(obj)
+							fireAllClicks(obj)
+							-- Rapid TP-click-return
 							char:PivotTo(cf + Vector3.new(0, 3, 0))
-							task.wait(0.3)
-							-- Click to open
+							task.wait(0.1)
 							mouse1click()
-							task.wait(0.5)
+							task.wait(0.1)
 							mouse1click()
-							task.wait(0.3)
-							-- Pick up any dropped loot nearby
+							task.wait(0.1)
+							-- Collect any dropped loot nearby before returning
 							for _, loot in ipairs(workspace:GetDescendants()) do
 								local pos = getItemPosition(loot)
 								if pos and table.find(ALL_ITEMS, loot.Name) then
-									if (pos - hrp.Position).Magnitude <= 15 then
+									if (pos - cf.Position).Magnitude <= 15 then
+										fireAllPrompts(loot)
 										char:PivotTo(CFrame.new(pos + Vector3.new(0, 2, 0)))
-										task.wait(0.15)
+										task.wait(0.05)
 										mouse1click()
 									end
 								end
 							end
+							-- Return to saved position
+							char:PivotTo(savedCF)
+							task.wait(0.1)
 						end
 					end
 				end
 			end)
-			task.wait(3)
+			task.wait(2)
 		end
 	end)
-	notify("Auto Chest", "Looting chests automatically!")
+	notify("Auto Chest", "Looting chests in " .. chopAuraRange .. " stud radius!")
 end
 
 local function stopAutoChest()
@@ -1586,11 +1672,14 @@ do
 	local n = 0
 	local function o() n = n + 1 return n end
 
-	createSectionLabel(tab, "Tree Farm", o())
-	createToggle(tab, "Auto Tree Farm (Chop Small Trees)", o(), function(on)
+	createSectionLabel(tab, "Chop Aura", o())
+	createToggle(tab, "Chop Aura (Auto Chop Trees)", o(), function(on)
 		if on then startAutoTreeFarm() else stopAutoTreeFarm() end
 	end)
-	createInfoLabel(tab, "Teleports to trees, chops with click, skips stuck trees", o())
+	createSlider(tab, "Chop Aura Range (studs)", 10, 100, chopAuraRange, o(), function(val)
+		chopAuraRange = val
+	end)
+	createInfoLabel(tab, "Chops trees in radius - you stay in place (Voidware style)", o())
 
 	createSpacer(tab, o())
 
@@ -1613,7 +1702,7 @@ do
 		autoChestActive = on
 		if on then startAutoChest() else stopAutoChest() end
 	end)
-	createInfoLabel(tab, "Teleports to chests, opens them, collects loot", o())
+	createInfoLabel(tab, "Opens chests in range, fires prompts + collects loot", o())
 
 	createSpacer(tab, o())
 
