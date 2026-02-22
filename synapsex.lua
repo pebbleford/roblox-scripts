@@ -946,6 +946,7 @@ do
 			{"Spin Fling", "loadstring(game:HttpGet('https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/spinfling.lua'))()"},
 			{"ESP Loader", "loadstring(game:HttpGet('https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/esp.lua'))()"},
 			{"Steal a Brainrot Hub (Only for Steal a Brainrot)", "loadstring(game:HttpGet('https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/stealabrainrot.lua'))()"},
+			{"SAB Admin Tool (Only for Steal a Brainrot)", "loadstring(game:HttpGet('https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/stealabrainrot-admin.lua'))()"},
 		}
 
 		for i, preset in ipairs(presets) do

@@ -426,24 +426,43 @@ local function notify(title, msg)
 end
 
 local function fireProximityPrompt(prompt)
+	-- Method 1: Executor global (most reliable - Synapse, KRNL, Fluxus etc.)
+	local fired = false
 	pcall(function()
-		-- Try executor global first (most reliable)
 		if fireproximityprompt then
 			fireproximityprompt(prompt)
-			return
+			fired = true
 		end
-		-- Fallback: manual hold duration override
+	end)
+	if fired then return end
+
+	-- Method 2: Hold duration override + InputHoldBegin/End
+	pcall(function()
 		local hold = prompt.HoldDuration
 		prompt.HoldDuration = 0
 		prompt:InputHoldBegin()
+		task.wait(0.1)
 		prompt:InputHoldEnd()
 		prompt.HoldDuration = hold
+		fired = true
+	end)
+	if fired then return end
+
+	-- Method 3: Direct event fire (some executors support this)
+	pcall(function()
+		prompt.HoldDuration = 0
+		prompt.MaxActivationDistance = 9999
+		prompt.Enabled = true
+		prompt:InputHoldBegin()
+		wait(0.15)
+		prompt:InputHoldEnd()
 	end)
 end
 
 -- ===================== SMOOTH MOVEMENT (Anti-Cheat Safe) =====================
--- Uses velocity-based movement instead of instant CFrame teleport
--- Moves in small steps to avoid server-side position validation flags
+-- Uses BodyVelocity physics constraint instead of raw Velocity
+-- BodyVelocity overrides the character controller properly
+-- Raw hrp.Velocity gets overwritten every frame by the Humanoid = doesn't work
 
 local function smoothMoveTo(targetPos, speed, timeout)
 	local hrp = getRoot()
@@ -454,27 +473,47 @@ local function smoothMoveTo(targetPos, speed, timeout)
 	timeout = timeout or 15
 	local startTime = tick()
 
-	-- Put humanoid in freefall so it doesn't fight movement
+	-- BodyVelocity to override character controller
+	local bv = Instance.new("BodyVelocity")
+	bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+	bv.Velocity = Vector3.new(0, 0, 0)
+	bv.P = 9000
+	bv.Parent = hrp
+
+	-- BodyGyro to prevent tumbling
+	local bg = Instance.new("BodyGyro")
+	bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+	bg.P = 9000
+	bg.CFrame = hrp.CFrame
+	bg.Parent = hrp
+
 	hum:ChangeState(Enum.HumanoidStateType.Freefall)
 
 	while true do
 		hrp = getRoot()
-		if not hrp then return false end
+		if not hrp then
+			pcall(function() bv:Destroy() end)
+			pcall(function() bg:Destroy() end)
+			return false
+		end
 
 		local direction = (targetPos - hrp.Position)
 		local distance = direction.Magnitude
 
 		if distance < 5 then
-			hrp.Velocity = Vector3.new(0, 0, 0)
+			pcall(function() bv:Destroy() end)
+			pcall(function() bg:Destroy() end)
 			return true
 		end
 
 		if tick() - startTime > timeout then
-			hrp.Velocity = Vector3.new(0, 0, 0)
+			pcall(function() bv:Destroy() end)
+			pcall(function() bg:Destroy() end)
 			return false
 		end
 
-		hrp.Velocity = direction.Unit * speed
+		bv.Velocity = direction.Unit * speed
+		bg.CFrame = CFrame.new(hrp.Position, targetPos)
 		RunService.Heartbeat:Wait()
 	end
 end
@@ -548,7 +587,7 @@ local function findStealableBrainrots()
 	local brainrots = findBrainrots()
 	local stealable = {}
 	for _, b in ipairs(brainrots) do
-		if b.part and (b.part.Position - hrp.Position).Magnitude > 30 then
+		if b.part then
 			table.insert(stealable, b)
 		end
 	end
@@ -828,21 +867,38 @@ local function stopFly()
 end
 
 -- ===================== SPEED (Anti-Cheat Safe) =====================
--- Uses velocity to boost speed instead of WalkSpeed to avoid detection
+-- Uses BodyVelocity to boost speed instead of WalkSpeed or raw Velocity
+-- Raw hrp.Velocity gets overwritten by character controller = doesn't work
+-- BodyVelocity is a physics constraint that properly overrides movement
 -- Anti-cheat bypass: random +/- 8% variation each frame prevents pattern detection
--- Server sees varying speeds instead of exact constant = looks more human
+local speedBV = nil
+
 local function startSpeedBoost()
+	local hrp = getRoot()
+	if not hrp then return end
+
+	-- Create BodyVelocity for speed override
+	speedBV = Instance.new("BodyVelocity")
+	speedBV.MaxForce = Vector3.new(math.huge, 0, math.huge) -- only X/Z, let gravity handle Y
+	speedBV.Velocity = Vector3.new(0, 0, 0)
+	speedBV.P = 9000
+	speedBV.Parent = hrp
+
 	speedConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
-			local hrp = getRoot()
+			local rt = getRoot()
 			local hum = getHumanoid()
-			if not hrp or not hum then return end
+			if not rt or not hum then return end
+			if not speedBV or not speedBV.Parent then return end
+
 			local moveDir = hum.MoveDirection
 			if moveDir.Magnitude > 0 then
 				-- Randomize speed +/- 8% to avoid constant-speed pattern detection
 				local jitter = speedValue * (0.92 + math.random() * 0.16)
 				local flatVel = Vector3.new(moveDir.X, 0, moveDir.Z).Unit * jitter
-				hrp.Velocity = Vector3.new(flatVel.X, hrp.Velocity.Y, flatVel.Z)
+				speedBV.Velocity = flatVel
+			else
+				speedBV.Velocity = Vector3.new(0, 0, 0)
 			end
 		end)
 	end)
@@ -850,6 +906,7 @@ end
 
 local function stopSpeedBoost()
 	if speedConnection then speedConnection:Disconnect() speedConnection = nil end
+	if speedBV then pcall(function() speedBV:Destroy() end) speedBV = nil end
 end
 
 -- ===================== ANTI RAGDOLL =====================
@@ -1015,14 +1072,17 @@ local function startAutoLock()
 end
 
 -- ===================== ANTI HIT =====================
+-- Can't set other players' CanCollide (network ownership prevents it)
+-- Instead: disable collision on OUR OWN parts so we pass through everything
+-- This makes us not collide with other players' attacks/hitboxes
 local function startAntiHit()
 	antiHitConnection = RunService.Stepped:Connect(function()
 		pcall(function()
-			for _, player in ipairs(Players:GetPlayers()) do
-				if player ~= LocalPlayer and player.Character then
-					for _, part in ipairs(player.Character:GetDescendants()) do
-						if part:IsA("BasePart") then part.CanCollide = false end
-					end
+			local char = LocalPlayer.Character
+			if not char then return end
+			for _, part in ipairs(char:GetDescendants()) do
+				if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+					part.CanCollide = false
 				end
 			end
 		end)
@@ -1078,8 +1138,9 @@ end
 
 local function sendChatMessage(msg)
 	local sent = false
+
+	-- Method 1: TextChatService (new chat system)
 	pcall(function()
-		-- Try TextChatService first (new chat system)
 		local tcs = game:GetService("TextChatService")
 		if tcs then
 			local channels = tcs:FindFirstChild("TextChannels")
@@ -1093,14 +1154,25 @@ local function sendChatMessage(msg)
 		end
 	end)
 	if sent then return end
+
+	-- Method 2: Legacy chat via SayMessageRequest
 	pcall(function()
-		-- Fallback: Legacy chat system
 		local chatEvents = game:GetService("ReplicatedStorage"):FindFirstChild("DefaultChatSystemChatEvents")
 		if chatEvents then
 			local sayMsg = chatEvents:FindFirstChild("SayMessageRequest")
 			if sayMsg then
 				sayMsg:FireServer(msg, "All")
+				sent = true
 			end
+		end
+	end)
+	if sent then return end
+
+	-- Method 3: Chat service workaround
+	pcall(function()
+		local chatService = game:GetService("Chat")
+		if chatService then
+			chatService:Chat(LocalPlayer.Character or LocalPlayer, msg)
 		end
 	end)
 end
@@ -1651,8 +1723,10 @@ UserInputService.InputBegan:Connect(function(input, processed)
 end)
 
 LocalPlayer.CharacterAdded:Connect(function()
-	if noclipActive then stopNoclip() wait(0.5) startNoclip() end
-	if flyActive then stopFly() wait(0.5) startFly() end
+	-- Wait for character to fully load
+	wait(1)
+	if noclipActive then stopNoclip() wait(0.3) startNoclip() end
+	if flyActive then stopFly() wait(0.3) startFly() end
 	if speedBoostActive then stopSpeedBoost() wait(0.3) startSpeedBoost() end
 	if antiRagdollActive then stopAntiRagdoll() wait(0.3) startAntiRagdoll() end
 	if antiHitActive then stopAntiHit() wait(0.3) startAntiHit() end

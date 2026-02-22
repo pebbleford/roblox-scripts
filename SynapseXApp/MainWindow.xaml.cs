@@ -36,7 +36,9 @@ public partial class MainWindow : Window
         ("Spin Fling", "Spin your character to fling nearby players (V to toggle)",
             "loadstring(game:HttpGet('https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/spinfling.lua'))()"),
         ("Steal a Brainrot Hub (Only for Steal a Brainrot)", "Auto steal, admin spammer, ESP, fly, noclip - ONLY works in Steal a Brainrot",
-            "loadstring(game:HttpGet('https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/stealabrainrot.lua'))()")
+            "loadstring(game:HttpGet('https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/stealabrainrot.lua'))()"),
+        ("SAB Admin Tool (Only for Steal a Brainrot)", "Standalone admin spammer + defense mechanism - ONLY works in Steal a Brainrot",
+            "loadstring(game:HttpGet('https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/stealabrainrot-admin.lua'))()")
     ];
 
     public MainWindow()
