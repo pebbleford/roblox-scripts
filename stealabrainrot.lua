@@ -500,7 +500,7 @@ local function skyRouteTo(targetPos, speed)
 					if part:IsA("BasePart") then part.CanCollide = false end
 				end
 			end
-		end
+		end)
 	end)
 
 	notify("Sky Route", "Going up...")
