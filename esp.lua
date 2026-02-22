@@ -29,8 +29,6 @@ local nametags = {}
 local espConnections = {}
 local flyConnection = nil
 local flingConnection = nil
-local flingBodyPos = nil
-local flingBodyAngVel = nil
 local bodyGyro = nil
 local bodyVelocity = nil
 
@@ -585,34 +583,10 @@ local function stopFly()
 end
 
 -- =============== Fling Logic ===============
--- Uses BodyPosition to hold you at the target + BodyAngularVelocity to spin
--- Collision physics flings the target and any unanchored objects
+-- Walk-around fling: move freely with WASD, anything you touch gets launched
+-- Works like Infinite Yield / Dinos Anim fling
 
-local function getNearestPlayer()
-	local myChar = LocalPlayer.Character
-	if not myChar then return nil end
-	local myRoot = myChar:FindFirstChild("HumanoidRootPart")
-	if not myRoot then return nil end
-
-	local nearest = nil
-	local nearestDist = math.huge
-	for _, player in ipairs(Players:GetPlayers()) do
-		if player ~= LocalPlayer then
-			local char = player.Character
-			if char and char.Parent then
-				local root = char:FindFirstChild("HumanoidRootPart")
-				if root then
-					local dist = (myRoot.Position - root.Position).Magnitude
-					if dist < nearestDist then
-						nearest = player
-						nearestDist = dist
-					end
-				end
-			end
-		end
-	end
-	return nearest
-end
+local savedPhysics = {}
 
 local function startFling()
 	local character = LocalPlayer.Character
@@ -620,68 +594,49 @@ local function startFling()
 	local hrp = character:FindFirstChild("HumanoidRootPart")
 	if not hrp then return end
 
-	-- Make character massless so collisions fling others not you
+	-- Save original physics and make character massless
+	-- Massless = collisions push OTHERS, not you
 	pcall(function()
 		for _, part in ipairs(character:GetDescendants()) do
 			if part:IsA("BasePart") then
+				savedPhysics[part] = part.CustomPhysicalProperties
 				part.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 100, 100)
 			end
 		end
 	end)
 
-	-- BodyAngularVelocity to spin rapidly (persists unlike RotVelocity)
-	flingBodyAngVel = Instance.new("BodyAngularVelocity")
-	flingBodyAngVel.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-	flingBodyAngVel.AngularVelocity = Vector3.new(0, flingPower, 0)
-	flingBodyAngVel.Parent = hrp
-
-	-- BodyPosition to hold you at the target's location
-	flingBodyPos = Instance.new("BodyPosition")
-	flingBodyPos.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-	flingBodyPos.D = 10
-	flingBodyPos.P = 9e4
-	flingBodyPos.Position = hrp.Position
-	flingBodyPos.Parent = hrp
-
+	-- Just spin via RotVelocity every frame, NO BodyPosition/BodyMovers
+	-- This lets the Humanoid still control walking normally
 	flingConnection = RunService.Heartbeat:Connect(function()
 		if not flingEnabled then return end
 		pcall(function()
 			local myChar = LocalPlayer.Character
 			if not myChar then return end
 			local myHRP = myChar:FindFirstChild("HumanoidRootPart")
-			if not myHRP or not flingBodyPos or not flingBodyAngVel then return end
-
-			-- Update spin speed in case slider changed
-			flingBodyAngVel.AngularVelocity = Vector3.new(flingPower, flingPower, flingPower)
-
-			-- Find nearest player and move to them
-			local target = getNearestPlayer()
-			if target and target.Character then
-				local targetRoot = target.Character:FindFirstChild("HumanoidRootPart")
-				if targetRoot then
-					flingBodyPos.Position = targetRoot.Position
-				end
-			else
-				-- No players nearby, stay in place and spin to fling unanchored objects
-				flingBodyPos.Position = myHRP.Position
-			end
+			if not myHRP then return end
+			-- Spin rapidly - when you walk into things they get flung
+			myHRP.RotVelocity = Vector3.new(flingPower, flingPower, flingPower)
 		end)
 	end)
-	print("[FLING] ON - Power: " .. flingPower .. " (targets nearest player)")
+	print("[FLING] ON - Power: " .. flingPower .. " (walk into things to fling them)")
 end
 
 local function stopFling()
 	if flingConnection then flingConnection:Disconnect() flingConnection = nil end
-	if flingBodyPos then pcall(function() flingBodyPos:Destroy() end) flingBodyPos = nil end
-	if flingBodyAngVel then pcall(function() flingBodyAngVel:Destroy() end) flingBodyAngVel = nil end
 	pcall(function()
 		local character = LocalPlayer.Character
 		if character then
+			-- Restore original physics
 			for _, part in ipairs(character:GetDescendants()) do
 				if part:IsA("BasePart") then
-					part.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
+					if savedPhysics[part] then
+						part.CustomPhysicalProperties = savedPhysics[part]
+					else
+						part.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
+					end
 				end
 			end
+			savedPhysics = {}
 			local hrp = character:FindFirstChild("HumanoidRootPart")
 			if hrp then
 				hrp.RotVelocity = Vector3.new(0, 0, 0)
