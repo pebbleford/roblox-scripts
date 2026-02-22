@@ -1,17 +1,36 @@
 -- ================================================================
--- NBTF Hub v2.1 - Nuclear Blast Testing Facility
+-- Synapse X The Revival - NBTF Hub v3.0
+-- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
+-- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
 -- Stealth mode: cooldowns + delays to avoid detection
 -- ================================================================
+
+-- Cleanup old instance
+pcall(function()
+	local old = game:GetService("CoreGui"):FindFirstChild("SynapseXNBTF")
+	if old then old:Destroy() end
+end)
+pcall(function()
+	local old = game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui")
+	if old then
+		local oldGui = old:FindFirstChild("SynapseXNBTF")
+		if oldGui then oldGui:Destroy() end
+	end
+end)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local Workspace = game:GetService("Workspace")
+local TeleportService = game:GetService("TeleportService")
 local LocalPlayer = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 local Mouse = LocalPlayer:GetMouse()
+
+local TextChatService = nil
+pcall(function() TextChatService = game:GetService("TextChatService") end)
 
 -- ===================== NBTF WEAPON SYSTEM =====================
 -- NBTF uses ReplicatedStorage.WeaponsSystem.Network.WeaponHit:FireServer()
@@ -39,8 +58,21 @@ local NBTF_GUNS = {
 local NBTF_ZERO_VALUES = {"RecoilDecay", "RecoilMax", "RecoilMin", "ShotCooldown", "TotalRecoilMax", "MaxSpread", "MinSpread"}
 local NBTF_MAX_VALUES = {"AmmoCapacity", "AmmoReserves", "FullMagazineSize", "HitDamage", "MaxDistance"}
 
--- Find any gun in the player's backpack
+-- Find any gun in the player's backpack (respects selectedWeapon if set)
 local function findGunInBackpack()
+	-- If a specific weapon is selected, try to find it first
+	if selectedWeapon then
+		for _, tool in ipairs(LocalPlayer.Backpack:GetChildren()) do
+			if tool:IsA("Tool") and tool.Name == selectedWeapon then return tool end
+		end
+		local char = LocalPlayer.Character
+		if char then
+			for _, tool in ipairs(char:GetChildren()) do
+				if tool:IsA("Tool") and tool.Name == selectedWeapon then return tool end
+			end
+		end
+	end
+	-- Auto-detect: find any known gun
 	for _, tool in ipairs(LocalPlayer.Backpack:GetChildren()) do
 		if tool:IsA("Tool") then
 			for _, gunName in ipairs(NBTF_GUNS) do
@@ -103,21 +135,21 @@ local function mouse1click()
 	VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
 end
 
--- ===================== COLOR PALETTE =====================
+-- ===================== COLOR PALETTE (Synapse X Orange Theme) =====================
 local COLORS = {
-	bg = Color3.fromRGB(12, 12, 18),
-	bgSecondary = Color3.fromRGB(18, 18, 28),
-	panel = Color3.fromRGB(28, 28, 42),
-	accent = Color3.fromRGB(0, 180, 255),
-	accentHover = Color3.fromRGB(40, 200, 255),
-	textPrimary = Color3.fromRGB(230, 240, 255),
-	textSecondary = Color3.fromRGB(140, 150, 180),
-	textDim = Color3.fromRGB(90, 100, 130),
-	border = Color3.fromRGB(40, 40, 60),
-	toggleOn = Color3.fromRGB(0, 180, 255),
-	toggleOff = Color3.fromRGB(60, 60, 80),
-	error = Color3.fromRGB(255, 60, 60),
-	success = Color3.fromRGB(60, 255, 120),
+	bg = Color3.fromRGB(20, 20, 20),
+	bgSecondary = Color3.fromRGB(30, 30, 30),
+	panel = Color3.fromRGB(45, 45, 45),
+	accent = Color3.fromRGB(255, 102, 0),
+	accentHover = Color3.fromRGB(255, 133, 51),
+	textPrimary = Color3.fromRGB(255, 255, 255),
+	textSecondary = Color3.fromRGB(176, 176, 176),
+	textDim = Color3.fromRGB(120, 120, 120),
+	border = Color3.fromRGB(50, 50, 50),
+	toggleOn = Color3.fromRGB(255, 102, 0),
+	toggleOff = Color3.fromRGB(85, 85, 85),
+	error = Color3.fromRGB(255, 68, 68),
+	success = Color3.fromRGB(68, 255, 68),
 	warning = Color3.fromRGB(255, 200, 60),
 	facilityColor = Color3.fromRGB(50, 130, 255),
 	rebelColor = Color3.fromRGB(255, 50, 50),
@@ -143,6 +175,11 @@ local noRecoilActive = false
 local autoFireActive = false
 local gravityActive = false
 local bringAllActive = false
+local antiKickActive = false
+local antiRagdollActive = false
+local autoRejoinActive = false
+
+local selectedWeapon = nil -- nil = auto-detect
 
 local targetPart = "Head" -- Head, HumanoidRootPart
 local fovRadius = 150
@@ -172,6 +209,8 @@ local noRecoilConnection = nil
 local autoFireConnection = nil
 local espHighlights = {}
 local spectateTarget = nil
+local antiRagdollConnection = nil
+local killAllDelay = 0.3
 
 -- ===================== HELPERS =====================
 local function getRoot()
@@ -910,6 +949,156 @@ local function stopAntiAfk()
 	antiAfkActive = false
 end
 
+-- ===================== ANTI-KICK =====================
+local function startAntiKick()
+	-- Disable Idled connections
+	pcall(function()
+		if getconnections then
+			for _, conn in pairs(getconnections(LocalPlayer.Idled)) do
+				conn:Disable()
+			end
+		end
+	end)
+	-- Hook Kick method via metatable (if executor supports it)
+	pcall(function()
+		if getrawmetatable and setreadonly and newcclosure then
+			local mt = getrawmetatable(game)
+			local oldNamecall = mt.__namecall
+			setreadonly(mt, false)
+			mt.__namecall = newcclosure(function(self, ...)
+				local method = getnamecallmethod()
+				if method == "Kick" or method == "kick" then
+					return wait(9e9)
+				end
+				return oldNamecall(self, ...)
+			end)
+			setreadonly(mt, true)
+		end
+	end)
+	-- VirtualUser anti-idle as fallback
+	task.spawn(function()
+		while antiKickActive do
+			pcall(function()
+				local VU = game:GetService("VirtualUser")
+				VU:CaptureController()
+				VU:ClickButton2(Vector2.new())
+			end)
+			task.wait(60)
+		end
+	end)
+	notify("Anti-Kick", "Kick protection active!")
+end
+
+-- ===================== ANTI-RAGDOLL =====================
+local function startAntiRagdoll()
+	antiRagdollConnection = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			local hum = getHumanoid()
+			if hum then
+				hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+				hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+				hum:SetStateEnabled(Enum.HumanoidStateType.GettingUp, false)
+			end
+		end)
+	end)
+	notify("Anti-Ragdoll", "Ragdoll prevention active!")
+end
+
+local function stopAntiRagdoll()
+	if antiRagdollConnection then antiRagdollConnection:Disconnect() antiRagdollConnection = nil end
+	pcall(function()
+		local hum = getHumanoid()
+		if hum then
+			hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+			hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+			hum:SetStateEnabled(Enum.HumanoidStateType.GettingUp, true)
+		end
+	end)
+end
+
+-- ===================== CHAT MESSAGE SENDER =====================
+local function sendChatMessage(msg)
+	if not msg or msg == "" then return end
+	-- Method 1: TextChatService (modern)
+	pcall(function()
+		if TextChatService then
+			local channel = TextChatService:FindFirstChild("TextChannels")
+			if channel then
+				local rbxGeneral = channel:FindFirstChild("RBXGeneral")
+				if rbxGeneral then
+					rbxGeneral:SendAsync(msg)
+					return
+				end
+			end
+		end
+	end)
+	-- Method 2: Legacy SayMessageRequest
+	pcall(function()
+		game:GetService("ReplicatedStorage"):FindFirstChild("DefaultChatSystemChatEvents")
+			:FindFirstChild("SayMessageRequest"):FireServer(msg, "All")
+	end)
+end
+
+-- ===================== CUSTOM ANNOUNCEMENT DISPLAY =====================
+local function showCustomAnnouncement(text, duration)
+	duration = duration or 5
+	local announceGui = Instance.new("ScreenGui")
+	announceGui.Name = "SX_Announcement"
+	announceGui.ResetOnSpawn = false
+	announceGui.DisplayOrder = 999
+	pcall(function() announceGui.Parent = game:GetService("CoreGui") end)
+	if not announceGui.Parent then announceGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+
+	local bar = Instance.new("Frame")
+	bar.Size = UDim2.new(0.6, 0, 0, 60)
+	bar.Position = UDim2.new(0.2, 0, 0, -70)
+	bar.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+	bar.BorderSizePixel = 0
+	bar.Parent = announceGui
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 8)
+	corner.Parent = bar
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = COLORS.accent
+	stroke.Thickness = 2
+	stroke.Parent = bar
+
+	local header = Instance.new("TextLabel")
+	header.Size = UDim2.new(1, 0, 0, 20)
+	header.Position = UDim2.new(0, 0, 0, 5)
+	header.BackgroundTransparency = 1
+	header.Text = "NBTF STATIC ALERT SYSTEM"
+	header.TextColor3 = COLORS.accent
+	header.Font = Enum.Font.GothamBold
+	header.TextSize = 11
+	header.Parent = bar
+
+	local msgLabel = Instance.new("TextLabel")
+	msgLabel.Size = UDim2.new(1, -20, 0, 30)
+	msgLabel.Position = UDim2.new(0, 10, 0, 25)
+	msgLabel.BackgroundTransparency = 1
+	msgLabel.Text = text
+	msgLabel.TextColor3 = COLORS.textPrimary
+	msgLabel.Font = Enum.Font.Gotham
+	msgLabel.TextSize = 14
+	msgLabel.TextWrapped = true
+	msgLabel.Parent = bar
+
+	-- Slide in
+	bar:TweenPosition(UDim2.new(0.2, 0, 0, 10), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.3, true)
+
+	-- Auto dismiss
+	task.delay(duration, function()
+		pcall(function()
+			bar:TweenPosition(UDim2.new(0.2, 0, 0, -70), Enum.EasingDirection.In, Enum.EasingStyle.Quad, 0.3, true)
+			task.wait(0.4)
+			announceGui:Destroy()
+		end)
+	end)
+end
+
 -- ===================== VEHICLE / CAR FLY =====================
 -- Finds VehicleSeat you're sitting in, applies BodyVelocity + BodyGyro to the vehicle
 -- Works with any vehicle in any game
@@ -1141,7 +1330,7 @@ local function killAllPlayers()
 
 		notify("Kill All", "Targeting " .. #targets .. " players (stealth mode)...")
 
-		-- 3 rounds per target, 0.3s delay between each fire
+		-- 3 rounds per target, configurable delay between each fire
 		for round = 1, 3 do
 			for _, player in ipairs(targets) do
 				if not killAllRunning then break end
@@ -1150,7 +1339,7 @@ local function killAllPlayers()
 						fireWeaponHit(player, gun)
 					end)
 					if round == 1 then killed = killed + 1 end
-					task.wait(0.3)
+					task.wait(killAllDelay)
 				end
 			end
 			if not killAllRunning then break end
@@ -1333,7 +1522,7 @@ end
 
 -- ===================== GUI SETUP =====================
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "NBTFHub"
+screenGui.Name = "SynapseXNBTF"
 screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 pcall(function() screenGui.Parent = game:GetService("CoreGui") end)
@@ -1348,8 +1537,8 @@ end
 
 -- ===================== MAIN FRAME =====================
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 520, 0, 440)
-mainFrame.Position = UDim2.new(0.5, -260, 0.5, -220)
+mainFrame.Size = UDim2.new(0, 560, 0, 500)
+mainFrame.Position = UDim2.new(0.5, -280, 0.5, -250)
 mainFrame.BackgroundColor3 = COLORS.bg
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
@@ -1365,7 +1554,7 @@ borderStroke.Parent = mainFrame
 -- Title bar
 local titleBar = Instance.new("Frame")
 titleBar.Size = UDim2.new(1, 0, 0, 30)
-titleBar.BackgroundColor3 = Color3.fromRGB(8, 8, 14)
+titleBar.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 titleBar.BorderSizePixel = 0
 titleBar.Parent = mainFrame
 addCorner(titleBar, 8)
@@ -1373,7 +1562,7 @@ addCorner(titleBar, 8)
 local titleFix = Instance.new("Frame")
 titleFix.Size = UDim2.new(1, 0, 0, 10)
 titleFix.Position = UDim2.new(0, 0, 1, -10)
-titleFix.BackgroundColor3 = Color3.fromRGB(8, 8, 14)
+titleFix.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 titleFix.BorderSizePixel = 0
 titleFix.Parent = titleBar
 
@@ -1381,7 +1570,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "NBTF Hub v2.0 - Nuclear Blast Testing Facility"
+titleText.Text = "Synapse X The Revival - NBTF Hub v3.0"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 12
@@ -1429,13 +1618,13 @@ tabLayout.FillDirection = Enum.FillDirection.Horizontal
 tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
 tabLayout.Parent = tabBar
 
-local tabNames = {"Aim", "Combat", "Movement", "Visuals", "Teleport"}
+local tabNames = {"Aim", "Combat", "Movement", "Visuals", "Teleport", "Players", "Settings"}
 local tabButtons = {}
 local tabFrames = {}
 
 for i, name in ipairs(tabNames) do
 	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(0, 104, 1, 0)
+	btn.Size = UDim2.new(0, 80, 1, 0)
 	btn.BackgroundTransparency = 1
 	btn.Text = name
 	btn.TextColor3 = COLORS.textSecondary
@@ -1700,6 +1889,69 @@ do
 		aimbotSmooth = val / 100
 	end)
 	createInfoLabel(tab, "Locks camera on nearest enemy. Always-on = no click needed.", o())
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Weapon Selector", o())
+	createInfoLabel(tab, "Choose which gun silent aim/wallbang uses (Auto = first found)", o())
+
+	local weaponBtns = {}
+	local weaponListFrame = Instance.new("Frame")
+	weaponListFrame.Size = UDim2.new(1, 0, 0, 0)
+	weaponListFrame.AutomaticSize = Enum.AutomaticSize.Y
+	weaponListFrame.BackgroundTransparency = 1
+	weaponListFrame.LayoutOrder = o()
+	weaponListFrame.Parent = tab
+
+	local weaponListLayout = Instance.new("UIListLayout")
+	weaponListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	weaponListLayout.Padding = UDim.new(0, 3)
+	weaponListLayout.FillDirection = Enum.FillDirection.Horizontal
+	weaponListLayout.Wraps = true
+	weaponListLayout.Parent = weaponListFrame
+
+	local function updateWeaponHighlight()
+		for name, btn in pairs(weaponBtns) do
+			if name == (selectedWeapon or "Auto") then
+				btn.BackgroundColor3 = COLORS.accent
+				btn.TextColor3 = Color3.fromRGB(10, 10, 10)
+			else
+				btn.BackgroundColor3 = COLORS.panel
+				btn.TextColor3 = COLORS.textSecondary
+			end
+		end
+	end
+
+	local function makeWeaponBtn(name, order)
+		local wb = Instance.new("TextButton")
+		wb.Size = UDim2.new(0, 85, 0, 24)
+		wb.BackgroundColor3 = COLORS.panel
+		wb.BorderSizePixel = 0
+		wb.Text = name
+		wb.TextColor3 = COLORS.textSecondary
+		wb.Font = Enum.Font.Gotham
+		wb.TextSize = 9
+		wb.TextTruncate = Enum.TextTruncate.AtEnd
+		wb.LayoutOrder = order
+		wb.Parent = weaponListFrame
+		addCorner(wb, 4)
+		weaponBtns[name] = wb
+		wb.MouseButton1Click:Connect(function()
+			if name == "Auto" then
+				selectedWeapon = nil
+			else
+				selectedWeapon = name
+			end
+			updateWeaponHighlight()
+			notify("Weapon", name == "Auto" and "Auto-detect mode" or "Using: " .. name)
+		end)
+	end
+
+	makeWeaponBtn("Auto", 1)
+	for i, gunName in ipairs(NBTF_GUNS) do
+		makeWeaponBtn(gunName, i + 1)
+	end
+	updateWeaponHighlight()
 end
 
 -- ===================== BUILD COMBAT TAB =====================
@@ -1754,6 +2006,11 @@ do
 		if on then startGodMode() else stopGodMode() end
 	end)
 	createInfoLabel(tab, "Heals to max every frame, prevents death states", o())
+	createToggle(tab, "Anti-Ragdoll (No Knockdown)", o(), function(on)
+		antiRagdollActive = on
+		if on then startAntiRagdoll() else stopAntiRagdoll() end
+	end)
+	createInfoLabel(tab, "Prevents ragdoll/falling states (lighter than God Mode)", o())
 
 	createSpacer(tab, o())
 
@@ -1767,88 +2024,11 @@ do
 	createSpacer(tab, o())
 
 	createSectionLabel(tab, "Announcement System", o())
-	createInfoLabel(tab, "Opens the in-game announcement GUI (normally exec-only)", o())
+	createInfoLabel(tab, "NBTF restricts announcements to authorized roles", o())
+	createInfoLabel(tab, "Method 1: Fire remotes. Method 2: Custom local display.", o())
 
-	createButton(tab, "Open Announcement Menu", o(), function()
-		local found = false
-		pcall(function()
-			-- The announcement GUI is already in PlayerGui but hidden for non-executives
-			-- Search PlayerGui for announcement/alert related GUIs and force them visible
-			local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-			if not playerGui then return end
-
-			for _, gui in ipairs(playerGui:GetDescendants()) do
-				local n = gui.Name:lower()
-				if n:find("announce") or n:find("alert") or n:find("broadcast")
-					or n:find("transmission") or n:find("static alert") then
-					if gui:IsA("ScreenGui") then
-						gui.Enabled = true
-						found = true
-						print("[NBTF Hub] Found GUI: " .. gui:GetFullName())
-					elseif gui:IsA("Frame") or gui:IsA("ImageLabel") or gui:IsA("TextLabel") then
-						gui.Visible = true
-						found = true
-						print("[NBTF Hub] Found frame: " .. gui:GetFullName())
-					elseif gui:IsA("TextButton") or gui:IsA("ImageButton") then
-						gui.Visible = true
-						found = true
-						print("[NBTF Hub] Found button: " .. gui:GetFullName())
-					end
-				end
-			end
-
-			-- Also check for GUIs stored in ReplicatedStorage that need cloning
-			local RS = game:GetService("ReplicatedStorage")
-			for _, obj in ipairs(RS:GetDescendants()) do
-				local n = obj.Name:lower()
-				if (n:find("announce") or n:find("alert") or n:find("broadcast")) and obj:IsA("ScreenGui") then
-					local clone = obj:Clone()
-					clone.Parent = playerGui
-					clone.Enabled = true
-					found = true
-					print("[NBTF Hub] Cloned GUI: " .. obj:GetFullName())
-				end
-			end
-		end)
-		if found then
-			notify("Announce", "Opened announcement GUI - check your screen!")
-		else
-			notify("Announce", "GUI not found - printing all GUIs to console...")
-			-- Print all GUIs for debugging
-			pcall(function()
-				print("=== All PlayerGui Contents ===")
-				for _, gui in ipairs(LocalPlayer.PlayerGui:GetDescendants()) do
-					if gui:IsA("ScreenGui") or gui:IsA("Frame") then
-						local vis = ""
-						if gui:IsA("ScreenGui") then
-							vis = gui.Enabled and "ENABLED" or "disabled"
-						elseif gui:IsA("Frame") then
-							vis = gui.Visible and "VISIBLE" or "hidden"
-						end
-						print(vis .. " | " .. gui.ClassName .. ": " .. gui:GetFullName())
-					end
-				end
-				print("=== End ===")
-			end)
-		end
-	end)
-
-	createButton(tab, "Force Show ALL Hidden GUIs", o(), function()
-		local count = 0
-		pcall(function()
-			for _, gui in ipairs(LocalPlayer.PlayerGui:GetChildren()) do
-				if gui:IsA("ScreenGui") and not gui.Enabled then
-					gui.Enabled = true
-					count = count + 1
-					print("[NBTF Hub] Enabled: " .. gui.Name)
-				end
-			end
-		end)
-		notify("GUIs", "Enabled " .. count .. " hidden GUIs")
-	end)
-
-	-- Announcement text input + send via remote
-	local announcementText = "Hello from NBTF Hub"
+	-- Announcement text input
+	local announcementText = "Alert: All personnel report to SCC immediately"
 	local announceTB = Instance.new("TextBox")
 	announceTB.Size = UDim2.new(1, 0, 0, 28)
 	announceTB.BackgroundColor3 = COLORS.panel
@@ -1871,34 +2051,110 @@ do
 		announcementText = announceTB.Text
 	end)
 
-	createButton(tab, "Send via Remote (fire all matching)", o(), function()
+	createButton(tab, "Show Custom Announcement (Local)", o(), function()
+		showCustomAnnouncement(announcementText, 6)
+		notify("Announce", "Custom announcement displayed!")
+	end)
+
+	createButton(tab, "Fire Announcement Remotes (All Services)", o(), function()
 		local sent = 0
+		local searchContainers = {}
+		pcall(function() table.insert(searchContainers, game:GetService("ReplicatedStorage")) end)
+		pcall(function() table.insert(searchContainers, game:GetService("ReplicatedFirst")) end)
+		pcall(function() table.insert(searchContainers, workspace) end)
+		local terms = {"announce", "broadcast", "alert", "transmission", "static", "send", "facility_alert", "notification"}
+		for _, container in ipairs(searchContainers) do
+			pcall(function()
+				for _, obj in ipairs(container:GetDescendants()) do
+					if obj:IsA("RemoteEvent") then
+						local n = obj.Name:lower()
+						for _, term in ipairs(terms) do
+							if n:find(term) then
+								obj:FireServer(announcementText)
+								sent = sent + 1
+								print("[SX NBTF] Fired: " .. obj:GetFullName())
+								break
+							end
+						end
+					end
+				end
+			end)
+		end
+		notify("Announce", "Fired " .. sent .. " remotes")
+	end)
+
+	createButton(tab, "Force Show ALL Hidden GUIs", o(), function()
+		local count = 0
+		pcall(function()
+			for _, gui in ipairs(LocalPlayer.PlayerGui:GetChildren()) do
+				if gui:IsA("ScreenGui") and not gui.Enabled then
+					gui.Enabled = true
+					count = count + 1
+					print("[SX NBTF] Enabled: " .. gui.Name)
+				end
+			end
+		end)
+		-- Also check ReplicatedStorage for clonable GUIs
 		pcall(function()
 			local RS = game:GetService("ReplicatedStorage")
 			for _, obj in ipairs(RS:GetDescendants()) do
-				if obj:IsA("RemoteEvent") then
+				if obj:IsA("ScreenGui") then
 					local n = obj.Name:lower()
-					if n:find("announce") or n:find("broadcast") or n:find("alert") or n:find("send") then
-						obj:FireServer(announcementText)
-						sent = sent + 1
-						print("[NBTF Hub] Fired: " .. obj:GetFullName() .. " with: " .. announcementText)
+					if n:find("announce") or n:find("alert") or n:find("broadcast") then
+						local clone = obj:Clone()
+						clone.Parent = LocalPlayer.PlayerGui
+						clone.Enabled = true
+						count = count + 1
+						print("[SX NBTF] Cloned: " .. obj:GetFullName())
 					end
 				end
 			end
 		end)
-		notify("Announce", "Fired " .. sent .. " remotes")
+		notify("GUIs", "Enabled/cloned " .. count .. " GUIs")
+	end)
+
+	createButton(tab, "Scan ALL GUIs (F9 Debug Dump)", o(), function()
+		pcall(function()
+			print("=== FULL GUI SCAN ===")
+			local containers = {
+				{name = "PlayerGui", obj = LocalPlayer.PlayerGui},
+			}
+			pcall(function() table.insert(containers, {name = "StarterGui", obj = game:GetService("StarterGui")}) end)
+			pcall(function() table.insert(containers, {name = "ReplicatedStorage", obj = game:GetService("ReplicatedStorage")}) end)
+			pcall(function() table.insert(containers, {name = "ReplicatedFirst", obj = game:GetService("ReplicatedFirst")}) end)
+			for _, c in ipairs(containers) do
+				print("--- " .. c.name .. " ---")
+				for _, gui in ipairs(c.obj:GetDescendants()) do
+					if gui:IsA("ScreenGui") or gui:IsA("Frame") then
+						local vis = ""
+						if gui:IsA("ScreenGui") then
+							vis = gui.Enabled and "ENABLED" or "disabled"
+						elseif gui:IsA("Frame") then
+							vis = gui.Visible and "VISIBLE" or "hidden"
+						end
+						print(vis .. " | " .. gui.ClassName .. ": " .. gui:GetFullName())
+					end
+				end
+			end
+			print("=== END SCAN ===")
+		end)
+		notify("Debug", "Full GUI scan printed to F9 console")
 	end)
 
 	createButton(tab, "List All Remotes (F9 console)", o(), function()
 		pcall(function()
-			local RS = game:GetService("ReplicatedStorage")
-			print("=== ReplicatedStorage Remotes ===")
-			for _, obj in ipairs(RS:GetDescendants()) do
-				if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") or obj:IsA("BindableEvent") then
-					print(obj.ClassName .. ": " .. obj:GetFullName())
+			print("=== ALL REMOTES ===")
+			local containers = {}
+			pcall(function() table.insert(containers, game:GetService("ReplicatedStorage")) end)
+			pcall(function() table.insert(containers, workspace) end)
+			for _, container in ipairs(containers) do
+				for _, obj in ipairs(container:GetDescendants()) do
+					if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") or obj:IsA("BindableEvent") then
+						print(obj.ClassName .. ": " .. obj:GetFullName())
+					end
 				end
 			end
-			print("=== End ===")
+			print("=== END ===")
 		end)
 		notify("Remotes", "Printed to F9 console")
 	end)
@@ -1917,23 +2173,57 @@ do
 				if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
 					local n = obj.Name:lower()
 					if n:find("rank") or n:find("role") or n:find("promote") or n:find("setrank") then
-						print("[NBTF Hub] Found rank remote: " .. obj:GetFullName())
+						print("[SX NBTF] Found rank remote: " .. obj:GetFullName())
 						if obj:IsA("RemoteEvent") then
 							obj:FireServer("Ultimate")
-							print("[NBTF Hub] Fired: " .. obj.Name .. " with 'Ultimate'")
+							print("[SX NBTF] Fired: " .. obj.Name .. " with 'Ultimate'")
 						end
 						found = true
 					end
 				end
 			end
 			if not found then
-				print("[NBTF Hub] No rank remotes found - may be patched")
+				print("[SX NBTF] No rank remotes found - may be patched")
 				notify("Rank", "No rank remote found - likely patched")
 			else
 				notify("Rank", "Fired rank remotes - check if it worked")
 			end
 		end)
 	end)
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Chat Commands", o())
+	local chatText = ""
+	local chatTB = Instance.new("TextBox")
+	chatTB.Size = UDim2.new(1, 0, 0, 28)
+	chatTB.BackgroundColor3 = COLORS.panel
+	chatTB.BorderSizePixel = 0
+	chatTB.Text = ""
+	chatTB.PlaceholderText = "Type chat message..."
+	chatTB.TextColor3 = COLORS.textPrimary
+	chatTB.PlaceholderColor3 = COLORS.textDim
+	chatTB.Font = Enum.Font.Gotham
+	chatTB.TextSize = 11
+	chatTB.ClearTextOnFocus = false
+	chatTB.LayoutOrder = o()
+	chatTB.Parent = tab
+	addCorner(chatTB, 5)
+	local chatPad = Instance.new("UIPadding")
+	chatPad.PaddingLeft = UDim.new(0, 8)
+	chatPad.PaddingRight = UDim.new(0, 8)
+	chatPad.Parent = chatTB
+	chatTB:GetPropertyChangedSignal("Text"):Connect(function()
+		chatText = chatTB.Text
+	end)
+
+	createButton(tab, "Send Chat Message", o(), function()
+		if chatText ~= "" then
+			sendChatMessage(chatText)
+			notify("Chat", "Sent: " .. chatText)
+		end
+	end)
+	createInfoLabel(tab, "Sends via TextChatService or legacy SayMessageRequest", o())
 end
 
 -- ===================== BUILD MOVEMENT TAB =====================
@@ -1990,11 +2280,16 @@ do
 
 	createSpacer(tab, o())
 
-	createSectionLabel(tab, "AFK", o())
-	createToggle(tab, "Anti-AFK (Prevent Kick)", o(), function(on)
+	createSectionLabel(tab, "AFK & Protection", o())
+	createToggle(tab, "Anti-AFK (Prevent Idle Kick)", o(), function(on)
 		antiAfkActive = on
 		if on then startAntiAfk() else stopAntiAfk() end
 	end)
+	createToggle(tab, "Anti-Kick (Block Server Kicks)", o(), function(on)
+		antiKickActive = on
+		if on then startAntiKick() end
+	end)
+	createInfoLabel(tab, "Disables Idled + hooks Kick method (needs executor support)", o())
 end
 
 -- ===================== BUILD VISUALS TAB =====================
@@ -2248,10 +2543,10 @@ do
 			if player ~= LocalPlayer then
 				local sBtn = Instance.new("TextButton")
 				sBtn.Size = UDim2.new(1, 0, 0, 24)
-				sBtn.BackgroundColor3 = Color3.fromRGB(35, 25, 50)
+				sBtn.BackgroundColor3 = COLORS.panel
 				sBtn.BorderSizePixel = 0
 				sBtn.Text = "Spectate: " .. player.DisplayName
-				sBtn.TextColor3 = Color3.fromRGB(180, 130, 255)
+				sBtn.TextColor3 = COLORS.accent
 				sBtn.Font = Enum.Font.Gotham
 				sBtn.TextSize = 10
 				sBtn.LayoutOrder = i
@@ -2269,13 +2564,320 @@ do
 	refreshSpecList()
 end
 
+-- ===================== BUILD PLAYERS TAB =====================
+do
+	local tab = tabFrames["Players"]
+	local n = 0
+	local function o() n = n + 1 return n end
+
+	createSectionLabel(tab, "Player Actions", o())
+	createInfoLabel(tab, "Per-player actions: Kill, Bring, Teleport, Spectate", o())
+
+	local playerActionsFrame = Instance.new("Frame")
+	playerActionsFrame.Size = UDim2.new(1, 0, 0, 0)
+	playerActionsFrame.AutomaticSize = Enum.AutomaticSize.Y
+	playerActionsFrame.BackgroundTransparency = 1
+	playerActionsFrame.LayoutOrder = o()
+	playerActionsFrame.Parent = tab
+
+	local playerActionsLayout = Instance.new("UIListLayout")
+	playerActionsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	playerActionsLayout.Padding = UDim.new(0, 4)
+	playerActionsLayout.Parent = playerActionsFrame
+
+	local function refreshPlayerActions()
+		for _, child in ipairs(playerActionsFrame:GetChildren()) do
+			if child:IsA("Frame") then child:Destroy() end
+		end
+		local idx = 0
+		for _, player in ipairs(Players:GetPlayers()) do
+			if player ~= LocalPlayer then
+				idx = idx + 1
+				local color, roleName, teamName = getPlayerTeamInfo(player)
+				local roleDisplay = ""
+				if roleName ~= "" then
+					roleDisplay = " [" .. roleName .. "]"
+				elseif teamName ~= "" then
+					roleDisplay = " [" .. teamName .. "]"
+				end
+
+				local row = Instance.new("Frame")
+				row.Size = UDim2.new(1, 0, 0, 32)
+				row.BackgroundColor3 = COLORS.panel
+				row.BorderSizePixel = 0
+				row.LayoutOrder = idx
+				row.Parent = playerActionsFrame
+				addCorner(row, 5)
+
+				local nameLbl = Instance.new("TextLabel")
+				nameLbl.Size = UDim2.new(1, -220, 1, 0)
+				nameLbl.Position = UDim2.new(0, 8, 0, 0)
+				nameLbl.BackgroundTransparency = 1
+				nameLbl.Text = player.DisplayName .. roleDisplay
+				nameLbl.TextColor3 = color
+				nameLbl.Font = Enum.Font.Gotham
+				nameLbl.TextSize = 10
+				nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+				nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
+				nameLbl.Parent = row
+
+				-- Action buttons
+				local actions = {
+					{text = "Kill", offset = 215, fn = function()
+						local gun = findGunInBackpack()
+						if gun then
+							task.spawn(function()
+								for i = 1, 3 do
+									fireWeaponHit(player, gun)
+									task.wait(0.3)
+								end
+							end)
+							notify("Kill", "Fired at " .. player.DisplayName)
+						else
+							notify("Error", "No gun found!")
+						end
+					end},
+					{text = "Bring", offset = 165, fn = function()
+						pcall(function()
+							local myHRP = getRoot()
+							local theirHRP = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+							if myHRP and theirHRP then
+								theirHRP.CFrame = myHRP.CFrame + Vector3.new(math.random(-5, 5), 0, math.random(-5, 5))
+								notify("Bring", "Brought " .. player.DisplayName)
+							end
+						end)
+					end},
+					{text = "TP", offset = 120, fn = function()
+						teleportToPlayer(player.Name)
+					end},
+					{text = "Spec", offset = 75, fn = function()
+						spectatePlayer(player)
+					end},
+				}
+
+				for _, action in ipairs(actions) do
+					local abtn = Instance.new("TextButton")
+					abtn.Size = UDim2.new(0, 40, 0, 22)
+					abtn.Position = UDim2.new(1, -action.offset, 0.5, -11)
+					abtn.BackgroundColor3 = COLORS.accent
+					abtn.BorderSizePixel = 0
+					abtn.Text = action.text
+					abtn.TextColor3 = Color3.fromRGB(10, 10, 10)
+					abtn.Font = Enum.Font.GothamBold
+					abtn.TextSize = 9
+					abtn.Parent = row
+					addCorner(abtn, 4)
+					abtn.MouseEnter:Connect(function() abtn.BackgroundColor3 = COLORS.accentHover end)
+					abtn.MouseLeave:Connect(function() abtn.BackgroundColor3 = COLORS.accent end)
+					abtn.MouseButton1Click:Connect(action.fn)
+				end
+			end
+		end
+	end
+
+	createButton(tab, "Refresh Player List", o(), refreshPlayerActions)
+	refreshPlayerActions()
+
+	-- Auto-refresh on player join/leave
+	Players.PlayerAdded:Connect(function() task.wait(1) refreshPlayerActions() end)
+	Players.PlayerRemoving:Connect(function() task.wait(0.5) refreshPlayerActions() end)
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Target Info", o())
+	local targetInfoLabel = Instance.new("TextLabel")
+	targetInfoLabel.Size = UDim2.new(1, 0, 0, 24)
+	targetInfoLabel.BackgroundColor3 = COLORS.panel
+	targetInfoLabel.BorderSizePixel = 0
+	targetInfoLabel.Text = "No target - enable Silent Aim or Aimbot"
+	targetInfoLabel.TextColor3 = COLORS.textSecondary
+	targetInfoLabel.Font = Enum.Font.Gotham
+	targetInfoLabel.TextSize = 10
+	targetInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
+	targetInfoLabel.LayoutOrder = o()
+	targetInfoLabel.Parent = tab
+	addCorner(targetInfoLabel, 5)
+	local tipPad = Instance.new("UIPadding")
+	tipPad.PaddingLeft = UDim.new(0, 8)
+	tipPad.Parent = targetInfoLabel
+
+	-- Update target info periodically
+	task.spawn(function()
+		while task.wait(0.5) do
+			pcall(function()
+				if not silentAimActive and not aimbotActive then
+					targetInfoLabel.Text = "No target - enable Silent Aim or Aimbot"
+					targetInfoLabel.TextColor3 = COLORS.textSecondary
+					return
+				end
+				local target = getClosestPlayerInFOV()
+				if not target then target = getClosestPlayer3D() end
+				if target and target.Parent then
+					local p = Players:GetPlayerFromCharacter(target.Parent)
+					if p then
+						local hum = target.Parent:FindFirstChildOfClass("Humanoid")
+						local hp = hum and math.floor((hum.Health / hum.MaxHealth) * 100) or 0
+						local myRoot = getRoot()
+						local dist = myRoot and math.floor((target.Position - myRoot.Position).Magnitude) or 0
+						local weapon = target.Parent:FindFirstChildOfClass("Tool")
+						local weaponName = weapon and weapon.Name or "None"
+						targetInfoLabel.Text = "Target: " .. p.DisplayName .. " | HP: " .. hp .. "% | " .. dist .. "m | Weapon: " .. weaponName
+						targetInfoLabel.TextColor3 = COLORS.accent
+					end
+				else
+					targetInfoLabel.Text = "No enemy in range"
+					targetInfoLabel.TextColor3 = COLORS.textDim
+				end
+			end)
+		end
+	end)
+
+	createSpacer(tab, o())
+
+	createButton(tab, "Stop Spectating", o(), unspectate)
+end
+
+-- ===================== BUILD SETTINGS TAB =====================
+do
+	local tab = tabFrames["Settings"]
+	local n = 0
+	local function o() n = n + 1 return n end
+
+	createSectionLabel(tab, "Keybinds", o())
+	createInfoLabel(tab, "Right Shift = Toggle GUI window", o())
+	createInfoLabel(tab, "GUI is draggable (drag title bar)", o())
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Stealth Configuration", o())
+	createInfoLabel(tab, "Adjust cooldowns to balance stealth vs. effectiveness", o())
+	createSlider(tab, "Silent Aim Cooldown (x0.1s)", 1, 20, math.floor(silentAimCooldown * 10), o(), function(val)
+		silentAimCooldown = val / 10
+	end)
+	createSlider(tab, "Wallbang Cooldown (x0.1s)", 1, 20, math.floor(wallbangCooldown * 10), o(), function(val)
+		wallbangCooldown = val / 10
+	end)
+	createSlider(tab, "Kill All Delay (x0.1s)", 1, 10, math.floor(killAllDelay * 10), o(), function(val)
+		killAllDelay = val / 10
+	end)
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Server Info", o())
+	local placeLabel = Instance.new("TextLabel")
+	placeLabel.Size = UDim2.new(1, 0, 0, 16)
+	placeLabel.BackgroundTransparency = 1
+	placeLabel.Text = "Place ID: " .. tostring(game.PlaceId)
+	placeLabel.TextColor3 = COLORS.textSecondary
+	placeLabel.Font = Enum.Font.Gotham
+	placeLabel.TextSize = 10
+	placeLabel.TextXAlignment = Enum.TextXAlignment.Left
+	placeLabel.LayoutOrder = o()
+	placeLabel.Parent = tab
+
+	local jobLabel = Instance.new("TextLabel")
+	jobLabel.Size = UDim2.new(1, 0, 0, 16)
+	jobLabel.BackgroundTransparency = 1
+	jobLabel.Text = "Server ID: " .. tostring(game.JobId):sub(1, 20) .. "..."
+	jobLabel.TextColor3 = COLORS.textSecondary
+	jobLabel.Font = Enum.Font.Gotham
+	jobLabel.TextSize = 10
+	jobLabel.TextXAlignment = Enum.TextXAlignment.Left
+	jobLabel.LayoutOrder = o()
+	jobLabel.Parent = tab
+
+	local playerCountLabel = Instance.new("TextLabel")
+	playerCountLabel.Size = UDim2.new(1, 0, 0, 16)
+	playerCountLabel.BackgroundTransparency = 1
+	playerCountLabel.Text = "Players: " .. #Players:GetPlayers() .. "/" .. Players.MaxPlayers
+	playerCountLabel.TextColor3 = COLORS.textSecondary
+	playerCountLabel.Font = Enum.Font.Gotham
+	playerCountLabel.TextSize = 10
+	playerCountLabel.TextXAlignment = Enum.TextXAlignment.Left
+	playerCountLabel.LayoutOrder = o()
+	playerCountLabel.Parent = tab
+
+	local localLabel = Instance.new("TextLabel")
+	localLabel.Size = UDim2.new(1, 0, 0, 16)
+	localLabel.BackgroundTransparency = 1
+	localLabel.Text = "You: " .. LocalPlayer.DisplayName .. " (@" .. LocalPlayer.Name .. ")"
+	localLabel.TextColor3 = COLORS.textSecondary
+	localLabel.Font = Enum.Font.Gotham
+	localLabel.TextSize = 10
+	localLabel.TextXAlignment = Enum.TextXAlignment.Left
+	localLabel.LayoutOrder = o()
+	localLabel.Parent = tab
+
+	-- Keep player count updated
+	task.spawn(function()
+		while task.wait(5) do
+			pcall(function()
+				playerCountLabel.Text = "Players: " .. #Players:GetPlayers() .. "/" .. Players.MaxPlayers
+			end)
+		end
+	end)
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Server Actions", o())
+	createButton(tab, "Rejoin Server", o(), function()
+		notify("Rejoin", "Teleporting...")
+		pcall(function()
+			TeleportService:Teleport(game.PlaceId, LocalPlayer)
+		end)
+	end)
+	createButton(tab, "Server Hop (Random Server)", o(), function()
+		notify("Server Hop", "Finding new server...")
+		task.spawn(function()
+			pcall(function()
+				local HttpService = game:GetService("HttpService")
+				local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/0?sortOrder=2&excludeFullGames=true&limit=10"
+				local data = HttpService:JSONDecode(game:HttpGet(url))
+				if data and data.data then
+					for _, server in ipairs(data.data) do
+						if server.id ~= game.JobId and server.playing < server.maxPlayers then
+							TeleportService:TeleportToPlaceInstance(game.PlaceId, server.id, LocalPlayer)
+							return
+						end
+					end
+				end
+				notify("Error", "No available servers found")
+			end)
+		end)
+	end)
+	createToggle(tab, "Auto-Rejoin on Kick", o(), function(on)
+		autoRejoinActive = on
+		if on then
+			notify("Auto-Rejoin", "Will rejoin if kicked")
+		end
+	end)
+	createInfoLabel(tab, "Auto-rejoin attempts to reconnect when kicked", o())
+
+	-- Setup auto-rejoin hooks
+	pcall(function()
+		game:GetService("GuiService").ErrorMessageChanged:Connect(function(msg)
+			if autoRejoinActive and msg ~= "" then
+				task.wait(3)
+				pcall(function() TeleportService:Teleport(game.PlaceId, LocalPlayer) end)
+			end
+		end)
+	end)
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "About", o())
+	createInfoLabel(tab, "Synapse X The Revival - NBTF Hub v3.0", o())
+	createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
+	createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
+end
+
 -- ===================== MINIMIZE / TOGGLE =====================
 local contentVisible = true
 minimizeBtn.MouseButton1Click:Connect(function()
 	contentVisible = not contentVisible
 	for _, frame in pairs(tabFrames) do frame.Visible = contentVisible and frame == tabFrames[activeTab] end
 	tabBar.Visible = contentVisible
-	mainFrame.Size = contentVisible and UDim2.new(0, 520, 0, 440) or UDim2.new(0, 520, 0, 32)
+	mainFrame.Size = contentVisible and UDim2.new(0, 560, 0, 500) or UDim2.new(0, 560, 0, 32)
 	minimizeBtn.Text = contentVisible and "-" or "+"
 end)
 
@@ -2294,10 +2896,14 @@ LocalPlayer.CharacterAdded:Connect(function()
 	if speedBoostActive then stopSpeedBoost() task.wait(0.3) startSpeedBoost() end
 	if noclipActive then stopNoclip() task.wait(0.3) startNoclip() end
 	if godModeActive then stopGodMode() task.wait(0.3) startGodMode() end
+	if antiRagdollActive then stopAntiRagdoll() task.wait(0.3) startAntiRagdoll() end
+	if infAmmoActive then modGuns() end
+	if noRecoilActive then modGuns() end
 end)
 
 -- ===================== STARTUP =====================
-notify("NBTF Hub v2.0", "Loaded! Right Shift to toggle")
-print("[NBTF Hub v2.0] Loaded - Right Shift to toggle")
-print("[NBTF Hub v2.0] Tabs: Aim | Combat | Movement | Visuals | Teleport")
-print("[NBTF Hub v2.0] Uses WeaponsSystem.Network.WeaponHit for kill/aim")
+notify("SX NBTF v3.0", "Loaded! Right Shift to toggle")
+print("[SX NBTF v3.0] Synapse X The Revival - NBTF Hub v3.0")
+print("[SX NBTF v3.0] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Settings")
+print("[SX NBTF v3.0] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v3.0] Stealth mode active - configurable cooldowns in Settings")

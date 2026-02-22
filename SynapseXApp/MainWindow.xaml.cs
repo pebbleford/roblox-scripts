@@ -41,7 +41,7 @@ public partial class MainWindow : Window
             "loadstring(game:HttpGet('https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/stealabrainrot-admin.lua'))()"),
         ("99 Nights Hub (Only for 99 Nights in the Forest)", "Auto farm, kill aura, bring items, ESP, fly, saplings - ONLY works in 99 Nights in the Forest",
             "loadstring(game:HttpGet('https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/99nights.lua'))()"),
-        ("NBTF Hub (Only for Nuclear Blast Testing Facility)", "Silent aim, wallbang, ESP, aimbot, unlimited ammo, fly - ONLY works in NBTF",
+        ("SX Revival NBTF Hub (Only for Nuclear Blast Testing Facility)", "Silent aim, wallbang, ESP, aimbot, anti-kick, player actions, 7 tabs - ONLY works in NBTF",
             "loadstring(game:HttpGet('https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/nbtf.lua'))()")
     ];
 
