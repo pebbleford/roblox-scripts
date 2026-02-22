@@ -1,6 +1,7 @@
 -- ================================================================
--- NBTF Hub v1.0 - Nuclear Blast Testing Facility
+-- NBTF Hub v2.1 - Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
+-- Stealth mode: cooldowns + delays to avoid detection
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -351,15 +352,16 @@ end
 -- This is the core "teleport bullets" / "shoot through walls" mechanic
 -- Requires executor with hookmetamethod support
 
--- Silent aim connection
+-- Silent aim connection + cooldown for stealth
 local silentAimConnection = nil
+local lastSilentAimFire = 0
+local silentAimCooldown = 0.4 -- seconds between fires (looks like normal shooting)
 
 local function enableSilentAim()
 	silentAimActive = true
 
 	if not WeaponHitRemote then
 		notify("Silent Aim", "WeaponHit remote not found! Waiting for game to load...")
-		-- Try to find it again
 		pcall(function()
 			WeaponHitRemote = game:GetService("ReplicatedStorage").WeaponsSystem.Network.WeaponHit
 		end)
@@ -369,40 +371,37 @@ local function enableSilentAim()
 		end
 	end
 
-	-- NBTF Silent Aim: When you fire your gun, we also fire a WeaponHit
-	-- at the closest enemy's Head using the actual game remote
-	-- This runs every frame while you hold left click
+	-- Stealth silent aim: only fires ONE extra WeaponHit per cooldown period
+	-- Looks like a normal shot that just happens to hit the head
 	silentAimConnection = RunService.Heartbeat:Connect(function()
 		if not silentAimActive then return end
 		pcall(function()
-			-- Only fire when player is holding left click (shooting)
 			if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then return end
 
-			local gun = findGunInBackpack()
-			if not gun then
-				-- Check equipped tool
-				local char = LocalPlayer.Character
-				if char then
-					local tool = char:FindFirstChildOfClass("Tool")
-					if tool then gun = tool end
-				end
-			end
-			if not gun then return end
+			-- Cooldown to avoid spam detection
+			local now = tick()
+			if now - lastSilentAimFire < silentAimCooldown then return end
+
+			local char = LocalPlayer.Character
+			if not char then return end
+			-- Only fire if we have a tool equipped (we're actually shooting)
+			local equippedGun = char:FindFirstChildOfClass("Tool")
+			if not equippedGun then return end
 
 			local target = getClosestPlayerInFOV()
 			if not target then target = getClosestPlayer3D() end
 			if not target or not target.Parent then return end
 
-			-- Find the player who owns this character
 			local targetPlayer = Players:GetPlayerFromCharacter(target.Parent)
 			if not targetPlayer then return end
 			if not calculateChance(hitChance) then return end
 
-			fireWeaponHit(targetPlayer, gun)
+			fireWeaponHit(targetPlayer, equippedGun)
+			lastSilentAimFire = now
 		end)
 	end)
 
-	notify("Silent Aim", "Active! Bullets auto-hit nearest enemy head")
+	notify("Silent Aim", "Active (stealth mode - " .. silentAimCooldown .. "s cooldown)")
 end
 
 local function disableSilentAim()
@@ -411,10 +410,11 @@ local function disableSilentAim()
 	notify("Silent Aim", "Disabled")
 end
 
--- ===================== WALLBANG (WeaponHit through walls) =====================
--- Since WeaponHit uses d=0 and maxDist=0, it bypasses distance/wall checks
--- Wallbang auto-fires at nearest enemy every 0.3s while holding left click
+-- ===================== WALLBANG (Stealth - single target through walls) =====================
+-- Only fires at ONE closest enemy with cooldown - not all enemies every frame
 local wallbangConnection = nil
+local lastWallbangFire = 0
+local wallbangCooldown = 0.5
 
 local function enableWallbang()
 	wallbangActive = true
@@ -423,25 +423,25 @@ local function enableWallbang()
 		pcall(function()
 			if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then return end
 
-			local gun = findGunInBackpack()
-			if not gun then
-				local char = LocalPlayer.Character
-				if char then
-					local tool = char:FindFirstChildOfClass("Tool")
-					if tool then gun = tool end
-				end
-			end
-			if not gun then return end
+			local now = tick()
+			if now - lastWallbangFire < wallbangCooldown then return end
 
-			-- Fire at ALL visible enemies through walls
-			for _, player in ipairs(Players:GetPlayers()) do
-				if isEnemy(player) and isAlive(player) then
-					fireWeaponHit(player, gun)
-				end
-			end
+			local char = LocalPlayer.Character
+			if not char then return end
+			local equippedGun = char:FindFirstChildOfClass("Tool")
+			if not equippedGun then return end
+
+			-- Only target the CLOSEST enemy, not all of them
+			local target = getClosestPlayer3D()
+			if not target or not target.Parent then return end
+			local targetPlayer = Players:GetPlayerFromCharacter(target.Parent)
+			if not targetPlayer then return end
+
+			fireWeaponHit(targetPlayer, equippedGun)
+			lastWallbangFire = now
 		end)
 	end)
-	notify("Wallbang", "Active! Hold LMB to hit all enemies through walls")
+	notify("Wallbang", "Active (stealth - hits closest enemy through walls)")
 end
 
 local function disableWallbang()
@@ -1100,46 +1100,65 @@ local function bringAllPlayers()
 	notify("Bring All", "Brought " .. count .. " players!")
 end
 
--- ===================== KILL ALL (NBTF WeaponHit Remote) =====================
--- Fires WeaponHit remote at every enemy player's Head - no teleporting needed
--- This is how the actual NBTF kill-all scripts work
+-- ===================== KILL ALL (Stealth - Delayed WeaponHit) =====================
+-- Fires at each enemy with delays to avoid detection
+-- Uses only ONE gun, 3 rounds per player, 0.3s between each fire
+local killAllRunning = false
+
 local function killAllPlayers()
 	if not WeaponHitRemote then
 		notify("Error", "WeaponHit remote not found!")
 		return
 	end
+	if killAllRunning then
+		notify("Kill All", "Already running! Wait for it to finish.")
+		return
+	end
 
 	task.spawn(function()
+		killAllRunning = true
 		local gun = findGunInBackpack()
 		if not gun then
-			notify("Error", "No gun in backpack! Equip a weapon first.")
+			-- Try equipped tool
+			local char = LocalPlayer.Character
+			if char then
+				gun = char:FindFirstChildOfClass("Tool")
+			end
+		end
+		if not gun then
+			notify("Error", "No gun found! Equip a weapon first.")
+			killAllRunning = false
 			return
 		end
 
 		local killed = 0
-		-- Fire 10 rounds at each enemy (same as the proven NBTF kill script)
-		for count = 1, 10 do
-			for _, player in ipairs(Players:GetPlayers()) do
-				if player ~= LocalPlayer and isAlive(player) then
-					pcall(function()
-						-- Try every gun in backpack
-						for _, bpTool in ipairs(LocalPlayer.Backpack:GetChildren()) do
-							if bpTool:IsA("Tool") then
-								local isGun = false
-								for _, gn in ipairs(NBTF_GUNS) do
-									if bpTool.Name == gn then isGun = true break end
-								end
-								if isGun then
-									fireWeaponHit(player, bpTool)
-								end
-							end
-						end
-						if count == 1 then killed = killed + 1 end
-					end)
-				end
+		local targets = {}
+		for _, player in ipairs(Players:GetPlayers()) do
+			if player ~= LocalPlayer and isAlive(player) then
+				table.insert(targets, player)
 			end
 		end
-		notify("Kill All", "Fired at " .. killed .. " players!")
+
+		notify("Kill All", "Targeting " .. #targets .. " players (stealth mode)...")
+
+		-- 3 rounds per target, 0.3s delay between each fire
+		for round = 1, 3 do
+			for _, player in ipairs(targets) do
+				if not killAllRunning then break end
+				if isAlive(player) then
+					pcall(function()
+						fireWeaponHit(player, gun)
+					end)
+					if round == 1 then killed = killed + 1 end
+					task.wait(0.3)
+				end
+			end
+			if not killAllRunning then break end
+			task.wait(0.5) -- pause between rounds
+		end
+
+		killAllRunning = false
+		notify("Kill All", "Done! Fired at " .. killed .. " players (3 rounds each)")
 	end)
 end
 
