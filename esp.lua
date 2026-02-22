@@ -21,12 +21,16 @@ local REFRESH_INTERVAL = 5
 local espEnabled = false
 local flyEnabled = false
 local flingEnabled = false
+local speedEnabled = false
 local flingPower = 500
+local origWalkSpeed = 16
 local highlights = {}
 local nametags = {}
 local espConnections = {}
 local flyConnection = nil
 local flingConnection = nil
+local flingBodyPos = nil
+local flingBodyAngVel = nil
 local bodyGyro = nil
 local bodyVelocity = nil
 
@@ -45,7 +49,7 @@ end
 
 local panel = Instance.new("Frame")
 panel.Name = "Panel"
-panel.Size = UDim2.new(0, 170, 0, 215)
+panel.Size = UDim2.new(0, 170, 0, 250)
 panel.Position = UDim2.new(0, 15, 0, 15)
 panel.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 panel.BackgroundTransparency = 0.1
@@ -105,11 +109,12 @@ end
 local espButton = makeButton("ESP", "ESP: OFF", 35)
 local flyButton = makeButton("FLY", "FLY: OFF", 70)
 local flingButton = makeButton("FLING", "FLING: OFF", 105)
+local speedButton = makeButton("SPEED", "SPEED: OFF", 140)
 
 -- Fling power label
 local powerLabel = Instance.new("TextLabel")
 powerLabel.Size = UDim2.new(1, -20, 0, 16)
-powerLabel.Position = UDim2.new(0, 10, 0, 138)
+powerLabel.Position = UDim2.new(0, 10, 0, 173)
 powerLabel.BackgroundTransparency = 1
 powerLabel.Text = "Power: 500"
 powerLabel.TextColor3 = Color3.fromRGB(170, 170, 170)
@@ -121,7 +126,7 @@ powerLabel.Parent = panel
 local sliderBg = Instance.new("Frame")
 sliderBg.Name = "SliderBG"
 sliderBg.Size = UDim2.new(1, -20, 0, 10)
-sliderBg.Position = UDim2.new(0, 10, 0, 157)
+sliderBg.Position = UDim2.new(0, 10, 0, 192)
 sliderBg.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
 sliderBg.BorderSizePixel = 0
 sliderBg.Parent = panel
@@ -144,7 +149,7 @@ sliderFillCorner.Parent = sliderFill
 -- Min/Max labels
 local minLabel = Instance.new("TextLabel")
 minLabel.Size = UDim2.new(0.5, 0, 0, 14)
-minLabel.Position = UDim2.new(0, 10, 0, 170)
+minLabel.Position = UDim2.new(0, 10, 0, 205)
 minLabel.BackgroundTransparency = 1
 minLabel.Text = "100"
 minLabel.TextColor3 = Color3.fromRGB(120, 120, 120)
@@ -155,7 +160,7 @@ minLabel.Parent = panel
 
 local maxLabel = Instance.new("TextLabel")
 maxLabel.Size = UDim2.new(0.5, -10, 0, 14)
-maxLabel.Position = UDim2.new(0.5, 0, 0, 170)
+maxLabel.Position = UDim2.new(0.5, 0, 0, 205)
 maxLabel.BackgroundTransparency = 1
 maxLabel.Text = "1000"
 maxLabel.TextColor3 = Color3.fromRGB(120, 120, 120)
@@ -167,7 +172,7 @@ maxLabel.Parent = panel
 -- Power input box
 local powerBox = Instance.new("TextBox")
 powerBox.Size = UDim2.new(1, -20, 0, 22)
-powerBox.Position = UDim2.new(0, 10, 0, 186)
+powerBox.Position = UDim2.new(0, 10, 0, 221)
 powerBox.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
 powerBox.TextColor3 = Color3.fromRGB(255, 255, 255)
 powerBox.PlaceholderText = "Type power (100-9999)"
@@ -580,16 +585,13 @@ local function stopFly()
 end
 
 -- =============== Fling Logic ===============
--- Teleports to nearest player while spinning to fling them and unanchored objects
-
-local flingTarget = nil
-local flingBodyPos = nil
-local origHRP_CFrame = nil
+-- Uses BodyPosition to hold you at the target + BodyAngularVelocity to spin
+-- Collision physics flings the target and any unanchored objects
 
 local function getNearestPlayer()
-	local character = LocalPlayer.Character
-	if not character then return nil end
-	local myRoot = character:FindFirstChild("HumanoidRootPart")
+	local myChar = LocalPlayer.Character
+	if not myChar then return nil end
+	local myRoot = myChar:FindFirstChild("HumanoidRootPart")
 	if not myRoot then return nil end
 
 	local nearest = nil
@@ -618,16 +620,28 @@ local function startFling()
 	local hrp = character:FindFirstChild("HumanoidRootPart")
 	if not hrp then return end
 
-	origHRP_CFrame = hrp.CFrame
-
-	-- Make character parts very light so collisions fling others
+	-- Make character massless so collisions fling others not you
 	pcall(function()
 		for _, part in ipairs(character:GetDescendants()) do
 			if part:IsA("BasePart") then
-				part.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 0, 0)
+				part.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 100, 100)
 			end
 		end
 	end)
+
+	-- BodyAngularVelocity to spin rapidly (persists unlike RotVelocity)
+	flingBodyAngVel = Instance.new("BodyAngularVelocity")
+	flingBodyAngVel.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+	flingBodyAngVel.AngularVelocity = Vector3.new(0, flingPower, 0)
+	flingBodyAngVel.Parent = hrp
+
+	-- BodyPosition to hold you at the target's location
+	flingBodyPos = Instance.new("BodyPosition")
+	flingBodyPos.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+	flingBodyPos.D = 10
+	flingBodyPos.P = 9e4
+	flingBodyPos.Position = hrp.Position
+	flingBodyPos.Parent = hrp
 
 	flingConnection = RunService.Heartbeat:Connect(function()
 		if not flingEnabled then return end
@@ -635,40 +649,21 @@ local function startFling()
 			local myChar = LocalPlayer.Character
 			if not myChar then return end
 			local myHRP = myChar:FindFirstChild("HumanoidRootPart")
-			if not myHRP then return end
+			if not myHRP or not flingBodyPos or not flingBodyAngVel then return end
 
-			-- Find nearest player to fling
+			-- Update spin speed in case slider changed
+			flingBodyAngVel.AngularVelocity = Vector3.new(flingPower, flingPower, flingPower)
+
+			-- Find nearest player and move to them
 			local target = getNearestPlayer()
 			if target and target.Character then
 				local targetRoot = target.Character:FindFirstChild("HumanoidRootPart")
 				if targetRoot then
-					-- Teleport to their position and spin rapidly
-					myHRP.CFrame = targetRoot.CFrame
-					myHRP.Velocity = Vector3.new(
-						math.random(-1, 1) * flingPower,
-						flingPower * 0.5,
-						math.random(-1, 1) * flingPower
-					)
-					myHRP.RotVelocity = Vector3.new(
-						flingPower * 0.5,
-						flingPower * 0.5,
-						flingPower * 0.5
-					)
-					flingTarget = target.Name
+					flingBodyPos.Position = targetRoot.Position
 				end
 			else
-				-- No target, just spin in place to fling unanchored objects nearby
-				myHRP.RotVelocity = Vector3.new(
-					flingPower * 0.5,
-					flingPower * 0.5,
-					flingPower * 0.5
-				)
-				myHRP.Velocity = Vector3.new(
-					math.random(-1, 1) * flingPower * 0.3,
-					0,
-					math.random(-1, 1) * flingPower * 0.3
-				)
-				flingTarget = nil
+				-- No players nearby, stay in place and spin to fling unanchored objects
+				flingBodyPos.Position = myHRP.Position
 			end
 		end)
 	end)
@@ -677,11 +672,11 @@ end
 
 local function stopFling()
 	if flingConnection then flingConnection:Disconnect() flingConnection = nil end
-	flingTarget = nil
+	if flingBodyPos then pcall(function() flingBodyPos:Destroy() end) flingBodyPos = nil end
+	if flingBodyAngVel then pcall(function() flingBodyAngVel:Destroy() end) flingBodyAngVel = nil end
 	pcall(function()
 		local character = LocalPlayer.Character
 		if character then
-			-- Restore physics
 			for _, part in ipairs(character:GetDescendants()) do
 				if part:IsA("BasePart") then
 					part.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
@@ -691,15 +686,39 @@ local function stopFling()
 			if hrp then
 				hrp.RotVelocity = Vector3.new(0, 0, 0)
 				hrp.Velocity = Vector3.new(0, 0, 0)
-				-- Return to original position
-				if origHRP_CFrame then
-					hrp.CFrame = origHRP_CFrame
-				end
 			end
 		end
 	end)
-	origHRP_CFrame = nil
 	print("[FLING] OFF")
+end
+
+-- =============== Speed Logic ===============
+
+local function startSpeed()
+	pcall(function()
+		local character = LocalPlayer.Character
+		if character then
+			local humanoid = character:FindFirstChildOfClass("Humanoid")
+			if humanoid then
+				origWalkSpeed = humanoid.WalkSpeed
+				humanoid.WalkSpeed = 100
+			end
+		end
+	end)
+	print("[SPEED] ON - WalkSpeed: 100")
+end
+
+local function stopSpeed()
+	pcall(function()
+		local character = LocalPlayer.Character
+		if character then
+			local humanoid = character:FindFirstChildOfClass("Humanoid")
+			if humanoid then
+				humanoid.WalkSpeed = origWalkSpeed
+			end
+		end
+	end)
+	print("[SPEED] OFF")
 end
 
 -- ================== Button Toggles ==================
@@ -728,6 +747,12 @@ flingButton.MouseButton1Click:Connect(function()
 	if flingEnabled then startFling() else stopFling() end
 end)
 
+speedButton.MouseButton1Click:Connect(function()
+	speedEnabled = not speedEnabled
+	setBtn(speedButton, speedEnabled, speedEnabled and "SPEED: ON" or "SPEED: OFF")
+	if speedEnabled then startSpeed() else stopSpeed() end
+end)
+
 -- =========== Cleanup / Respawn ===========
 
 Players.PlayerRemoving:Connect(function(player)
@@ -747,6 +772,10 @@ LocalPlayer.CharacterAdded:Connect(function()
 		stopFling()
 		_wait(0.5)
 		startFling()
+	end
+	if speedEnabled then
+		_wait(0.3)
+		startSpeed()
 	end
 end)
 
