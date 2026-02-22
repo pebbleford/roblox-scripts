@@ -49,6 +49,7 @@ local killAuraEnabled = false
 local invisibleEnabled = false
 local spinEnabled = false
 local seizureEnabled = false
+local vehicleFlyEnabled = false
 
 local flingPower = 99999
 local walkFlingPower = 10000
@@ -75,6 +76,9 @@ local spinBAV = nil
 local walkFlingThread = nil
 local savedPhysProps = {}
 local seizureConnection = nil
+local vehicleFlyConnection = nil
+local vehicleFlyBV = nil
+local vehicleFlyBG = nil
 local selectedPlayer = nil
 local windowVisible = true
 local activeTab = "Execute"
@@ -1604,6 +1608,79 @@ local function stopSeizure()
 	addLog("[SEIZURE] OFF", COLORS.error)
 end
 
+-- ===================== VEHICLE FLY =====================
+local function getVehicle()
+	local char = LocalPlayer.Character
+	if not char then return nil, nil end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum or not hum.SeatPart then return nil, nil end
+	local seat = hum.SeatPart
+	local vehicle = seat.Parent
+	if vehicle and vehicle:IsA("Model") then
+		return vehicle, vehicle.PrimaryPart or seat
+	end
+	return nil, seat
+end
+
+local function startVehicleFly()
+	local vehicle, part = getVehicle()
+	if not part then
+		addLog("[VFLY] Sit in a vehicle first!", COLORS.error)
+		return
+	end
+
+	pcall(function()
+		for _, obj in ipairs(part.Parent:GetDescendants()) do
+			if obj:IsA("BodyVelocity") or obj:IsA("BodyGyro") or obj:IsA("BodyPosition") then
+				if obj.Name ~= "SX_VFly_BV" and obj.Name ~= "SX_VFly_BG" then
+					obj:Destroy()
+				end
+			end
+		end
+		for _, obj in ipairs(part.Parent:GetDescendants()) do
+			if obj:IsA("BasePart") then obj.Anchored = false end
+		end
+	end)
+
+	vehicleFlyBV = Instance.new("BodyVelocity")
+	vehicleFlyBV.Name = "SX_VFly_BV"
+	vehicleFlyBV.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+	vehicleFlyBV.Velocity = Vector3.new(0, 0, 0)
+	vehicleFlyBV.P = 9000
+	vehicleFlyBV.Parent = part
+
+	vehicleFlyBG = Instance.new("BodyGyro")
+	vehicleFlyBG.Name = "SX_VFly_BG"
+	vehicleFlyBG.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+	vehicleFlyBG.P = 9000
+	vehicleFlyBG.CFrame = part.CFrame
+	vehicleFlyBG.Parent = part
+
+	vehicleFlyConnection = RunService.RenderStepped:Connect(function()
+		pcall(function()
+			if not vehicleFlyBV or not vehicleFlyBV.Parent then return end
+			local cam = workspace.CurrentCamera
+			local moveVec = Vector3.zero
+			if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveVec = moveVec + cam.CFrame.LookVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveVec = moveVec - cam.CFrame.LookVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveVec = moveVec - cam.CFrame.RightVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveVec = moveVec + cam.CFrame.RightVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveVec = moveVec + cam.CFrame.UpVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveVec = moveVec - cam.CFrame.UpVector end
+			vehicleFlyBV.Velocity = moveVec.Magnitude > 0 and moveVec.Unit * flySpeed or Vector3.zero
+			vehicleFlyBG.CFrame = cam.CFrame
+		end)
+	end)
+	addLog("[VFLY] Vehicle fly ON", COLORS.success)
+end
+
+local function stopVehicleFly()
+	if vehicleFlyConnection then vehicleFlyConnection:Disconnect() vehicleFlyConnection = nil end
+	if vehicleFlyBV then pcall(function() vehicleFlyBV:Destroy() end) vehicleFlyBV = nil end
+	if vehicleFlyBG then pcall(function() vehicleFlyBG:Destroy() end) vehicleFlyBG = nil end
+	addLog("[VFLY] Vehicle fly OFF", COLORS.error)
+end
+
 -- ===================== TELEPORT / SPECTATE =====================
 local function teleportToPlayer(targetPlayer)
 	pcall(function()
@@ -2003,19 +2080,23 @@ do
 		if on then startFly() else stopFly() end
 	end)
 	createSlider(tab, "Fly Speed", 10, 500, flySpeed, 3, function(val) flySpeed = val end)
+	createToggle(tab, "Vehicle Fly (Sit First)", 4, function(on)
+		vehicleFlyEnabled = on
+		if on then startVehicleFly() else stopVehicleFly() end
+	end)
 
 	local spacer = Instance.new("Frame")
 	spacer.Size = UDim2.new(1, 0, 0, 4)
 	spacer.BackgroundTransparency = 1
-	spacer.LayoutOrder = 4
+	spacer.LayoutOrder = 5
 	spacer.Parent = tab
 
-	createSectionLabel(tab, "Movement", 5)
-	createToggle(tab, "Speed Boost", 6, function(on)
+	createSectionLabel(tab, "Movement", 6)
+	createToggle(tab, "Speed Boost", 7, function(on)
 		speedEnabled = on
 		if on then startSpeed() else stopSpeed() end
 	end)
-	createSlider(tab, "Walk Speed", 16, 500, speedValue, 7, function(val)
+	createSlider(tab, "Walk Speed", 16, 500, speedValue, 8, function(val)
 		speedValue = val
 		if speedEnabled then
 			pcall(function()
@@ -2027,7 +2108,7 @@ do
 			end)
 		end
 	end)
-	createToggle(tab, "Noclip", 8, function(on)
+	createToggle(tab, "Noclip", 9, function(on)
 		noclipEnabled = on
 		if on then startNoclip() else stopNoclip() end
 	end)
@@ -2035,24 +2116,24 @@ do
 	local spacer2 = Instance.new("Frame")
 	spacer2.Size = UDim2.new(1, 0, 0, 4)
 	spacer2.BackgroundTransparency = 1
-	spacer2.LayoutOrder = 9
+	spacer2.LayoutOrder = 10
 	spacer2.Parent = tab
 
-	createSectionLabel(tab, "Jumping", 10)
-	createToggle(tab, "Infinite Jump", 11, function(on)
+	createSectionLabel(tab, "Jumping", 11)
+	createToggle(tab, "Infinite Jump", 12, function(on)
 		infJumpEnabled = on
 		if on then startInfJump() else stopInfJump() end
 	end)
-	createSlider(tab, "Jump Power", 10, 500, jumpPowerValue, 12, function(val) jumpPowerValue = val setJumpPower(val) end)
+	createSlider(tab, "Jump Power", 10, 500, jumpPowerValue, 13, function(val) jumpPowerValue = val setJumpPower(val) end)
 
 	local spacer3 = Instance.new("Frame")
 	spacer3.Size = UDim2.new(1, 0, 0, 4)
 	spacer3.BackgroundTransparency = 1
-	spacer3.LayoutOrder = 13
+	spacer3.LayoutOrder = 14
 	spacer3.Parent = tab
 
-	createSectionLabel(tab, "World", 14)
-	createSlider(tab, "Gravity", 0, 1000, math.floor(gravityValue), 15, function(val) gravityValue = val setGravity(val) end)
+	createSectionLabel(tab, "World", 15)
+	createSlider(tab, "Gravity", 0, 1000, math.floor(gravityValue), 16, function(val) gravityValue = val setGravity(val) end)
 end
 
 -- ===================== BUILD FUN TAB =====================
@@ -2107,6 +2188,8 @@ commands["esp"] = function() espEnabled = true enableESP() end
 commands["unesp"] = function() espEnabled = false disableESP() end
 commands["fly"] = function() flyEnabled = true startFly() end
 commands["unfly"] = function() flyEnabled = false stopFly() end
+commands["vfly"] = function() vehicleFlyEnabled = true startVehicleFly() end
+commands["unvfly"] = function() vehicleFlyEnabled = false stopVehicleFly() end
 commands["speed"] = function(args) local v = tonumber(args[1]) if v then speedValue = v end speedEnabled = true startSpeed() end
 commands["unspeed"] = function() speedEnabled = false stopSpeed() end
 commands["noclip"] = function() noclipEnabled = true startNoclip() end

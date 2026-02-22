@@ -45,6 +45,12 @@ local hitboxExpandActive = false
 local infAmmoActive = false
 local antiAfkActive = false
 local fullbrightActive = false
+local vehicleFlyActive = false
+local spectateActive = false
+local noRecoilActive = false
+local autoFireActive = false
+local gravityActive = false
+local bringAllActive = false
 
 local silentAimMethod = "Raycast" -- Raycast, FindPartOnRay, Mouse.Hit/Target
 local targetPart = "Head" -- Head, HumanoidRootPart
@@ -54,6 +60,7 @@ local aimbotSmooth = 0.5
 local flySpeed = 80
 local speedValue = 50
 local hitboxSize = 10
+local gravityValue = 196.2
 local windowVisible = true
 local activeTab = "Aim"
 
@@ -67,9 +74,15 @@ local speedConnection = nil
 local godModeConnection = nil
 local hitboxConnection = nil
 local ammoConnection = nil
+local vehicleFlyConnection = nil
+local vehicleFlyBV = nil
+local vehicleFlyBG = nil
+local noRecoilConnection = nil
+local autoFireConnection = nil
 local espHighlights = {}
 local oldNamecall = nil
 local oldIndex = nil
+local spectateTarget = nil
 
 -- ===================== HELPERS =====================
 local function getRoot()
@@ -698,6 +711,250 @@ local function stopAntiAfk()
 	antiAfkActive = false
 end
 
+-- ===================== VEHICLE / CAR FLY =====================
+-- Finds VehicleSeat you're sitting in, applies BodyVelocity + BodyGyro to the vehicle
+-- Works with any vehicle in any game
+local function getVehicle()
+	local char = LocalPlayer.Character
+	if not char then return nil, nil end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum or not hum.SeatPart then return nil, nil end
+	local seat = hum.SeatPart
+	-- Find the vehicle model (parent of seat, or parent of parent)
+	local vehicle = seat.Parent
+	if vehicle and vehicle:IsA("Model") then
+		local primaryPart = vehicle.PrimaryPart or seat
+		return vehicle, primaryPart
+	end
+	return nil, seat
+end
+
+local function startVehicleFly()
+	local vehicle, part = getVehicle()
+	if not part then
+		notify("Vehicle Fly", "You must be sitting in a vehicle!")
+		return
+	end
+
+	-- Remove existing constraints on vehicle
+	pcall(function()
+		for _, obj in ipairs(part.Parent:GetDescendants()) do
+			if obj:IsA("BodyVelocity") or obj:IsA("BodyGyro") or obj:IsA("BodyPosition") then
+				if obj.Name ~= "NBTF_VFly_BV" and obj.Name ~= "NBTF_VFly_BG" then
+					obj:Destroy()
+				end
+			end
+		end
+	end)
+
+	-- Unanchor all parts
+	pcall(function()
+		for _, obj in ipairs(part.Parent:GetDescendants()) do
+			if obj:IsA("BasePart") then
+				obj.Anchored = false
+			end
+		end
+	end)
+
+	vehicleFlyBV = Instance.new("BodyVelocity")
+	vehicleFlyBV.Name = "NBTF_VFly_BV"
+	vehicleFlyBV.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+	vehicleFlyBV.Velocity = Vector3.new(0, 0, 0)
+	vehicleFlyBV.P = 9000
+	vehicleFlyBV.Parent = part
+
+	vehicleFlyBG = Instance.new("BodyGyro")
+	vehicleFlyBG.Name = "NBTF_VFly_BG"
+	vehicleFlyBG.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+	vehicleFlyBG.P = 9000
+	vehicleFlyBG.CFrame = part.CFrame
+	vehicleFlyBG.Parent = part
+
+	vehicleFlyConnection = RunService.RenderStepped:Connect(function()
+		pcall(function()
+			if not vehicleFlyBV or not vehicleFlyBV.Parent then return end
+			local moveVec = Vector3.zero
+			local camCF = camera.CFrame
+			if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveVec = moveVec + camCF.LookVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveVec = moveVec - camCF.LookVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveVec = moveVec - camCF.RightVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveVec = moveVec + camCF.RightVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveVec = moveVec + camCF.UpVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveVec = moveVec - camCF.UpVector end
+			vehicleFlyBV.Velocity = moveVec.Magnitude > 0 and moveVec.Unit * flySpeed or Vector3.zero
+			vehicleFlyBG.CFrame = camCF
+		end)
+	end)
+
+	notify("Vehicle Fly", "Flying with vehicle! WASD + Space/Shift")
+end
+
+local function stopVehicleFly()
+	if vehicleFlyConnection then vehicleFlyConnection:Disconnect() vehicleFlyConnection = nil end
+	if vehicleFlyBV then pcall(function() vehicleFlyBV:Destroy() end) vehicleFlyBV = nil end
+	if vehicleFlyBG then pcall(function() vehicleFlyBG:Destroy() end) vehicleFlyBG = nil end
+end
+
+-- ===================== SPECTATE PLAYER =====================
+local function spectatePlayer(player)
+	if player and player.Character then
+		local hum = player.Character:FindFirstChildOfClass("Humanoid")
+		if hum then
+			camera.CameraSubject = hum
+			spectateTarget = player
+			spectateActive = true
+			notify("Spectate", "Watching " .. player.DisplayName)
+		end
+	end
+end
+
+local function unspectate()
+	pcall(function()
+		local char = LocalPlayer.Character
+		if char then
+			local hum = char:FindFirstChildOfClass("Humanoid")
+			if hum then camera.CameraSubject = hum end
+		end
+	end)
+	spectateTarget = nil
+	spectateActive = false
+	notify("Spectate", "Stopped")
+end
+
+-- ===================== NO RECOIL =====================
+-- Hooks camera CFrame changes to prevent recoil from moving the camera
+local function startNoRecoil()
+	local lastCamCF = camera.CFrame
+	noRecoilConnection = RunService.RenderStepped:Connect(function()
+		pcall(function()
+			-- Only stabilize when a tool is equipped (shooting)
+			local char = LocalPlayer.Character
+			if not char then return end
+			local tool = char:FindFirstChildOfClass("Tool")
+			if tool and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+				camera.CFrame = lastCamCF
+			else
+				lastCamCF = camera.CFrame
+			end
+		end)
+	end)
+	notify("No Recoil", "Recoil removed!")
+end
+
+local function stopNoRecoil()
+	if noRecoilConnection then noRecoilConnection:Disconnect() noRecoilConnection = nil end
+end
+
+-- ===================== AUTO FIRE =====================
+-- Automatically fires equipped gun by simulating mouse1 clicks
+local function startAutoFire()
+	autoFireConnection = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			local char = LocalPlayer.Character
+			if not char then return end
+			local tool = char:FindFirstChildOfClass("Tool")
+			if tool and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+				-- Activate the tool's fire
+				tool:Activate()
+			end
+		end)
+	end)
+	notify("Auto Fire", "Hold left click for rapid fire!")
+end
+
+local function stopAutoFire()
+	if autoFireConnection then autoFireConnection:Disconnect() autoFireConnection = nil end
+end
+
+-- ===================== GRAVITY =====================
+local function setGravity(val)
+	workspace.Gravity = val
+end
+
+-- ===================== BRING ALL PLAYERS =====================
+-- Teleports all enemy players to your position
+local function bringAllPlayers()
+	local hrp = getRoot()
+	if not hrp then notify("Error", "No character") return end
+	local count = 0
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer and isAlive(player) then
+			pcall(function()
+				local theirHRP = player.Character:FindFirstChild("HumanoidRootPart")
+				if theirHRP then
+					theirHRP.CFrame = hrp.CFrame + Vector3.new(math.random(-5, 5), 0, math.random(-5, 5))
+					count = count + 1
+				end
+			end)
+		end
+	end
+	notify("Bring All", "Brought " .. count .. " players!")
+end
+
+-- ===================== KILL ALL =====================
+-- Rapidly teleports to each enemy, clicks to attack, then moves on
+local function killAllPlayers()
+	local char = LocalPlayer.Character
+	if not char then return end
+
+	task.spawn(function()
+		for _, player in ipairs(Players:GetPlayers()) do
+			if isEnemy(player) and isAlive(player) then
+				pcall(function()
+					local theirHRP = player.Character:FindFirstChild("HumanoidRootPart")
+					if theirHRP then
+						char:PivotTo(CFrame.new(theirHRP.Position + Vector3.new(0, 0, -3), theirHRP.Position))
+						task.wait(0.1)
+						-- Activate equipped weapon
+						local tool = char:FindFirstChildOfClass("Tool")
+						if tool then
+							tool:Activate()
+							task.wait(0.05)
+							tool:Activate()
+						end
+						task.wait(0.15)
+					end
+				end)
+			end
+		end
+		-- Return to original position
+		notify("Kill All", "Attacked all enemies!")
+	end)
+end
+
+-- ===================== FREEZE ALL PLAYERS =====================
+local function freezeAllPlayers()
+	local count = 0
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer and isAlive(player) then
+			pcall(function()
+				local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+				if hrp then
+					hrp.Anchored = true
+					count = count + 1
+				end
+			end)
+		end
+	end
+	notify("Freeze", "Froze " .. count .. " players!")
+end
+
+local function unfreezeAllPlayers()
+	local count = 0
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer and player.Character then
+			pcall(function()
+				local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+				if hrp then
+					hrp.Anchored = false
+					count = count + 1
+				end
+			end)
+		end
+	end
+	notify("Unfreeze", "Unfroze " .. count .. " players!")
+end
+
 -- ===================== TELEPORT TO PLAYER =====================
 local function teleportToPlayer(playerName)
 	local target = nil
@@ -1128,12 +1385,36 @@ do
 
 	createSpacer(tab, o())
 
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Weapon Mods", o())
+	createToggle(tab, "No Recoil", o(), function(on)
+		noRecoilActive = on
+		if on then startNoRecoil() else stopNoRecoil() end
+	end)
+	createToggle(tab, "Auto Fire (Hold LMB = Rapid)", o(), function(on)
+		autoFireActive = on
+		if on then startAutoFire() else stopAutoFire() end
+	end)
+	createInfoLabel(tab, "No recoil stabilizes camera, auto fire spams tool:Activate()", o())
+
+	createSpacer(tab, o())
+
 	createSectionLabel(tab, "Protection", o())
 	createToggle(tab, "God Mode (Infinite Health)", o(), function(on)
 		godModeActive = on
 		if on then startGodMode() else stopGodMode() end
 	end)
 	createInfoLabel(tab, "Heals to max every frame, prevents death states", o())
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Player Control", o())
+	createButton(tab, "Bring All Players to You", o(), bringAllPlayers)
+	createButton(tab, "Kill All (TP + Attack Each)", o(), killAllPlayers)
+	createButton(tab, "Freeze All Players", o(), freezeAllPlayers)
+	createButton(tab, "Unfreeze All Players", o(), unfreezeAllPlayers)
+	createInfoLabel(tab, "Bring/freeze work on all non-team players", o())
 end
 
 -- ===================== BUILD MOVEMENT TAB =====================
@@ -1148,6 +1429,15 @@ do
 		if on then startFly() else stopFly() end
 	end)
 	createSlider(tab, "Fly Speed", 10, 300, flySpeed, o(), function(val) flySpeed = val end)
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Vehicle Fly", o())
+	createToggle(tab, "Vehicle Fly (Sit in Vehicle First)", o(), function(on)
+		vehicleFlyActive = on
+		if on then startVehicleFly() else stopVehicleFly() end
+	end)
+	createInfoLabel(tab, "Sit in any vehicle/car, then toggle to fly it", o())
 
 	createSpacer(tab, o())
 
@@ -1169,6 +1459,15 @@ do
 		infJumpActive = on
 		if on then notify("Inf Jump", "Active!") end
 	end)
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "World", o())
+	createSlider(tab, "Gravity", 0, 500, math.floor(gravityValue), o(), function(val)
+		gravityValue = val
+		setGravity(val)
+	end)
+	createInfoLabel(tab, "Default: 196. Lower = moon gravity. 0 = float.", o())
 
 	createSpacer(tab, o())
 
@@ -1266,6 +1565,52 @@ do
 
 	createButton(tab, "Refresh Player List", o(), refreshPlayerList)
 	refreshPlayerList()
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Spectate", o())
+	createInfoLabel(tab, "Click a player above to TP, or use buttons below to spectate", o())
+
+	-- Spectate player list
+	local specListFrame = Instance.new("Frame")
+	specListFrame.Size = UDim2.new(1, 0, 0, 0)
+	specListFrame.AutomaticSize = Enum.AutomaticSize.Y
+	specListFrame.BackgroundTransparency = 1
+	specListFrame.LayoutOrder = o()
+	specListFrame.Parent = tab
+
+	local specListLayout = Instance.new("UIListLayout")
+	specListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	specListLayout.Padding = UDim.new(0, 3)
+	specListLayout.Parent = specListFrame
+
+	local function refreshSpecList()
+		for _, child in ipairs(specListFrame:GetChildren()) do
+			if child:IsA("TextButton") then child:Destroy() end
+		end
+		for i, player in ipairs(Players:GetPlayers()) do
+			if player ~= LocalPlayer then
+				local sBtn = Instance.new("TextButton")
+				sBtn.Size = UDim2.new(1, 0, 0, 24)
+				sBtn.BackgroundColor3 = Color3.fromRGB(35, 25, 50)
+				sBtn.BorderSizePixel = 0
+				sBtn.Text = "Spectate: " .. player.DisplayName
+				sBtn.TextColor3 = Color3.fromRGB(180, 130, 255)
+				sBtn.Font = Enum.Font.Gotham
+				sBtn.TextSize = 10
+				sBtn.LayoutOrder = i
+				sBtn.Parent = specListFrame
+				addCorner(sBtn, 4)
+				sBtn.MouseButton1Click:Connect(function()
+					spectatePlayer(player)
+				end)
+			end
+		end
+	end
+
+	createButton(tab, "Stop Spectating", o(), unspectate)
+	createButton(tab, "Refresh Spectate List", o(), refreshSpecList)
+	refreshSpecList()
 end
 
 -- ===================== MINIMIZE / TOGGLE =====================
