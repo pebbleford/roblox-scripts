@@ -32,12 +32,15 @@ screenGui.DisplayOrder = 999
 screenGui.IgnoreGuiInset = true
 screenGui.Parent = PlayerGui
 
+local UserInputService = game:GetService("UserInputService")
+
 local toggleFrame = Instance.new("Frame")
 toggleFrame.Name = "ToggleFrame"
 toggleFrame.Size = UDim2.new(0, 160, 0, 50)
 toggleFrame.Position = UDim2.new(0, 15, 0, 15)
 toggleFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 toggleFrame.BorderSizePixel = 0
+toggleFrame.Active = true
 toggleFrame.Parent = screenGui
 
 local frameCorner = Instance.new("UICorner")
@@ -59,6 +62,36 @@ toggleButton.Font = Enum.Font.GothamBold
 toggleButton.TextSize = 18
 toggleButton.Text = "ESP: OFF"
 toggleButton.Parent = toggleFrame
+
+-- =============== Draggable GUI ===============
+
+do
+	local dragging = false
+	local dragStart, startPos
+
+	toggleFrame.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			dragStart = input.Position
+			startPos = toggleFrame.Position
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+				end
+			end)
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			local delta = input.Position - dragStart
+			toggleFrame.Position = UDim2.new(
+				startPos.X.Scale, startPos.X.Offset + delta.X,
+				startPos.Y.Scale, startPos.Y.Offset + delta.Y
+			)
+		end
+	end)
+end
 
 -- =============== Highlight Logic ===============
 
@@ -99,14 +132,15 @@ local function addNametag(player)
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = "ESPNametag"
 	billboard.Adornee = head
-	billboard.Size = UDim2.new(0, 200, 0, 50)
+	billboard.Size = UDim2.new(0, 200, 0, 70)
 	billboard.StudsOffset = Vector3.new(0, 3, 0)
 	billboard.AlwaysOnTop = true
 	billboard.Parent = screenGui
 
+	-- Name
 	local nameLabel = Instance.new("TextLabel")
 	nameLabel.Name = "NameLabel"
-	nameLabel.Size = UDim2.new(1, 0, 0.6, 0)
+	nameLabel.Size = UDim2.new(1, 0, 0, 18)
 	nameLabel.Position = UDim2.new(0, 0, 0, 0)
 	nameLabel.BackgroundTransparency = 1
 	nameLabel.Text = player.DisplayName
@@ -115,13 +149,27 @@ local function addNametag(player)
 	nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 	nameLabel.Font = Enum.Font.GothamBold
 	nameLabel.TextSize = 14
-	nameLabel.TextScaled = false
 	nameLabel.Parent = billboard
 
+	-- Health text (e.g. "75 / 100")
+	local healthLabel = Instance.new("TextLabel")
+	healthLabel.Name = "HealthLabel"
+	healthLabel.Size = UDim2.new(1, 0, 0, 14)
+	healthLabel.Position = UDim2.new(0, 0, 0, 19)
+	healthLabel.BackgroundTransparency = 1
+	healthLabel.Text = "? / ?"
+	healthLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+	healthLabel.TextStrokeTransparency = 0.4
+	healthLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+	healthLabel.Font = Enum.Font.Gotham
+	healthLabel.TextSize = 12
+	healthLabel.Parent = billboard
+
+	-- Health bar
 	local healthBar = Instance.new("Frame")
 	healthBar.Name = "HealthBarBG"
-	healthBar.Size = UDim2.new(0.6, 0, 0, 6)
-	healthBar.Position = UDim2.new(0.2, 0, 0.7, 0)
+	healthBar.Size = UDim2.new(0.7, 0, 0, 6)
+	healthBar.Position = UDim2.new(0.15, 0, 0, 36)
 	healthBar.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 	healthBar.BorderSizePixel = 0
 	healthBar.Parent = billboard
@@ -141,12 +189,27 @@ local function addNametag(player)
 	healthFillCorner.CornerRadius = UDim.new(0, 3)
 	healthFillCorner.Parent = healthFill
 
-	-- Update health bar
+	-- Distance label
+	local distLabel = Instance.new("TextLabel")
+	distLabel.Name = "DistLabel"
+	distLabel.Size = UDim2.new(1, 0, 0, 14)
+	distLabel.Position = UDim2.new(0, 0, 0, 45)
+	distLabel.BackgroundTransparency = 1
+	distLabel.Text = "[0m]"
+	distLabel.TextColor3 = Color3.fromRGB(170, 170, 255)
+	distLabel.TextStrokeTransparency = 0.4
+	distLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+	distLabel.Font = Enum.Font.Gotham
+	distLabel.TextSize = 12
+	distLabel.Parent = billboard
+
+	-- Update health bar + health text
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if humanoid then
 		local function updateHealth()
 			local pct = math.clamp(humanoid.Health / humanoid.MaxHealth, 0, 1)
 			healthFill.Size = UDim2.new(pct, 0, 1, 0)
+			healthLabel.Text = math.floor(humanoid.Health) .. " / " .. math.floor(humanoid.MaxHealth)
 			if pct > 0.5 then
 				healthFill.BackgroundColor3 = Color3.fromRGB(80, 255, 80)
 			elseif pct > 0.25 then
@@ -159,6 +222,23 @@ local function addNametag(player)
 		local conn = humanoid.HealthChanged:Connect(updateHealth)
 		table.insert(connections, conn)
 	end
+
+	-- Update distance every frame
+	local distConn = RunService.Heartbeat:Connect(function()
+		if not billboard.Parent then return end
+
+		local myChar = LocalPlayer.Character
+		local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+		local theirRoot = character and character:FindFirstChild("HumanoidRootPart")
+
+		if myRoot and theirRoot then
+			local dist = math.floor((myRoot.Position - theirRoot.Position).Magnitude)
+			distLabel.Text = "[" .. dist .. "m]"
+		else
+			distLabel.Text = "[?m]"
+		end
+	end)
+	table.insert(connections, distConn)
 
 	nametags[player] = billboard
 end
