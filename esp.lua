@@ -473,10 +473,37 @@ local function espScanAll()
 	return count, skipped
 end
 
+local function hookPlayer(player)
+	if player == LocalPlayer then return end
+	local conn = player.CharacterAdded:Connect(function()
+		if not espEnabled then return end
+		_wait(1)
+		if espEnabled then
+			addHighlight(player)
+			addNametag(player)
+		end
+	end)
+	table.insert(espConnections, conn)
+end
+
 local function enableESP()
+	-- Hook CharacterAdded for ALL players so streaming/respawns get caught instantly
+	for _, player in ipairs(Players:GetPlayers()) do
+		hookPlayer(player)
+	end
+
+	-- Also hook future players
+	local addedConn = Players.PlayerAdded:Connect(function(player)
+		if not espEnabled then return end
+		hookPlayer(player)
+	end)
+	table.insert(espConnections, addedConn)
+
+	-- Initial scan
 	local count, skipped = espScanAll()
 	print("[ESP] ON - " .. count .. " highlighted, " .. skipped .. " no character yet")
 
+	-- Refresh loop as backup
 	_spawn(function()
 		while espEnabled do
 			_wait(REFRESH_INTERVAL)
@@ -553,6 +580,37 @@ local function stopFly()
 end
 
 -- =============== Fling Logic ===============
+-- Teleports to nearest player while spinning to fling them and unanchored objects
+
+local flingTarget = nil
+local flingBodyPos = nil
+local origHRP_CFrame = nil
+
+local function getNearestPlayer()
+	local character = LocalPlayer.Character
+	if not character then return nil end
+	local myRoot = character:FindFirstChild("HumanoidRootPart")
+	if not myRoot then return nil end
+
+	local nearest = nil
+	local nearestDist = math.huge
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer then
+			local char = player.Character
+			if char and char.Parent then
+				local root = char:FindFirstChild("HumanoidRootPart")
+				if root then
+					local dist = (myRoot.Position - root.Position).Magnitude
+					if dist < nearestDist then
+						nearest = player
+						nearestDist = dist
+					end
+				end
+			end
+		end
+	end
+	return nearest
+end
 
 local function startFling()
 	local character = LocalPlayer.Character
@@ -560,29 +618,70 @@ local function startFling()
 	local hrp = character:FindFirstChild("HumanoidRootPart")
 	if not hrp then return end
 
-	-- Make your character massless so physics flings others harder
-	for _, part in ipairs(character:GetDescendants()) do
-		if part:IsA("BasePart") then
-			part.CustomPhysicalProperties = PhysicalProperties.new(0, 0.3, 0.5)
+	origHRP_CFrame = hrp.CFrame
+
+	-- Make character parts very light so collisions fling others
+	pcall(function()
+		for _, part in ipairs(character:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 0, 0)
+			end
 		end
-	end
+	end)
 
 	flingConnection = RunService.Heartbeat:Connect(function()
-		if not flingEnabled or not hrp or not hrp.Parent then return end
+		if not flingEnabled then return end
 		pcall(function()
-			hrp.RotVelocity = Vector3.new(flingPower, flingPower, flingPower)
-			hrp.Velocity = Vector3.new(flingPower, 0, flingPower)
+			local myChar = LocalPlayer.Character
+			if not myChar then return end
+			local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+			if not myHRP then return end
+
+			-- Find nearest player to fling
+			local target = getNearestPlayer()
+			if target and target.Character then
+				local targetRoot = target.Character:FindFirstChild("HumanoidRootPart")
+				if targetRoot then
+					-- Teleport to their position and spin rapidly
+					myHRP.CFrame = targetRoot.CFrame
+					myHRP.Velocity = Vector3.new(
+						math.random(-1, 1) * flingPower,
+						flingPower * 0.5,
+						math.random(-1, 1) * flingPower
+					)
+					myHRP.RotVelocity = Vector3.new(
+						flingPower * 0.5,
+						flingPower * 0.5,
+						flingPower * 0.5
+					)
+					flingTarget = target.Name
+				end
+			else
+				-- No target, just spin in place to fling unanchored objects nearby
+				myHRP.RotVelocity = Vector3.new(
+					flingPower * 0.5,
+					flingPower * 0.5,
+					flingPower * 0.5
+				)
+				myHRP.Velocity = Vector3.new(
+					math.random(-1, 1) * flingPower * 0.3,
+					0,
+					math.random(-1, 1) * flingPower * 0.3
+				)
+				flingTarget = nil
+			end
 		end)
 	end)
-	print("[FLING] ON - Power: " .. flingPower)
+	print("[FLING] ON - Power: " .. flingPower .. " (targets nearest player)")
 end
 
 local function stopFling()
 	if flingConnection then flingConnection:Disconnect() flingConnection = nil end
-	-- Restore physics
+	flingTarget = nil
 	pcall(function()
 		local character = LocalPlayer.Character
 		if character then
+			-- Restore physics
 			for _, part in ipairs(character:GetDescendants()) do
 				if part:IsA("BasePart") then
 					part.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
@@ -592,9 +691,14 @@ local function stopFling()
 			if hrp then
 				hrp.RotVelocity = Vector3.new(0, 0, 0)
 				hrp.Velocity = Vector3.new(0, 0, 0)
+				-- Return to original position
+				if origHRP_CFrame then
+					hrp.CFrame = origHRP_CFrame
+				end
 			end
 		end
 	end)
+	origHRP_CFrame = nil
 	print("[FLING] OFF")
 end
 
