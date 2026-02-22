@@ -1263,55 +1263,61 @@ end
 -- High density + BodyAngularVelocity + noclip + massless + pulse spin
 
 local function startFling()
-	local character = LocalPlayer.Character
-	if not character then return end
-	local root = character:FindFirstChild("HumanoidRootPart")
-	if not root then return end
+	local ok, err = pcall(function()
+		local character = LocalPlayer.Character
+		if not character then return end
+		local root = character:FindFirstChild("HumanoidRootPart")
+		if not root then return end
 
-	-- Set density to 100 (super heavy = others get launched on contact)
-	savedPhysProps = {}
-	for _, part in ipairs(character:GetDescendants()) do
-		if part:IsA("BasePart") then
-			savedPhysProps[part] = part.CustomPhysicalProperties
-			part.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
-		end
-	end
-
-	-- Enable noclip
-	if not noclipEnabled then noclipEnabled = true startNoclip() end
-	_wait(0.1)
-
-	-- BodyAngularVelocity - spin on Y axis
-	spinBAV = Instance.new("BodyAngularVelocity")
-	spinBAV.AngularVelocity = Vector3.new(0, 99999, 0)
-	spinBAV.MaxTorque = Vector3.new(0, math.huge, 0)
-	spinBAV.P = math.huge
-	spinBAV.Parent = root
-
-	-- Set all parts massless + zero velocity
-	for _, part in ipairs(character:GetChildren()) do
-		if part:IsA("BasePart") then
-			part.CanCollide = false
-			part.Massless = true
-			part.Velocity = Vector3.new(0, 0, 0)
-		end
-	end
-
-	-- Pulse spin on/off (0.2s on, 0.1s off) to create repeated impulse spikes
-	_spawn(function()
-		while flingEnabled do
-			if spinBAV and spinBAV.Parent then
-				spinBAV.AngularVelocity = Vector3.new(0, 99999, 0)
+		-- Set density to 100 (super heavy = others get launched on contact)
+		savedPhysProps = {}
+		for _, part in ipairs(character:GetDescendants()) do
+			if part:IsA("BasePart") then
+				savedPhysProps[part] = part.CustomPhysicalProperties
+				part.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
 			end
-			_wait(0.2)
-			if spinBAV and spinBAV.Parent then
-				spinBAV.AngularVelocity = Vector3.new(0, 0, 0)
-			end
-			_wait(0.1)
 		end
+
+		-- Enable noclip
+		if not noclipEnabled then noclipEnabled = true startNoclip() end
+		wait(0.1)
+
+		-- BodyAngularVelocity - spin on Y axis
+		spinBAV = Instance.new("BodyAngularVelocity")
+		spinBAV.AngularVelocity = Vector3.new(0, 99999, 0)
+		spinBAV.MaxTorque = Vector3.new(0, math.huge, 0)
+		spinBAV.P = math.huge
+		spinBAV.Parent = root
+
+		-- Set all parts massless + zero velocity
+		for _, part in ipairs(character:GetChildren()) do
+			if part:IsA("BasePart") then
+				part.CanCollide = false
+				part.Massless = true
+				part.Velocity = Vector3.new(0, 0, 0)
+			end
+		end
+
+		-- Pulse spin on/off (0.2s on, 0.1s off) to create repeated impulse spikes
+		spawn(function()
+			while flingEnabled do
+				if spinBAV and spinBAV.Parent then
+					spinBAV.AngularVelocity = Vector3.new(0, 99999, 0)
+				end
+				wait(0.2)
+				if spinBAV and spinBAV.Parent then
+					spinBAV.AngularVelocity = Vector3.new(0, 0, 0)
+				end
+				wait(0.1)
+			end
+		end)
+
+		addLog("[SPIN FLING] ON - Walk into players!", COLORS.success)
 	end)
-
-	addLog("[SPIN FLING] ON - Walk into players!", COLORS.success)
+	if not ok then
+		warn("[SPIN FLING ERROR] " .. tostring(err))
+		addLog("[SPIN FLING] Error: " .. tostring(err), COLORS.error)
+	end
 end
 
 local function stopFling()
@@ -1348,49 +1354,55 @@ end
 -- Velocity spike each physics frame - walk normally while flinging
 
 local function startWalkFling()
-	local character = LocalPlayer.Character
-	if not character then return end
-	local root = character:FindFirstChild("HumanoidRootPart")
-	if not root then return end
+	local ok, err = pcall(function()
+		local character = LocalPlayer.Character
+		if not character then return end
+		local root = character:FindFirstChild("HumanoidRootPart")
+		if not root then return end
 
-	-- Enable noclip
-	if not noclipEnabled then noclipEnabled = true startNoclip() end
+		-- Enable noclip
+		if not noclipEnabled then noclipEnabled = true startNoclip() end
 
-	-- Velocity spike loop
-	walkFlingThread = _spawn(function()
-		local movel = 0.1
-		while walkFlingEnabled do
-			RunService.Heartbeat:Wait()
-			local char = LocalPlayer.Character
-			local rt = char and char:FindFirstChild("HumanoidRootPart")
-			if not (char and char.Parent and rt and rt.Parent) then continue end
+		-- Velocity spike loop
+		walkFlingThread = spawn(function()
+			local movel = 0.1
+			while walkFlingEnabled do
+				RunService.Heartbeat:Wait()
+				local char = LocalPlayer.Character
+				local rt = char and char:FindFirstChild("HumanoidRootPart")
+				if char and char.Parent and rt and rt.Parent then
+					-- Save current velocity
+					local vel = rt.Velocity
 
-			-- Save current velocity
-			local vel = rt.Velocity
+					-- SPIKE: multiply velocity massively + huge upward burst
+					rt.Velocity = vel * 10000 + Vector3.new(0, 10000, 0)
 
-			-- SPIKE: multiply velocity massively + huge upward burst
-			rt.Velocity = vel * 10000 + Vector3.new(0, 10000, 0)
+					RunService.RenderStepped:Wait()
+					-- RESTORE: set velocity back to normal
+					char = LocalPlayer.Character
+					rt = char and char:FindFirstChild("HumanoidRootPart")
+					if char and char.Parent and rt and rt.Parent then
+						rt.Velocity = vel
+					end
 
-			RunService.RenderStepped:Wait()
-			-- RESTORE: set velocity back to normal
-			char = LocalPlayer.Character
-			rt = char and char:FindFirstChild("HumanoidRootPart")
-			if char and char.Parent and rt and rt.Parent then
-				rt.Velocity = vel
+					RunService.Stepped:Wait()
+					-- MICRO-OSCILLATE: tiny bounce to keep physics alive
+					char = LocalPlayer.Character
+					rt = char and char:FindFirstChild("HumanoidRootPart")
+					if char and char.Parent and rt and rt.Parent then
+						rt.Velocity = vel + Vector3.new(0, movel, 0)
+						movel = movel * -1
+					end
+				end
 			end
+		end)
 
-			RunService.Stepped:Wait()
-			-- MICRO-OSCILLATE: tiny bounce to keep physics alive
-			char = LocalPlayer.Character
-			rt = char and char:FindFirstChild("HumanoidRootPart")
-			if char and char.Parent and rt and rt.Parent then
-				rt.Velocity = vel + Vector3.new(0, movel, 0)
-				movel = movel * -1
-			end
-		end
+		addLog("[WALK FLING] ON - Dinos Anim style!", COLORS.success)
 	end)
-
-	addLog("[WALK FLING] ON - Dinos Anim style!", COLORS.success)
+	if not ok then
+		warn("[WALK FLING ERROR] " .. tostring(err))
+		addLog("[WALK FLING] Error: " .. tostring(err), COLORS.error)
+	end
 end
 
 local function stopWalkFling()
