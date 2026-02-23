@@ -604,12 +604,15 @@ end
 
 -- Edit a single sign using the EditSign Red event
 -- From BlockController: Network.Event("EditSign"):Client():Fire(block, text)
+-- Red library fires via: ReliableRedEvent:FireServer({["EditSign"] = {block, text}})
 local function editSignText(sign, newText)
+	if not RedEvent then
+		notify("Signs", "ReliableRedEvent not found!")
+		return false
+	end
 	local ok = false
 	pcall(function()
-		local Network = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Network"))
-		local editSign = Network.Event("EditSign"):Client()
-		editSign:Fire(sign, newText)
+		RedEvent:FireServer({["EditSign"] = {sign, newText}})
 		ok = true
 		print("[SX Elected] EditSign fired for: " .. sign:GetFullName() .. " -> '" .. newText:sub(1, 40) .. "'")
 	end)
@@ -636,12 +639,16 @@ local function editAllSigns(newText, ownerOnly)
 end
 
 -- Edit slogan via Red network event "UpdateSlogan" (separate from sign text)
+-- Red library fires via: ReliableRedEvent:FireServer({["UpdateSlogan"] = {slogan, banner}})
 local function editSlogan(sloganText, bannerText)
 	bannerText = bannerText or ""
+	if not RedEvent then
+		notify("Slogan", "ReliableRedEvent not found!")
+		return
+	end
 	local fired = false
 	pcall(function()
-		local Network = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Network"))
-		Network.Event("UpdateSlogan"):Client():Fire(sloganText, bannerText)
+		RedEvent:FireServer({["UpdateSlogan"] = {sloganText, bannerText}})
 		fired = true
 		print("[SX Elected] UpdateSlogan fired: '" .. sloganText .. "'")
 	end)
