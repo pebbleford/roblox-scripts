@@ -624,9 +624,43 @@ local function findSignClickDetector(sign)
 	return nil
 end
 
--- Edit a single sign by triggering the FocusLost handler on SignTextBox
--- FocusLost connection already exists permanently (BlockController sets it up on sign creation)
--- We just need to: set text -> trigger the handler function
+-- Extract the EditSign Red client event from BlockController's FocusLost handler
+-- The handler's upvalues contain the client event object that knows the correct Red identifier
+local editSignEvent = nil -- cached after first extraction
+
+local function getEditSignEvent(stb)
+	if editSignEvent then return editSignEvent end
+
+	pcall(function()
+		if not getconnections or not getupvalues then return end
+		local conns = getconnections(stb.FocusLost)
+		if #conns == 0 then return end
+		local func = conns[1].Function
+		if not func then return end
+
+		local upvals = getupvalues(func)
+		print("[SX Elected] FocusLost handler upvalues:")
+		for i, v in pairs(upvals) do
+			print("  [" .. tostring(i) .. "] = " .. typeof(v) .. ": " .. tostring(v))
+			-- The Red client event has a :Fire() method
+			if typeof(v) == "table" then
+				for k, sv in pairs(v) do
+					print("    ." .. tostring(k) .. " = " .. typeof(sv) .. ": " .. tostring(sv))
+				end
+				-- Check if this table has a Fire method (Red client event)
+				if v.Fire then
+					editSignEvent = v
+					print("[SX Elected] Found EditSign client event!")
+				end
+			end
+		end
+	end)
+
+	return editSignEvent
+end
+
+-- Edit a single sign using the extracted Red client event
+-- From BlockController: EditSignClient:Fire(signBlock, text)
 local function editSignText(sign, newText)
 	local stb = findSignTextBox(sign)
 	if not stb then
@@ -634,48 +668,54 @@ local function editSignText(sign, newText)
 		return false
 	end
 
-	local edited = false
+	-- Get the inner part that BlockController uses as the sign reference
+	-- Signs: Model > Part > SignMesh > SurfaceGui > SignTextBox
+	-- The handler passes the Part (parent of SignMesh or SurfaceGui) to Fire()
+	local signPart = stb.Parent -- SurfaceGui
+	if signPart then signPart = signPart.Parent end -- SignMesh or Part
+	if signPart and signPart:IsA("MeshPart") then signPart = signPart.Parent end -- Part
+	if not signPart then signPart = sign end
 
-	-- Method 1: Get the FocusLost handler function and call it directly
-	-- Most reliable since firesignal doesn't exist on Xeno
-	pcall(function()
-		if getconnections then
-			local conns = getconnections(stb.FocusLost)
-			print("[SX Elected] " .. sign.Name .. " has " .. #conns .. " FocusLost connections")
-			if #conns > 0 then
-				stb.Text = newText
-				local func = conns[1].Function
-				if func then
-					-- Call the handler: FocusLost fires with (enterPressed: bool)
-					local callOk, callErr = pcall(func, true)
-					if callOk then
-						edited = true
-						print("[SX Elected] Method 1 OK: called handler directly for " .. sign.Name)
-					else
-						print("[SX Elected] Method 1 FAIL: " .. tostring(callErr))
-					end
-				else
-					print("[SX Elected] Method 1: Function is nil")
-				end
-			end
+	-- Method 1: Use extracted EditSign client event
+	local evt = getEditSignEvent(stb)
+	if evt and evt.Fire then
+		local ok, err = pcall(function()
+			evt:Fire(signPart, newText)
+		end)
+		if ok then
+			stb.Text = newText -- update local display too
+			print("[SX Elected] Method 1 OK: evt:Fire for " .. sign.Name .. " part=" .. signPart:GetFullName())
+			return true
+		else
+			print("[SX Elected] Method 1 FAIL: " .. tostring(err))
 		end
-	end)
+	end
 
-	if edited then return true end
+	-- Method 2: Try with the outer Model instead
+	if evt and evt.Fire and signPart ~= sign then
+		local ok, err = pcall(function()
+			evt:Fire(sign, newText)
+		end)
+		if ok then
+			stb.Text = newText
+			print("[SX Elected] Method 2 OK: evt:Fire with model for " .. sign.Name)
+			return true
+		else
+			print("[SX Elected] Method 2 FAIL: " .. tostring(err))
+		end
+	end
 
-	-- Method 2: CaptureFocus -> set text -> ReleaseFocus
-	-- Set text AFTER CaptureFocus so it doesn't get overwritten
+	-- Method 3: CaptureFocus -> set text -> ReleaseFocus (triggers real FocusLost signal)
 	pcall(function()
 		stb:CaptureFocus()
 		task.wait(0.15)
 		stb.Text = newText
 		task.wait(0.15)
 		stb:ReleaseFocus(true)
-		edited = true
-		print("[SX Elected] Method 2: CaptureFocus -> text -> ReleaseFocus for " .. sign.Name)
+		print("[SX Elected] Method 3: CaptureFocus -> ReleaseFocus for " .. sign.Name)
 	end)
 
-	return edited
+	return true
 end
 
 -- Decompile the Network/Red modules to find event identifier mapping
