@@ -989,7 +989,7 @@ local function editSignCore(signs, newText, label)
 end
 
 local function editAllSigns(newText)
-	editSignCore(findSigns(true), newText, "Editing")
+	editSignCore(findSigns(false), newText, "Editing")
 end
 
 local function editAllSignsGlobal(newText)
@@ -1055,6 +1055,220 @@ local function editSignsViaSlogan(newText)
 		print("[SX Elected] UpdateButton not found!")
 		notify("Signs", "UpdateButton not found")
 	end
+end
+
+-- ===================== SIGN DISCOVERY =====================
+-- Comprehensive scan to figure out how sign editing actually works in this game
+
+local function discoverSignMethod()
+	print("=== SIGN DISCOVERY - FULL GAME SCAN ===")
+	local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+
+	-- 1. List ALL RemoteEvents and RemoteFunctions in the game
+	print("\n--- ALL REMOTES IN GAME ---")
+	local remoteCount = 0
+	for _, desc in ipairs(game:GetDescendants()) do
+		pcall(function()
+			if desc:IsA("RemoteEvent") or desc:IsA("RemoteFunction") or desc:IsA("UnreliableRemoteEvent") then
+				remoteCount = remoteCount + 1
+				print("  [" .. desc.ClassName .. "] " .. desc:GetFullName())
+			end
+		end)
+	end
+	print("  Total remotes: " .. remoteCount)
+
+	-- 2. Check what's connected to sign ClickDetectors
+	print("\n--- SIGN CLICKDETECTOR CONNECTIONS ---")
+	local signs = findSigns(false)
+	print("  Found " .. #signs .. " signs total")
+	if #signs > 0 then
+		local firstSign = signs[1]
+		print("  Checking first sign: " .. firstSign:GetFullName())
+		for _, desc in ipairs(firstSign:GetDescendants()) do
+			if desc:IsA("ClickDetector") then
+				print("  ClickDetector: " .. desc:GetFullName() .. " MaxDist=" .. desc.MaxActivationDistance)
+				pcall(function()
+					if getconnections then
+						local conns = getconnections(desc.MouseClick)
+						print("  MouseClick connections: " .. #conns)
+						for i, conn in ipairs(conns) do
+							print("    [" .. i .. "] Function: " .. tostring(conn.Function))
+							pcall(function()
+								local info = getinfo and getinfo(conn.Function) or debug.getinfo(conn.Function)
+								if info then
+									print("      source: " .. tostring(info.source or info.short_src))
+									print("      line: " .. tostring(info.currentline or info.linedefined))
+								end
+							end)
+						end
+					else
+						print("  getconnections not available")
+					end
+				end)
+			end
+		end
+
+		-- 3. Check sign attributes
+		print("\n--- SIGN ATTRIBUTES ---")
+		for i = 1, math.min(3, #signs) do
+			local sign = signs[i]
+			print("  Sign: " .. sign:GetFullName())
+			pcall(function()
+				local attrs = sign:GetAttributes()
+				for k, v in pairs(attrs) do
+					print("    [Attr] " .. k .. " = " .. tostring(v) .. " (" .. typeof(v) .. ")")
+				end
+			end)
+			-- Check parts too
+			for _, part in ipairs(sign:GetDescendants()) do
+				pcall(function()
+					if part:IsA("BasePart") then
+						local attrs = part:GetAttributes()
+						for k, v in pairs(attrs) do
+							print("    [Part " .. part.Name .. " Attr] " .. k .. " = " .. tostring(v) .. " (" .. typeof(v) .. ")")
+						end
+					end
+				end)
+			end
+		end
+	end
+
+	-- 4. Check SloganFrame details
+	print("\n--- SLOGANFRAME DETAILS ---")
+	if playerGui then
+		local gui = playerGui:FindFirstChild("Gui")
+		if gui then
+			local sloganFrame = gui:FindFirstChild("SloganFrame")
+			if sloganFrame then
+				print("  SloganFrame found! Visible=" .. tostring(sloganFrame.Visible))
+				for _, child in ipairs(sloganFrame:GetDescendants()) do
+					pcall(function()
+						local vis = ""
+						pcall(function() vis = " Visible=" .. tostring(child.Visible) end)
+						local txt = ""
+						pcall(function() txt = " Text='" .. child.Text:sub(1, 30) .. "'" end)
+						print("    " .. child.ClassName .. " " .. child.Name .. vis .. txt)
+					end)
+				end
+				-- Check UpdateButton connections
+				local updateBtn = sloganFrame:FindFirstChild("UpdateButton")
+				if updateBtn then
+					print("  UpdateButton connections:")
+					pcall(function()
+						if getconnections then
+							local conns = getconnections(updateBtn.MouseButton1Click)
+							print("    MouseButton1Click: " .. #conns .. " connections")
+							for i, conn in ipairs(conns) do
+								print("    [" .. i .. "] " .. tostring(conn.Function))
+								pcall(function()
+									local info = getinfo and getinfo(conn.Function) or debug.getinfo(conn.Function)
+									if info then
+										print("      source: " .. tostring(info.source or info.short_src))
+									end
+								end)
+							end
+						else
+							print("    getconnections not available")
+						end
+					end)
+				end
+			else
+				print("  SloganFrame NOT FOUND in Gui")
+				print("  Gui children:")
+				for _, child in ipairs(gui:GetChildren()) do
+					print("    " .. child.ClassName .. " " .. child.Name)
+				end
+			end
+		else
+			print("  No 'Gui' in PlayerGui")
+		end
+	end
+
+	-- 5. Check ToolGui for sign editing
+	print("\n--- TOOLGUI SIGN ELEMENTS ---")
+	if playerGui then
+		local toolGui = playerGui:FindFirstChild("ToolGui")
+		if toolGui then
+			for _, desc in ipairs(toolGui:GetDescendants()) do
+				pcall(function()
+					local name = desc.Name:lower()
+					if name:find("sign") or name:find("slogan") or name:find("text") or name:find("edit") then
+						local txt = ""
+						pcall(function() txt = " Text='" .. desc.Text:sub(1, 40) .. "'" end)
+						local vis = ""
+						pcall(function() vis = " Visible=" .. tostring(desc.Visible) end)
+						print("  " .. desc.ClassName .. " " .. desc:GetFullName() .. vis .. txt)
+					end
+				end)
+			end
+		else
+			print("  No ToolGui found")
+		end
+	end
+
+	-- 6. Scan ModuleScripts for sign-related code
+	print("\n--- MODULES WITH 'SIGN' OR 'SLOGAN' ---")
+	local moduleCount = 0
+	for _, desc in ipairs(game:GetDescendants()) do
+		pcall(function()
+			if desc:IsA("ModuleScript") then
+				local name = desc.Name:lower()
+				if name:find("sign") or name:find("slogan") or name:find("banner") or name:find("lectern") then
+					moduleCount = moduleCount + 1
+					print("  [ModuleScript] " .. desc:GetFullName())
+					-- Try to read source if decompile is available
+					pcall(function()
+						if decompile then
+							local src = decompile(desc)
+							if src then
+								-- Print first few lines mentioning FireServer or Remote
+								for line in src:gmatch("[^\n]+") do
+									local ll = line:lower()
+									if ll:find("fire") or ll:find("remote") or ll:find("red") or ll:find("server") then
+										print("    >> " .. line:sub(1, 120))
+									end
+								end
+							end
+						end
+					end)
+				end
+			end
+		end)
+	end
+	print("  Found " .. moduleCount .. " sign-related modules")
+
+	-- 7. Scan LocalScripts for sign code
+	print("\n--- LOCALSCRIPTS WITH 'SIGN' OR 'SLOGAN' ---")
+	local lsCount = 0
+	for _, desc in ipairs(game:GetDescendants()) do
+		pcall(function()
+			if desc:IsA("LocalScript") then
+				local name = desc.Name:lower()
+				if name:find("sign") or name:find("slogan") or name:find("banner") or name:find("build") then
+					lsCount = lsCount + 1
+					print("  [LocalScript] " .. desc:GetFullName())
+					pcall(function()
+						if decompile then
+							local src = decompile(desc)
+							if src and (src:lower():find("sign") or src:lower():find("slogan")) then
+								print("    (contains sign/slogan references)")
+								for line in src:gmatch("[^\n]+") do
+									local ll = line:lower()
+									if ll:find("sign") or ll:find("slogan") then
+										print("    >> " .. line:sub(1, 120))
+									end
+								end
+							end
+						end
+					end)
+				end
+			end
+		end)
+	end
+	print("  Found " .. lsCount .. " sign-related LocalScripts")
+
+	print("\n=== END SIGN DISCOVERY ===")
+	notify("Discovery", "Done! Check F9 for full results")
 end
 
 -- ===================== BUILDING SYSTEM =====================
@@ -2179,6 +2393,7 @@ do
 			notify("Error", "Enter sign text first!")
 		end
 	end)
+	createButton(tab, "Discover Sign Method (F9)", o(), discoverSignMethod)
 
 	createSpacer(tab, o())
 
