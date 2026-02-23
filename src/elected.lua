@@ -996,6 +996,67 @@ local function editAllSignsGlobal(newText)
 	editSignCore(findSigns(false), newText, "Global editing")
 end
 
+-- Edit signs via SloganFrame (campaign slogan system - updates all signs at once)
+local function editSignsViaSlogan(newText)
+	local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+	if not playerGui then
+		notify("Signs", "No PlayerGui")
+		return
+	end
+
+	local gui = playerGui:FindFirstChild("Gui")
+	if not gui then
+		notify("Signs", "No Gui found in PlayerGui")
+		return
+	end
+
+	local sloganFrame = gui:FindFirstChild("SloganFrame")
+	if not sloganFrame then
+		notify("Signs", "SloganFrame not found")
+		return
+	end
+
+	print("[SX Elected] Found SloganFrame, forcing visible...")
+
+	-- Make it visible
+	pcall(function() sloganFrame.Visible = true end)
+	task.wait(0.2)
+
+	local sloganBox = sloganFrame:FindFirstChild("SloganBox")
+	local bannerBox = sloganFrame:FindFirstChild("BannerBox")
+	local updateBtn = sloganFrame:FindFirstChild("UpdateButton")
+
+	if sloganBox then
+		print("[SX Elected] Setting SloganBox to: " .. newText)
+		sloganBox.Text = newText
+		sloganBox:CaptureFocus()
+		task.wait(0.15)
+		sloganBox:ReleaseFocus(true)
+		task.wait(0.1)
+	else
+		print("[SX Elected] SloganBox not found!")
+	end
+
+	if bannerBox then
+		print("[SX Elected] Setting BannerBox to: " .. newText)
+		bannerBox.Text = newText
+		bannerBox:CaptureFocus()
+		task.wait(0.15)
+		bannerBox:ReleaseFocus(true)
+		task.wait(0.1)
+	end
+
+	if updateBtn then
+		print("[SX Elected] Clicking UpdateButton...")
+		clickButton(updateBtn)
+		task.wait(0.3)
+		notify("Signs", "Slogan updated to: " .. newText:sub(1, 30))
+	else
+		print("[SX Elected] UpdateButton not found!")
+		notify("Signs", "UpdateButton not found")
+	end
+end
+
 -- ===================== BUILDING SYSTEM =====================
 -- Building in Elected works through the BuildingTool + Red networking
 -- The client-side tool handles placement and sends data via ReliableRedEvent
@@ -2103,27 +2164,20 @@ do
 	local function o() n = n + 1 return n end
 
 	createSectionLabel(tab, "Sign Editor", o())
-	createInfoLabel(tab, "TPs to sign, opens edit UI, fills text + submits", o())
 	local signInput = createTextInput(tab, "Enter new sign text...", o())
-	createButton(tab, "Edit All My Signs", o(), function()
+	createButton(tab, "Update Slogan (All Signs)", o(), function()
+		if signInput.Text ~= "" then
+			editSignsViaSlogan(signInput.Text)
+		else
+			notify("Error", "Enter sign text first!")
+		end
+	end)
+	createButton(tab, "Edit Signs (TP Method)", o(), function()
 		if signInput.Text ~= "" then
 			editAllSigns(signInput.Text)
 		else
 			notify("Error", "Enter sign text first!")
 		end
-	end)
-	createButton(tab, "Edit ALL Signs (Global)", o(), function()
-		if signInput.Text ~= "" then
-			editAllSignsGlobal(signInput.Text)
-		else
-			notify("Error", "Enter sign text first!")
-		end
-	end)
-	createButton(tab, "Count Signs", o(), function()
-		local mine = findSigns(true)
-		local all = findSigns(false)
-		print("[SX Elected] Your signs: " .. #mine .. " | All signs: " .. #all)
-		notify("Signs", "Yours: " .. #mine .. " | Total: " .. #all)
 	end)
 
 	createSpacer(tab, o())
