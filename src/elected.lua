@@ -4,11 +4,13 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate() then return end
 
 -- ================================================================
--- Synapse X The Revival - Elected Admin Hub v1.1
+-- Synapse X The Revival - Elected Admin Hub v1.2
 -- Tool-Based Mining | Admin Commands | Building | Sign Editor
 -- Player Control | Teleports | ESP | Anti-Jail | Remote Spy
 -- Game uses Red networking (ReliableRedEvent) + ReplicaService
 -- ================================================================
+
+print("[SX Elected v1.2] Script loaded - SloganFrame sign editor update")
 
 -- Cleanup old instance
 pcall(function()
