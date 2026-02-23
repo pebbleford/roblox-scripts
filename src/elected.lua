@@ -1599,26 +1599,39 @@ local function buildWord(text, blockColor)
 	local char = LocalPlayer.Character
 	if not hrp or not char then notify("Error", "No character") return end
 
-	-- Must have building tool equipped with a block selected
+	-- Must have building tool equipped with a block selected in BuildFrame
 	local tool = findBuildingTool()
 	if not tool then
-		notify("Error", "Equip a building tool first!")
+		notify("Error", "Equip a building tool and select a block type first!")
 		return
 	end
 	equipTool(tool)
 	task.wait(0.3)
 
 	text = text:upper()
-	-- Build in front of player, elevated
-	local startPos = hrp.Position + hrp.CFrame.LookVector * 20 + Vector3.new(0, 5, 0)
+	-- Build on the ground in front of player
+	local startPos = hrp.Position + hrp.CFrame.LookVector * 20
+	-- Snap to grid - round to nearest wordBlockSize
+	startPos = Vector3.new(
+		math.floor(startPos.X / wordBlockSize + 0.5) * wordBlockSize,
+		math.floor(startPos.Y / wordBlockSize + 0.5) * wordBlockSize,
+		math.floor(startPos.Z / wordBlockSize + 0.5) * wordBlockSize
+	)
 	local rightDir = hrp.CFrame.RightVector
 	local upDir = Vector3.new(0, 1, 0)
+
+	-- Save and take over camera
 	local savedCamCF = camera.CFrame
+	local savedCamType = camera.CameraType
+	camera.CameraType = Enum.CameraType.Scriptable
 
 	local blocksPlaced = 0
 	local charOffset = 0
+	local vpSize = camera.ViewportSize
+	local cx = vpSize.X / 2
+	local cy = vpSize.Y / 2
 
-	notify("Building", "Building: " .. text)
+	notify("Building", "Building: " .. text .. " (don't move mouse!)")
 
 	task.spawn(function()
 		for ci = 1, #text do
@@ -1632,24 +1645,22 @@ local function buildWord(text, blockColor)
 							local y = (5 - row) * wordBlockSize
 							local targetPos = startPos + rightDir * x + upDir * y
 
-							-- Aim camera at the target position from slightly behind it
-							-- The build tool places blocks where the camera raycast hits
-							local camPos = targetPos - hrp.CFrame.LookVector * 5
+							-- Aim camera directly at target from a fixed offset
+							local camPos = targetPos + hrp.CFrame.LookVector * -10 + Vector3.new(0, 2, 0)
 							camera.CFrame = CFrame.lookAt(camPos, targetPos)
-							task.wait(0.05)
 
-							-- Click at screen center to place block at camera target
+							-- Wait for camera to settle
+							task.wait(0.1)
+
+							-- Click screen center - BuildController raycasts from camera
 							pcall(function()
-								local vpSize = camera.ViewportSize
-								local cx = vpSize.X / 2
-								local cy = vpSize.Y / 2
 								VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
 								task.wait(0.05)
 								VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
 							end)
 
 							blocksPlaced = blocksPlaced + 1
-							task.wait(0.15)
+							task.wait(0.2)
 						end
 					end
 				end
@@ -1658,7 +1669,9 @@ local function buildWord(text, blockColor)
 				charOffset = charOffset + 3
 			end
 		end
+
 		-- Restore camera
+		camera.CameraType = savedCamType
 		camera.CFrame = savedCamCF
 		notify("Built", blocksPlaced .. " blocks placed for: " .. text)
 	end)
