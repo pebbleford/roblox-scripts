@@ -641,38 +641,79 @@ local function editSignText(sign, newText)
 		return false
 	end
 
+	-- Check FocusLost connections BEFORE click
+	local connsBefore = 0
+	pcall(function()
+		if getconnections then
+			connsBefore = #getconnections(stb.FocusLost)
+		end
+	end)
+	print("[SX Elected] " .. sign.Name .. " FocusLost connections BEFORE: " .. connsBefore)
+
 	-- Step 1: Fire ClickDetector to trigger BlockController's click handler
-	-- This sets up the FocusLost connection on SignTextBox
 	local oldDist = cd.MaxActivationDistance
 	cd.MaxActivationDistance = 9999
 
 	pcall(function()
 		if fireclickdetector then
 			fireclickdetector(cd)
+			print("[SX Elected] fireclickdetector fired on " .. cd:GetFullName())
+		end
+	end)
+	pcall(function()
+		if firesignal then
+			firesignal(cd.MouseClick, LocalPlayer)
+			print("[SX Elected] firesignal MouseClick fired")
 		end
 	end)
 
 	cd.MaxActivationDistance = oldDist
 
 	-- Step 2: Wait for BlockController to set up FocusLost handler
-	task.wait(0.3)
+	task.wait(0.5)
+
+	-- Check FocusLost connections AFTER click
+	local connsAfter = 0
+	pcall(function()
+		if getconnections then
+			connsAfter = #getconnections(stb.FocusLost)
+		end
+	end)
+	print("[SX Elected] " .. sign.Name .. " FocusLost connections AFTER: " .. connsAfter)
 
 	-- Step 3: Set the text
 	stb.Text = newText
+	print("[SX Elected] Set SignTextBox.Text = '" .. newText:sub(1, 30) .. "'")
 
-	-- Step 4: Fire FocusLost to trigger BlockController's handler
-	-- FocusLost passes (enterPressed: bool) - we pass true
+	-- Step 4: Try ALL methods to trigger the edit
+
+	-- Method A: firesignal on FocusLost
 	pcall(function()
 		if firesignal then
 			firesignal(stb.FocusLost, true)
-			print("[SX Elected] firesignal FocusLost for: " .. sign:GetFullName())
-		else
-			-- Fallback: CaptureFocus then ReleaseFocus
-			stb:CaptureFocus()
-			task.wait(0.1)
-			stb:ReleaseFocus(true)
-			print("[SX Elected] ReleaseFocus for: " .. sign:GetFullName())
+			print("[SX Elected] Method A: firesignal FocusLost")
 		end
+	end)
+
+	-- Method B: Fire each FocusLost connection directly
+	pcall(function()
+		if getconnections then
+			local conns = getconnections(stb.FocusLost)
+			for ci, conn in ipairs(conns) do
+				pcall(function()
+					conn:Fire(true)
+					print("[SX Elected] Method B: conn[" .. ci .. "]:Fire(true)")
+				end)
+			end
+		end
+	end)
+
+	-- Method C: CaptureFocus then ReleaseFocus (natural way)
+	pcall(function()
+		stb:CaptureFocus()
+		task.wait(0.15)
+		stb:ReleaseFocus(true)
+		print("[SX Elected] Method C: CaptureFocus + ReleaseFocus")
 	end)
 
 	return true
