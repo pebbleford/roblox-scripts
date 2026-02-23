@@ -1,5 +1,5 @@
 # Synapse X The Revival - HWID Whitelist
-# One HWID (or HWID hash) per line
+# One HASHED HWID per line (never put raw HWIDs here - this repo is public)
 # Lines starting with # are comments
-# To add a user: paste their HWID or hash below
+# To add a user: have them run getHWID() and give you the HASH shown in the key GUI
 # To revoke: remove their line

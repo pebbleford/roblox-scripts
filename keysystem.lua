@@ -144,7 +144,7 @@ local function checkWhitelist(hwid)
             local trimmed = line:match("^%s*(.-)%s*$")
             -- Skip comments and empty lines
             if trimmed and #trimmed > 0 and trimmed:sub(1, 1) ~= "#" then
-                if trimmed == hwid or trimmed == hwidHash then
+                if trimmed == hwidHash then
                     return true
                 end
             end
@@ -255,7 +255,7 @@ local function showKeyGUI(hwid)
     hwidLabel.Size = UDim2.new(1, -30, 0, 18)
     hwidLabel.Position = UDim2.new(0, 15, 0, 85)
     hwidLabel.BackgroundTransparency = 1
-    hwidLabel.Text = "HWID: " .. simpleHash(hwid):sub(1, 12) .. "..."
+    hwidLabel.Text = "HWID Hash: " .. simpleHash(hwid)
     hwidLabel.TextColor3 = Color3.fromRGB(100, 100, 110)
     hwidLabel.TextSize = 10
     hwidLabel.Font = Enum.Font.Code
