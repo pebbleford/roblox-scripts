@@ -1,0 +1,5 @@
+# Synapse X The Revival - HWID Whitelist
+# One HWID (or HWID hash) per line
+# Lines starting with # are comments
+# To add a user: paste their HWID or hash below
+# To revoke: remove their line

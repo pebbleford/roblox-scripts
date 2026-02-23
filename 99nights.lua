@@ -1,3 +1,8 @@
+-- Key System Gate
+local SXKeyURL = "https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/keysystem.lua?v=" .. tostring(tick())
+local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyURL))() end)
+if not keyOk or not keySystem or not keySystem.validate() then return end
+
 -- ================================================================
 -- 99 Nights in the Forest - Script Hub v1.0
 -- Auto Farm | Bring Items | Kill Aura | ESP | Fly | Infinite Saplings
