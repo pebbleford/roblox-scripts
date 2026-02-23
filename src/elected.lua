@@ -996,64 +996,50 @@ local function editAllSignsGlobal(newText)
 	editSignCore(findSigns(false), newText, "Global editing")
 end
 
--- Edit signs via SloganFrame (campaign slogan system - updates all signs at once)
-local function editSignsViaSlogan(newText)
+-- Edit slogan via Red network event "UpdateSlogan"
+-- From: ReplicatedFirst.UI.Controllers.SloganUI
+-- require(ReplicatedStorage.Shared.Network).Event("UpdateSlogan"):Client():Fire(slogan, banner)
+local function editSignsViaSlogan(sloganText, bannerText)
+	bannerText = bannerText or ""
+
+	-- Method 1: Fire the Red network event directly
+	local fired = false
+	pcall(function()
+		local Network = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Network"))
+		local updateSlogan = Network.Event("UpdateSlogan"):Client()
+		updateSlogan:Fire(sloganText, bannerText)
+		fired = true
+		print("[SX Elected] Fired UpdateSlogan: slogan='" .. sloganText .. "' banner='" .. bannerText .. "'")
+	end)
+
+	if fired then
+		pcall(function() LocalPlayer:SetAttribute("Slogan", sloganText) end)
+		notify("Signs", "Slogan updated: " .. sloganText:sub(1, 30))
+		return
+	end
+
+	-- Method 2: GUI fallback
+	print("[SX Elected] Red Network failed, trying GUI...")
 	local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-	if not playerGui then
-		notify("Signs", "No PlayerGui")
-		return
-	end
-
+	if not playerGui then notify("Signs", "Failed") return end
 	local gui = playerGui:FindFirstChild("Gui")
-	if not gui then
-		notify("Signs", "No Gui found in PlayerGui")
-		return
-	end
-
+	if not gui then notify("Signs", "Failed") return end
 	local sloganFrame = gui:FindFirstChild("SloganFrame")
-	if not sloganFrame then
-		notify("Signs", "SloganFrame not found")
-		return
-	end
+	if not sloganFrame then notify("Signs", "SloganFrame not found") return end
 
-	print("[SX Elected] Found SloganFrame, forcing visible...")
-
-	-- Make it visible
 	pcall(function() sloganFrame.Visible = true end)
 	task.wait(0.2)
-
 	local sloganBox = sloganFrame:FindFirstChild("SloganBox")
-	local bannerBox = sloganFrame:FindFirstChild("BannerBox")
 	local updateBtn = sloganFrame:FindFirstChild("UpdateButton")
-
 	if sloganBox then
-		print("[SX Elected] Setting SloganBox to: " .. newText)
-		sloganBox.Text = newText
+		sloganBox.Text = sloganText
 		sloganBox:CaptureFocus()
 		task.wait(0.15)
 		sloganBox:ReleaseFocus(true)
-		task.wait(0.1)
-	else
-		print("[SX Elected] SloganBox not found!")
 	end
-
-	if bannerBox then
-		print("[SX Elected] Setting BannerBox to: " .. newText)
-		bannerBox.Text = newText
-		bannerBox:CaptureFocus()
-		task.wait(0.15)
-		bannerBox:ReleaseFocus(true)
-		task.wait(0.1)
-	end
-
 	if updateBtn then
-		print("[SX Elected] Clicking UpdateButton...")
 		clickButton(updateBtn)
-		task.wait(0.3)
-		notify("Signs", "Slogan updated to: " .. newText:sub(1, 30))
-	else
-		print("[SX Elected] UpdateButton not found!")
-		notify("Signs", "UpdateButton not found")
+		notify("Signs", "Slogan updated via GUI")
 	end
 end
 
@@ -2386,20 +2372,14 @@ do
 	local n = 0
 	local function o() n = n + 1 return n end
 
-	createSectionLabel(tab, "Sign Editor", o())
-	local signInput = createTextInput(tab, "Enter new sign text...", o())
-	createButton(tab, "Update Slogan (All Signs)", o(), function()
+	createSectionLabel(tab, "Sign / Slogan Editor", o())
+	local signInput = createTextInput(tab, "Slogan text...", o())
+	local bannerInput = createTextInput(tab, "Banner text (optional)...", o())
+	createButton(tab, "Update Slogan", o(), function()
 		if signInput.Text ~= "" then
-			editSignsViaSlogan(signInput.Text)
+			editSignsViaSlogan(signInput.Text, bannerInput.Text)
 		else
-			notify("Error", "Enter sign text first!")
-		end
-	end)
-	createButton(tab, "Edit Signs (TP Method)", o(), function()
-		if signInput.Text ~= "" then
-			editAllSigns(signInput.Text)
-		else
-			notify("Error", "Enter sign text first!")
+			notify("Error", "Enter slogan text first!")
 		end
 	end)
 	createButton(tab, "Discover Sign Method (F9)", o(), discoverSignMethod)
