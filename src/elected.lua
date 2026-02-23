@@ -4,13 +4,13 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate() then return end
 
 -- ================================================================
--- Synapse X The Revival - Elected Admin Hub v1.2
+-- Synapse X The Revival - Elected Admin Hub v1.3
 -- Tool-Based Mining | Admin Commands | Building | Sign Editor
 -- Player Control | Teleports | ESP | Anti-Jail | Remote Spy
 -- Game uses Red networking (ReliableRedEvent) + ReplicaService
 -- ================================================================
 
-print("[SX Elected v1.2] Script loaded - SloganFrame sign editor update")
+print("[SX Elected v1.3] Script loaded - EditSign remote discovery")
 
 -- Cleanup old instance
 pcall(function()
@@ -562,484 +562,94 @@ local function adminPlane(target) sendAdminCmd(";plane " .. target) end
 local function adminDrone(target) sendAdminCmd(";drone " .. target) end
 
 -- ===================== SIGN EDITOR =====================
--- Signs in Elected use the Red networking library (ReliableRedEvent)
--- The sign editing flow: player clicks sign -> edit UI opens -> types text -> submits
--- We need to figure out the exact interaction method, so we try everything
+-- Signs in Elected use the Red networking library
+-- From BlockController: Network.Event("EditSign"):Client():Fire(signBlock, text)
+-- No need to click signs or open GUIs - just fire the remote directly
 
 local function findSigns(ownerOnly)
 	local signs = {}
 	local blocks = workspace:FindFirstChild("Blocks")
 	if not blocks then return signs end
 
-	for _, block in ipairs(blocks:GetDescendants()) do
+	local myId = LocalPlayer.UserId
+	for _, block in ipairs(blocks:GetChildren()) do
 		pcall(function()
-			local name = block.Name:lower()
-			local isSign = name:find("sign") or name:find("image") or name:find("speaker")
-			if isSign and (block:IsA("BasePart") or block:IsA("Model")) then
-				if ownerOnly then
-					local builder = nil
-					pcall(function() builder = block:GetAttribute("Builder") end)
-					if builder == LocalPlayer.Name then
-						table.insert(signs, block)
+			-- Check if this block has a SignTextBox (that's what makes it a sign)
+			local hasST = false
+			pcall(function()
+				-- Signs have: Part > SignMesh > SurfaceGui > SignTextBox
+				-- or: Part > SurfaceGui > SignTextBox
+				for _, desc in ipairs(block:GetDescendants()) do
+					if desc.Name == "SignTextBox" then
+						hasST = true
+						return
 					end
-				else
+				end
+			end)
+			if not hasST then return end
+
+			if ownerOnly then
+				local builtBy = nil
+				pcall(function() builtBy = block:GetAttribute("BuiltBy") end)
+				if builtBy == myId then
 					table.insert(signs, block)
 				end
+			else
+				table.insert(signs, block)
 			end
 		end)
 	end
 	return signs
 end
 
--- Print the full structure of a sign to F9 so user can see what's inside
-local function scanSignStructure()
-	local signs = findSigns(false)
-	if #signs == 0 then
-		print("[SX Elected] No signs found in workspace.Blocks")
-		notify("Signs", "No signs found")
-		return
-	end
-
-	-- Scan the first sign found
-	local sign = signs[1]
-	print("=== SIGN STRUCTURE: " .. sign:GetFullName() .. " ===")
-	print("  ClassName: " .. sign.ClassName)
-
-	-- Print all attributes
+-- Edit a single sign using the EditSign Red event
+-- From BlockController: Network.Event("EditSign"):Client():Fire(block, text)
+local function editSignText(sign, newText)
+	local ok = false
 	pcall(function()
-		local attrs = sign:GetAttributes()
-		for k, v in pairs(attrs) do
-			print("  [Attribute] " .. k .. " = " .. tostring(v) .. " (" .. typeof(v) .. ")")
-		end
+		local Network = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Network"))
+		local editSign = Network.Event("EditSign"):Client()
+		editSign:Fire(sign, newText)
+		ok = true
+		print("[SX Elected] EditSign fired for: " .. sign:GetFullName() .. " -> '" .. newText:sub(1, 40) .. "'")
 	end)
-
-	-- Print all descendants with their types
-	pcall(function()
-		for _, desc in ipairs(sign:GetDescendants()) do
-			local info = "  [" .. desc.ClassName .. "] " .. desc.Name
-			if desc:IsA("ProximityPrompt") then
-				info = info .. " (MaxDist=" .. desc.MaxActivationDistance .. ", Hold=" .. desc.HoldDuration .. ")"
-			elseif desc:IsA("ClickDetector") then
-				info = info .. " (MaxDist=" .. desc.MaxActivationDistance .. ")"
-			elseif desc:IsA("TextLabel") then
-				info = info .. " Text='" .. desc.Text:sub(1, 50) .. "'"
-			elseif desc:IsA("TextBox") then
-				info = info .. " Text='" .. desc.Text:sub(1, 50) .. "'"
-			elseif desc:IsA("SurfaceGui") then
-				info = info .. " Face=" .. tostring(desc.Face)
-			elseif desc:IsA("RemoteEvent") or desc:IsA("RemoteFunction") or desc:IsA("BindableEvent") then
-				info = info .. " *** REMOTE/BINDABLE ***"
-			end
-			print(info)
-		end
-	end)
-
-	-- Also check if sign has special properties
-	pcall(function()
-		if sign:IsA("BasePart") then
-			print("  Size: " .. tostring(sign.Size))
-			print("  CanCollide: " .. tostring(sign.CanCollide))
-		end
-	end)
-
-	print("=== END SIGN STRUCTURE (" .. #signs .. " total signs found) ===")
-	notify("Signs", "Sign structure printed to F9 - check it!")
+	return ok
 end
 
--- Try to edit a sign by firing ReliableRedEvent directly
--- Red networking library format: {EventName = {args...}}
--- We try common event names used for sign editing
-local function editSignViaRed(sign, newText)
-	if not RedEvent then return false end
-
-	local success = false
-	-- Get sign identifier - could be the instance, its name, or an attribute
-	local signId = nil
-	pcall(function() signId = sign:GetAttribute("Id") end)
-	if not signId then pcall(function() signId = sign:GetAttribute("BlockId") end) end
-	if not signId then pcall(function() signId = sign:GetAttribute("UUID") end) end
-
-	-- Try various Red event name formats that games commonly use
-	local eventNames = {
-		"EditSign", "UpdateSign", "SetSignText", "SignEdit",
-		"editSign", "updateSign", "setSignText", "signEdit",
-		"Edit", "UpdateText", "SetText", "ChangeText",
-		"edit", "updateText", "setText", "changeText",
-		"EditBlock", "UpdateBlock", "editBlock", "updateBlock",
-	}
-
-	for _, eventName in ipairs(eventNames) do
-		pcall(function()
-			-- Try with instance reference
-			RedEvent:FireServer({[eventName] = {sign, newText}})
-			success = true
-		end)
-		pcall(function()
-			-- Try with sign ID attribute
-			if signId then
-				RedEvent:FireServer({[eventName] = {signId, newText}})
-			end
-		end)
-		pcall(function()
-			-- Try with just text (some systems identify sign by proximity)
-			RedEvent:FireServer({[eventName] = {newText}})
-		end)
-	end
-
-	return success
-end
-
--- Click a GUI button reliably using firesignal or fallback
-local function clickButton(btn)
-	if not btn then return end
-	pcall(function()
-		if firesignal then
-			firesignal(btn.MouseButton1Click)
-		else
-			btn.MouseButton1Click:Fire()
-		end
-	end)
-end
-
--- Click a sign's ClickDetector using every method available
-local function clickSign(sign)
-	local clicked = false
-	for _, desc in ipairs(sign:GetDescendants()) do
-		if desc:IsA("ClickDetector") then
-			local oldDist = desc.MaxActivationDistance
-			desc.MaxActivationDistance = 9999
-
-			-- Method 1: fireclickdetector (most executors)
-			pcall(function()
-				if fireclickdetector then
-					fireclickdetector(desc)
-					clicked = true
-					print("[SX Elected] fireclickdetector fired")
-				end
-			end)
-
-			-- Method 2: firesignal on MouseClick
-			pcall(function()
-				if firesignal then
-					firesignal(desc.MouseClick, LocalPlayer)
-					clicked = true
-					print("[SX Elected] firesignal MouseClick fired")
-				end
-			end)
-
-			-- Method 3: Fire the MouseClick event directly
-			pcall(function()
-				desc.MouseClick:Fire(LocalPlayer)
-				clicked = true
-				print("[SX Elected] MouseClick:Fire fired")
-			end)
-
-			desc.MaxActivationDistance = oldDist
-		end
-	end
-
-	-- Method 4: mouse1click while looking at sign
-	if not clicked then
-		pcall(function()
-			mouse1click()
-			clicked = true
-			print("[SX Elected] mouse1click fired")
-		end)
-	end
-
-	return clicked
-end
-
--- Fill the SloganFrame or LecternFrame with text and click Update
-local function fillSignEditGUI(newText)
-	local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-	if not playerGui then
-		print("[SX Elected] No PlayerGui")
-		return false
-	end
-
-	local gui = playerGui:FindFirstChild("Gui")
-	if not gui then
-		print("[SX Elected] No PlayerGui.Gui")
-		return false
-	end
-
-	-- Check SloganFrame
-	local sloganFrame = gui:FindFirstChild("SloganFrame")
-	if sloganFrame then
-		local vis = false
-		pcall(function() vis = sloganFrame.Visible end)
-		print("[SX Elected] SloganFrame exists, Visible=" .. tostring(vis))
-
-		if vis then
-			local sloganBox = sloganFrame:FindFirstChild("SloganBox")
-			local bannerBox = sloganFrame:FindFirstChild("BannerBox")
-			local updateBtn = sloganFrame:FindFirstChild("UpdateButton")
-
-			if sloganBox then
-				print("[SX Elected] Setting SloganBox text to: " .. newText)
-				sloganBox.Text = newText
-				sloganBox:CaptureFocus()
-				task.wait(0.15)
-				sloganBox:ReleaseFocus(true)
-				task.wait(0.15)
-			end
-
-			if updateBtn then
-				print("[SX Elected] Clicking UpdateButton...")
-				clickButton(updateBtn)
-				task.wait(0.2)
-			end
-
-			return true
-		end
-	else
-		print("[SX Elected] SloganFrame not found in Gui")
-	end
-
-	-- Check LecternFrame
-	local lecternFrame = gui:FindFirstChild("LecternFrame")
-	if lecternFrame then
-		local vis = false
-		pcall(function() vis = lecternFrame.Visible end)
-		print("[SX Elected] LecternFrame exists, Visible=" .. tostring(vis))
-
-		if vis then
-			-- Find any TextBox inside
-			for _, desc in ipairs(lecternFrame:GetDescendants()) do
-				if desc:IsA("TextBox") then
-					print("[SX Elected] Setting LecternFrame TextBox: " .. desc:GetFullName())
-					desc.Text = newText
-					desc:CaptureFocus()
-					task.wait(0.15)
-					desc:ReleaseFocus(true)
-					task.wait(0.15)
-					break
-				end
-			end
-			-- Click any confirm button
-			for _, desc in ipairs(lecternFrame:GetDescendants()) do
-				pcall(function()
-					if desc:IsA("TextButton") and desc.Visible then
-						local t = desc.Text:lower()
-						if t:find("save") or t:find("done") or t:find("confirm") or t:find("update") or t:find("submit") then
-							clickButton(desc)
-						end
-					end
-				end)
-			end
-			return true
-		end
-	end
-
-	print("[SX Elected] No sign edit GUI is visible")
-	return false
-end
-
--- Scan all GUIs in PlayerGui for sign-related elements and print to F9
-local function scanPlayerGUI()
-	local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-	if not playerGui then
-		print("[SX Elected] No PlayerGui")
-		return
-	end
-
-	print("=== PLAYERGUI SCAN ===")
-	local textboxes = 0
-	local buttons = 0
-	for _, gui in ipairs(playerGui:GetDescendants()) do
-		pcall(function()
-			if gui:IsA("TextBox") then
-				textboxes = textboxes + 1
-				local vis = gui.Visible and "visible" or "hidden"
-				print("  [TextBox] " .. gui:GetFullName() .. " (" .. vis .. ") Text='" .. gui.Text:sub(1,40) .. "'")
-			elseif gui:IsA("TextButton") then
-				buttons = buttons + 1
-				local vis = gui.Visible and "visible" or "hidden"
-				local txt = gui.Text:sub(1, 30)
-				if txt ~= "" then
-					print("  [TextButton] " .. gui:GetFullName() .. " (" .. vis .. ") '" .. txt .. "'")
-				end
-			end
-		end)
-	end
-	print("=== " .. textboxes .. " TextBoxes, " .. buttons .. " TextButtons ===")
-	notify("GUI Scan", textboxes .. " TextBoxes, " .. buttons .. " TextButtons - F9")
-end
-
--- Wait for SloganFrame or LecternFrame to become visible
-local function waitForSignGUI(timeout)
-	timeout = timeout or 2
-	local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-	if not playerGui then return false end
-	local gui = playerGui:FindFirstChild("Gui")
-	if not gui then return false end
-
-	local start = tick()
-	while tick() - start < timeout do
-		local sloganFrame = gui:FindFirstChild("SloganFrame")
-		if sloganFrame then
-			local ok, vis = pcall(function() return sloganFrame.Visible end)
-			if ok and vis then
-				print("[SX Elected] SloganFrame became visible after " .. string.format("%.2f", tick() - start) .. "s")
-				return true
-			end
-		end
-		local lecternFrame = gui:FindFirstChild("LecternFrame")
-		if lecternFrame then
-			local ok, vis = pcall(function() return lecternFrame.Visible end)
-			if ok and vis then
-				print("[SX Elected] LecternFrame became visible after " .. string.format("%.2f", tick() - start) .. "s")
-				return true
-			end
-		end
-		task.wait(0.05)
-	end
-	print("[SX Elected] Sign GUI did not appear within " .. timeout .. "s")
-	return false
-end
-
-local function editSignCore(signs, newText, label)
+-- Edit all signs (own or all)
+local function editAllSigns(newText, ownerOnly)
+	local signs = findSigns(ownerOnly or false)
 	if #signs == 0 then
 		notify("Signs", "No signs found")
 		return
 	end
 
-	local char = LocalPlayer.Character
-	local hrp = getRoot()
-	if not char or not hrp then return end
-	local savedCF = hrp.CFrame
-
-	notify("Signs", label .. " " .. #signs .. " signs...")
-
-	task.spawn(function()
-		local count = 0
-		for signIdx, sign in ipairs(signs) do
-			pcall(function()
-				print("[SX Elected] --- Sign " .. signIdx .. "/" .. #signs .. ": " .. sign:GetFullName() .. " ---")
-
-				local cf = getItemCFrame(sign)
-				if not cf then
-					print("[SX Elected] Could not get CFrame for sign")
-					return
-				end
-
-				-- TP right next to the sign (within ClickDetector MaxDist=8)
-				local signFront = cf + cf.LookVector * -4
-				char:PivotTo(CFrame.new(signFront.Position, cf.Position))
-				task.wait(0.3)
-
-				-- Update HRP ref after TP
-				hrp = getRoot()
-				if not hrp then return end
-
-				-- Point camera directly at the sign
-				pcall(function()
-					camera.CFrame = CFrame.lookAt(hrp.Position, cf.Position)
-				end)
-				task.wait(0.1)
-
-				-- Click the sign
-				print("[SX Elected] Clicking sign...")
-				clickSign(sign)
-				task.wait(0.3)
-
-				-- Wait for edit GUI to appear
-				local guiAppeared = waitForSignGUI(2)
-
-				if guiAppeared then
-					task.wait(0.15)
-					local ok = fillSignEditGUI(newText)
-					if ok then
-						count = count + 1
-						print("[SX Elected] SUCCESS - edited sign!")
-					end
-				else
-					-- Retry: TP even closer
-					print("[SX Elected] Retrying closer...")
-					char:PivotTo(CFrame.new(cf.Position + Vector3.new(0, 0, 2), cf.Position))
-					task.wait(0.2)
-					hrp = getRoot()
-					if hrp then
-						pcall(function() camera.CFrame = CFrame.lookAt(hrp.Position, cf.Position) end)
-					end
-					clickSign(sign)
-					task.wait(0.3)
-
-					if waitForSignGUI(2) then
-						task.wait(0.15)
-						if fillSignEditGUI(newText) then
-							count = count + 1
-							print("[SX Elected] SUCCESS on retry!")
-						end
-					else
-						print("[SX Elected] FAILED - GUI never appeared for this sign")
-					end
-				end
-
-				-- TP back
-				task.wait(0.3)
-				char:PivotTo(savedCF)
-			end)
-			task.wait(0.5)
+	notify("Signs", "Editing " .. #signs .. " signs...")
+	local count = 0
+	for i, sign in ipairs(signs) do
+		if editSignText(sign, newText) then
+			count = count + 1
 		end
-		notify("Signs", "Edited " .. count .. "/" .. #signs .. " signs")
-		print("[SX Elected] Sign editing complete: " .. count .. "/" .. #signs)
-	end)
+		if i < #signs then task.wait(0.1) end
+	end
+	notify("Signs", "Edited " .. count .. "/" .. #signs .. " signs")
 end
 
-local function editAllSigns(newText)
-	editSignCore(findSigns(false), newText, "Editing")
-end
-
-local function editAllSignsGlobal(newText)
-	editSignCore(findSigns(false), newText, "Global editing")
-end
-
--- Edit slogan via Red network event "UpdateSlogan"
--- From: ReplicatedFirst.UI.Controllers.SloganUI
--- require(ReplicatedStorage.Shared.Network).Event("UpdateSlogan"):Client():Fire(slogan, banner)
-local function editSignsViaSlogan(sloganText, bannerText)
+-- Edit slogan via Red network event "UpdateSlogan" (separate from sign text)
+local function editSlogan(sloganText, bannerText)
 	bannerText = bannerText or ""
-
-	-- Method 1: Fire the Red network event directly
 	local fired = false
 	pcall(function()
 		local Network = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Network"))
-		local updateSlogan = Network.Event("UpdateSlogan"):Client()
-		updateSlogan:Fire(sloganText, bannerText)
+		Network.Event("UpdateSlogan"):Client():Fire(sloganText, bannerText)
 		fired = true
-		print("[SX Elected] Fired UpdateSlogan: slogan='" .. sloganText .. "' banner='" .. bannerText .. "'")
+		print("[SX Elected] UpdateSlogan fired: '" .. sloganText .. "'")
 	end)
-
 	if fired then
 		pcall(function() LocalPlayer:SetAttribute("Slogan", sloganText) end)
-		notify("Signs", "Slogan updated: " .. sloganText:sub(1, 30))
-		return
-	end
-
-	-- Method 2: GUI fallback
-	print("[SX Elected] Red Network failed, trying GUI...")
-	local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-	if not playerGui then notify("Signs", "Failed") return end
-	local gui = playerGui:FindFirstChild("Gui")
-	if not gui then notify("Signs", "Failed") return end
-	local sloganFrame = gui:FindFirstChild("SloganFrame")
-	if not sloganFrame then notify("Signs", "SloganFrame not found") return end
-
-	pcall(function() sloganFrame.Visible = true end)
-	task.wait(0.2)
-	local sloganBox = sloganFrame:FindFirstChild("SloganBox")
-	local updateBtn = sloganFrame:FindFirstChild("UpdateButton")
-	if sloganBox then
-		sloganBox.Text = sloganText
-		sloganBox:CaptureFocus()
-		task.wait(0.15)
-		sloganBox:ReleaseFocus(true)
-	end
-	if updateBtn then
-		clickButton(updateBtn)
-		notify("Signs", "Slogan updated via GUI")
+		notify("Slogan", "Updated: " .. sloganText:sub(1, 30))
+	else
+		notify("Slogan", "Failed to fire UpdateSlogan")
 	end
 end
 
@@ -1886,7 +1496,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "SX Revival - Elected Admin Hub v1.2"
+titleText.Text = "SX Revival - Elected Admin Hub v1.3"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 13
@@ -2339,12 +1949,31 @@ do
 	local n = 0
 	local function o() n = n + 1 return n end
 
-	createSectionLabel(tab, "Sign / Slogan Editor", o())
-	local signInput = createTextInput(tab, "Slogan text...", o())
+	createSectionLabel(tab, "Sign Text Editor", o())
+	local signInput = createTextInput(tab, "Sign text...", o())
+	createButton(tab, "Edit My Signs", o(), function()
+		if signInput.Text ~= "" then
+			editAllSigns(signInput.Text, true)
+		else
+			notify("Error", "Enter sign text first!")
+		end
+	end)
+	createButton(tab, "Edit All Signs", o(), function()
+		if signInput.Text ~= "" then
+			editAllSigns(signInput.Text, false)
+		else
+			notify("Error", "Enter sign text first!")
+		end
+	end)
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Campaign Slogan", o())
+	local sloganInput = createTextInput(tab, "Slogan text...", o())
 	local bannerInput = createTextInput(tab, "Banner text (optional)...", o())
 	createButton(tab, "Update Slogan", o(), function()
-		if signInput.Text ~= "" then
-			editSignsViaSlogan(signInput.Text, bannerInput.Text)
+		if sloganInput.Text ~= "" then
+			editSlogan(sloganInput.Text, bannerInput.Text)
 		else
 			notify("Error", "Enter slogan text first!")
 		end
@@ -2704,11 +2333,11 @@ do
 
 	createSectionLabel(tab, "Sign Spam", o())
 	local signSpamInput = createTextInput(tab, "Sign spam text...", o())
-	createButton(tab, "Spam All Signs (My Signs)", o(), function()
-		if signSpamInput.Text ~= "" then editAllSigns(signSpamInput.Text) end
+	createButton(tab, "Spam My Signs", o(), function()
+		if signSpamInput.Text ~= "" then editAllSigns(signSpamInput.Text, true) end
 	end)
-	createButton(tab, "Spam All Signs (Global Attempt)", o(), function()
-		if signSpamInput.Text ~= "" then editAllSignsGlobal(signSpamInput.Text) end
+	createButton(tab, "Spam All Signs", o(), function()
+		if signSpamInput.Text ~= "" then editAllSigns(signSpamInput.Text, false) end
 	end)
 
 	createSpacer(tab, o())
@@ -2786,12 +2415,12 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ===================== STARTUP =====================
-notify("SX Elected v1.2", "Loaded! Right Shift to toggle")
-print("[SX Elected v1.2] Synapse X The Revival - Elected Admin Hub")
-print("[SX Elected v1.2] Tabs: Mining | Admin | Build | Players | Movement | Visuals | Troll")
-print("[SX Elected v1.2] Red Event: " .. (RedEvent and RedEvent:GetFullName() or "NOT FOUND"))
-print("[SX Elected v1.2] Chat: " .. (ChatRemote and "Legacy Chat" or "TextChatService"))
-print("[SX Elected v1.2] Mining: Tool-based (equip pickaxe + ProximityPrompt)")
-print("[SX Elected v1.2] Building: Tool-based (equip building tool)")
-print("[SX Elected v1.2] Signs: ClickDetector + SloganFrame/LecternFrame")
-print("[SX Elected v1.2] Right Shift to toggle GUI")
+notify("SX Elected v1.3", "Loaded! Right Shift to toggle")
+print("[SX Elected v1.3] Synapse X The Revival - Elected Admin Hub")
+print("[SX Elected v1.3] Tabs: Mining | Admin | Build | Players | Movement | Visuals | Troll")
+print("[SX Elected v1.3] Red Event: " .. (RedEvent and RedEvent:GetFullName() or "NOT FOUND"))
+print("[SX Elected v1.3] Chat: " .. (ChatRemote and "Legacy Chat" or "TextChatService"))
+print("[SX Elected v1.3] Mining: Tool-based (equip pickaxe + ProximityPrompt)")
+print("[SX Elected v1.3] Building: Tool-based (equip building tool)")
+print("[SX Elected v1.3] Signs: EditSign Red event (direct remote fire)")
+print("[SX Elected v1.3] Right Shift to toggle GUI")
