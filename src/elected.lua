@@ -1599,28 +1599,26 @@ local function buildWord(text, blockColor)
 	local char = LocalPlayer.Character
 	if not hrp or not char then notify("Error", "No character") return end
 
-	text = text:upper()
-	local startPos = hrp.Position + hrp.CFrame.LookVector * 15 + Vector3.new(0, 10, 0)
-	local rightDir = hrp.CFrame.RightVector
-	local upDir = Vector3.new(0, 1, 0)
-	local savedCF = hrp.CFrame
-
-	-- Try to get the BuildBlock event
-	local evt = getBuildBlockEvent()
-
-	-- Also find and equip building tool as fallback
+	-- Must have building tool equipped with a block selected
 	local tool = findBuildingTool()
-	if tool then equipTool(tool) end
-
-	if not evt and not tool then
-		notify("Error", "No building tool found and BuildBlock event not extracted. Equip a building tool first!")
+	if not tool then
+		notify("Error", "Equip a building tool first!")
 		return
 	end
+	equipTool(tool)
+	task.wait(0.3)
+
+	text = text:upper()
+	-- Build in front of player, elevated
+	local startPos = hrp.Position + hrp.CFrame.LookVector * 20 + Vector3.new(0, 5, 0)
+	local rightDir = hrp.CFrame.RightVector
+	local upDir = Vector3.new(0, 1, 0)
+	local savedCamCF = camera.CFrame
 
 	local blocksPlaced = 0
 	local charOffset = 0
 
-	notify("Building", "Building: " .. text .. (evt and " (Red event)" or " (tool)"))
+	notify("Building", "Building: " .. text)
 
 	task.spawn(function()
 		for ci = 1, #text do
@@ -1632,26 +1630,23 @@ local function buildWord(text, blockColor)
 						if pixels[row]:sub(col, col) == "1" then
 							local x = (charOffset + col - 1) * wordBlockSize
 							local y = (5 - row) * wordBlockSize
-							local pos = startPos + rightDir * x + upDir * y
-							local cf = CFrame.new(pos)
+							local targetPos = startPos + rightDir * x + upDir * y
 
-							if evt then
-								-- Try firing BuildBlock event with position
-								pcall(function() evt:Fire(cf) end)
-								pcall(function() evt:Fire(pos) end)
-								pcall(function() evt:Fire(cf, "Block") end)
-							end
+							-- Aim camera at the target position from slightly behind it
+							-- The build tool places blocks where the camera raycast hits
+							local camPos = targetPos - hrp.CFrame.LookVector * 5
+							camera.CFrame = CFrame.lookAt(camPos, targetPos)
+							task.wait(0.05)
 
-							if tool then
-								-- Fallback: TP to position, activate tool
-								pcall(function()
-									char:PivotTo(cf)
-									task.wait(0.05)
-									pcall(function() tool:Activate() end)
-									pcall(function() mouse1click() end)
-									task.wait(0.05)
-								end)
-							end
+							-- Click at screen center to place block at camera target
+							pcall(function()
+								local vpSize = camera.ViewportSize
+								local cx = vpSize.X / 2
+								local cy = vpSize.Y / 2
+								VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
+								task.wait(0.05)
+								VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
+							end)
 
 							blocksPlaced = blocksPlaced + 1
 							task.wait(0.15)
@@ -1663,8 +1658,8 @@ local function buildWord(text, blockColor)
 				charOffset = charOffset + 3
 			end
 		end
-		-- TP back
-		pcall(function() char:PivotTo(savedCF) end)
+		-- Restore camera
+		camera.CFrame = savedCamCF
 		notify("Built", blocksPlaced .. " blocks placed for: " .. text)
 	end)
 end
