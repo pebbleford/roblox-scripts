@@ -1512,18 +1512,92 @@ local LETTER_PIXELS = {
 
 local wordBlockSize = 4 -- studs per pixel
 
+-- Extract BuildBlock Red event from the BuildController
+-- BuildController is in ReplicatedFirst.Controllers.BuildingController.BuildController
+local buildBlockEvent = nil
+
+local function getBuildBlockEvent()
+	if buildBlockEvent then return buildBlockEvent end
+
+	-- The BuildController module has the BuildBlock event
+	-- Try to decompile it and find the event, or extract from tool connections
+	pcall(function()
+		if not decompile or not getupvalues then return end
+
+		-- Find the BuildController module
+		local bc = game:GetService("ReplicatedFirst")
+		bc = bc and bc:FindFirstChild("Controllers")
+		bc = bc and bc:FindFirstChild("BuildingController")
+		bc = bc and bc:FindFirstChild("BuildController")
+		if not bc then
+			print("[SX Elected] BuildController module not found")
+			return
+		end
+
+		-- Decompile it to understand the format
+		local src = decompile(bc)
+		if src then
+			print("[SX Elected] BuildController decompiled, searching for BuildBlock event...")
+			-- Print lines with BuildBlock or Fire
+			local lineNum = 0
+			for line in src:gmatch("[^\n]+") do
+				lineNum = lineNum + 1
+				if lineNum <= 80 then
+					local ll = line:lower()
+					if ll:find("buildblock") or ll:find("fire") or ll:find("event") or ll:find("network") then
+						print("[SX Elected] BC:" .. lineNum .. " " .. line:sub(1, 150))
+					end
+				end
+			end
+		end
+	end)
+
+	-- Try to find BuildBlock event from any tool's Activated connection
+	pcall(function()
+		if not getconnections or not getupvalues then return end
+		local char = LocalPlayer.Character
+		local backpack = LocalPlayer:FindFirstChild("Backpack")
+		local tools = {}
+		if char then
+			for _, t in ipairs(char:GetChildren()) do
+				if t:IsA("Tool") then table.insert(tools, t) end
+			end
+		end
+		if backpack then
+			for _, t in ipairs(backpack:GetChildren()) do
+				if t:IsA("Tool") then table.insert(tools, t) end
+			end
+		end
+
+		for _, tool in ipairs(tools) do
+			pcall(function()
+				local conns = getconnections(tool.Activated)
+				for _, conn in ipairs(conns) do
+					pcall(function()
+						local func = conn.Function
+						if not func then return end
+						local upvals = getupvalues(func)
+						for i, v in pairs(upvals) do
+							if typeof(v) == "table" and v.Fire then
+								buildBlockEvent = v
+								print("[SX Elected] Found BuildBlock event from tool: " .. tool.Name)
+								return
+							end
+						end
+					end)
+				end
+			end)
+			if buildBlockEvent then break end
+		end
+	end)
+
+	return buildBlockEvent
+end
+
 local function buildWord(text, blockColor)
 	local hrp = getRoot()
 	local char = LocalPlayer.Character
 	if not hrp or not char then notify("Error", "No character") return end
-
-	-- Find and equip building tool
-	local tool = findBuildingTool()
-	if not tool then
-		notify("Error", "No building tool found! Equip a building tool first.")
-		return
-	end
-	equipTool(tool)
 
 	text = text:upper()
 	local startPos = hrp.Position + hrp.CFrame.LookVector * 15 + Vector3.new(0, 10, 0)
@@ -1531,10 +1605,22 @@ local function buildWord(text, blockColor)
 	local upDir = Vector3.new(0, 1, 0)
 	local savedCF = hrp.CFrame
 
+	-- Try to get the BuildBlock event
+	local evt = getBuildBlockEvent()
+
+	-- Also find and equip building tool as fallback
+	local tool = findBuildingTool()
+	if tool then equipTool(tool) end
+
+	if not evt and not tool then
+		notify("Error", "No building tool found and BuildBlock event not extracted. Equip a building tool first!")
+		return
+	end
+
 	local blocksPlaced = 0
 	local charOffset = 0
 
-	notify("Building", "Building: " .. text)
+	notify("Building", "Building: " .. text .. (evt and " (Red event)" or " (tool)"))
 
 	task.spawn(function()
 		for ci = 1, #text do
@@ -1547,17 +1633,28 @@ local function buildWord(text, blockColor)
 							local x = (charOffset + col - 1) * wordBlockSize
 							local y = (5 - row) * wordBlockSize
 							local pos = startPos + rightDir * x + upDir * y
-							pcall(function()
-								-- TP to position, place block, TP back
-								char:PivotTo(CFrame.new(pos))
-								task.wait(0.05)
-								pcall(function() tool:Activate() end)
-								mouse1click()
-								task.wait(0.05)
-								char:PivotTo(savedCF)
-							end)
+							local cf = CFrame.new(pos)
+
+							if evt then
+								-- Try firing BuildBlock event with position
+								pcall(function() evt:Fire(cf) end)
+								pcall(function() evt:Fire(pos) end)
+								pcall(function() evt:Fire(cf, "Block") end)
+							end
+
+							if tool then
+								-- Fallback: TP to position, activate tool
+								pcall(function()
+									char:PivotTo(cf)
+									task.wait(0.05)
+									pcall(function() tool:Activate() end)
+									pcall(function() mouse1click() end)
+									task.wait(0.05)
+								end)
+							end
+
 							blocksPlaced = blocksPlaced + 1
-							task.wait(0.1)
+							task.wait(0.15)
 						end
 					end
 				end
@@ -1566,6 +1663,8 @@ local function buildWord(text, blockColor)
 				charOffset = charOffset + 3
 			end
 		end
+		-- TP back
+		pcall(function() char:PivotTo(savedCF) end)
 		notify("Built", blocksPlaced .. " blocks placed for: " .. text)
 	end)
 end
