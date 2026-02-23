@@ -1651,7 +1651,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "SX Revival - Elected Admin Hub v1.1"
+titleText.Text = "SX Revival - Elected Admin Hub v1.2"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 13
@@ -2121,17 +2121,12 @@ do
 			notify("Error", "Enter sign text first!")
 		end
 	end)
-	createButton(tab, "Scan Sign Structure (F9)", o(), scanSignStructure)
-	createButton(tab, "Scan PlayerGui (F9)", o(), scanPlayerGUI)
 	createButton(tab, "Count Signs", o(), function()
 		local mine = findSigns(true)
 		local all = findSigns(false)
 		print("[SX Elected] Your signs: " .. #mine .. " | All signs: " .. #all)
 		notify("Signs", "Yours: " .. #mine .. " | Total: " .. #all)
 	end)
-	createInfoLabel(tab, "Step 1: Click 'Scan Sign Structure' to see sign internals", o())
-	createInfoLabel(tab, "Step 2: Click 'Scan PlayerGui' WHILE editing a sign manually", o())
-	createInfoLabel(tab, "Step 3: Send me the F9 output and I'll make it work", o())
 
 	createSpacer(tab, o())
 
@@ -2568,13 +2563,12 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ===================== STARTUP =====================
-notify("SX Elected v1.1", "Loaded! Right Shift to toggle")
-print("[SX Elected v1.1] Synapse X The Revival - Elected Admin Hub")
-print("[SX Elected v1.1] Tabs: Mining | Admin | Build | Players | Movement | Visuals | Troll")
-print("[SX Elected v1.1] Red Event: " .. (RedEvent and RedEvent:GetFullName() or "NOT FOUND"))
-print("[SX Elected v1.1] Chat: " .. (ChatRemote and "Legacy Chat" or "TextChatService"))
-print("[SX Elected v1.1] Mining: Tool-based (equip pickaxe + ProximityPrompt)")
-print("[SX Elected v1.1] Building: Tool-based (equip building tool)")
-print("[SX Elected v1.1] Signs: ProximityPrompt + UI interaction")
-print("[SX Elected v1.1] Use Remote Spy to discover game remotes")
-print("[SX Elected v1.1] Right Shift to toggle GUI")
+notify("SX Elected v1.2", "Loaded! Right Shift to toggle")
+print("[SX Elected v1.2] Synapse X The Revival - Elected Admin Hub")
+print("[SX Elected v1.2] Tabs: Mining | Admin | Build | Players | Movement | Visuals | Troll")
+print("[SX Elected v1.2] Red Event: " .. (RedEvent and RedEvent:GetFullName() or "NOT FOUND"))
+print("[SX Elected v1.2] Chat: " .. (ChatRemote and "Legacy Chat" or "TextChatService"))
+print("[SX Elected v1.2] Mining: Tool-based (equip pickaxe + ProximityPrompt)")
+print("[SX Elected v1.2] Building: Tool-based (equip building tool)")
+print("[SX Elected v1.2] Signs: ClickDetector + SloganFrame/LecternFrame")
+print("[SX Elected v1.2] Right Shift to toggle GUI")
