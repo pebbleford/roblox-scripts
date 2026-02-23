@@ -602,21 +602,154 @@ local function findSigns(ownerOnly)
 	return signs
 end
 
+-- Get the inner Part of a sign block (the one with SignMesh or SurfaceGui)
+-- Signs structure: Model "Sign" > Part "Sign" > MeshPart "SignMesh" > SurfaceGui > SignTextBox
+-- The EditSign event expects the inner Part, not the outer Model
+local function getSignPart(signModel)
+	-- If this itself has SignMesh or SurfaceGui with SignTextBox, it's already the right part
+	local hasDirect = false
+	pcall(function()
+		if signModel:FindFirstChild("SignMesh") or signModel:FindFirstChild("SurfaceGui") then
+			hasDirect = true
+		end
+	end)
+	if hasDirect then return signModel end
+
+	-- Search children for the inner part
+	for _, child in ipairs(signModel:GetChildren()) do
+		pcall(function()
+			if child:IsA("BasePart") or child:IsA("Model") then
+				if child:FindFirstChild("SignMesh") or child:FindFirstChild("SurfaceGui") then
+					hasDirect = true
+					signModel = child
+				end
+			end
+		end)
+		if hasDirect then return signModel end
+	end
+
+	-- Fallback: return first BasePart child
+	for _, child in ipairs(signModel:GetChildren()) do
+		if child:IsA("BasePart") then return child end
+	end
+	return signModel
+end
+
 -- Edit a single sign using the EditSign Red event
 -- From BlockController: Network.Event("EditSign"):Client():Fire(block, text)
--- Red library fires via: ReliableRedEvent:FireServer({["EditSign"] = {block, text}})
+-- Red library packs: ReliableRedEvent:FireServer({["EditSign"] = {{block, text}}})
+-- (outer array = batch of calls, inner array = args for one call)
 local function editSignText(sign, newText)
 	if not RedEvent then
 		notify("Signs", "ReliableRedEvent not found!")
 		return false
 	end
+	local signPart = getSignPart(sign)
 	local ok = false
+
+	-- Try format 1: double nested (Red batches calls as array of arg-arrays)
 	pcall(function()
-		RedEvent:FireServer({["EditSign"] = {sign, newText}})
+		RedEvent:FireServer({["EditSign"] = {{signPart, newText}}})
 		ok = true
-		print("[SX Elected] EditSign fired for: " .. sign:GetFullName() .. " -> '" .. newText:sub(1, 40) .. "'")
+		print("[SX Elected] EditSign format1 (batch) for: " .. signPart:GetFullName())
 	end)
+
+	-- Try format 2: single array (in case Red doesn't batch)
+	pcall(function()
+		RedEvent:FireServer({["EditSign"] = {signPart, newText}})
+		print("[SX Elected] EditSign format2 (flat) for: " .. signPart:GetFullName())
+	end)
+
+	-- Try format 3: pass the outer Model in case server wants that
+	if signPart ~= sign then
+		pcall(function()
+			RedEvent:FireServer({["EditSign"] = {{sign, newText}}})
+			print("[SX Elected] EditSign format3 (model batch) for: " .. sign:GetFullName())
+		end)
+		pcall(function()
+			RedEvent:FireServer({["EditSign"] = {sign, newText}})
+			print("[SX Elected] EditSign format4 (model flat) for: " .. sign:GetFullName())
+		end)
+	end
+
 	return ok
+end
+
+-- Spy on ReliableRedEvent to capture the real packet format
+-- Click a sign manually, type text, and this will print exactly what gets sent
+local function spySignEdit()
+	if not RedEvent then
+		notify("Spy", "ReliableRedEvent not found!")
+		return
+	end
+
+	notify("Spy", "Monitoring for 30s - click a sign and edit it!")
+	print("[SX Elected] === SIGN EDIT SPY ACTIVE (30s) ===")
+	print("[SX Elected] Click a sign, type text, press Enter to capture the packet")
+
+	local spyConn
+	spyConn = RedEvent.OnClientEvent:Connect(function(...)
+		local args = {...}
+		print("[SPY-IN] Received " .. #args .. " args")
+		for i, arg in ipairs(args) do
+			print("  arg[" .. i .. "] = " .. typeof(arg) .. ": " .. tostring(arg))
+			if typeof(arg) == "table" then
+				for k, v in pairs(arg) do
+					print("    [" .. tostring(k) .. "] = " .. typeof(v) .. ": " .. tostring(v))
+					if typeof(v) == "table" then
+						for k2, v2 in pairs(v) do
+							print("      [" .. tostring(k2) .. "] = " .. typeof(v2) .. ": " .. tostring(v2))
+							if typeof(v2) == "table" then
+								for k3, v3 in pairs(v2) do
+									print("        [" .. tostring(k3) .. "] = " .. typeof(v3) .. ": " .. tostring(v3))
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+	end)
+
+	-- Also spy on outgoing
+	local oldFire = nil
+	pcall(function()
+		if hookfunction and newcclosure then
+			oldFire = hookfunction(RedEvent.FireServer, newcclosure(function(self, ...)
+				local args = {...}
+				print("[SPY-OUT] FireServer called with " .. #args .. " args")
+				for i, arg in ipairs(args) do
+					print("  arg[" .. i .. "] = " .. typeof(arg) .. ": " .. tostring(arg))
+					if typeof(arg) == "table" then
+						for k, v in pairs(arg) do
+							print("    [" .. tostring(k) .. "] = " .. typeof(v) .. ": " .. tostring(v))
+							if typeof(v) == "table" then
+								for k2, v2 in pairs(v) do
+									print("      [" .. tostring(k2) .. "] = " .. typeof(v2) .. ": " .. tostring(v2))
+									if typeof(v2) == "table" then
+										for k3, v3 in pairs(v2) do
+											print("        [" .. tostring(k3) .. "] = " .. typeof(v3) .. ": " .. tostring(v3))
+										end
+									end
+								end
+							end
+						end
+					end
+				end
+				return oldFire(self, ...)
+			end))
+			print("[SX Elected] Spy: hookfunction active for outgoing")
+		else
+			print("[SX Elected] Spy: hookfunction not available, outgoing spy skipped")
+		end
+	end)
+
+	task.delay(30, function()
+		pcall(function() spyConn:Disconnect() end)
+		-- Can't unhook easily, but it will stop printing
+		print("[SX Elected] === SIGN EDIT SPY ENDED ===")
+		notify("Spy", "Spy ended after 30s")
+	end)
 end
 
 -- Edit all signs (own or all)
@@ -633,9 +766,9 @@ local function editAllSigns(newText, ownerOnly)
 		if editSignText(sign, newText) then
 			count = count + 1
 		end
-		if i < #signs then task.wait(0.1) end
+		if i < #signs then task.wait(0.15) end
 	end
-	notify("Signs", "Edited " .. count .. "/" .. #signs .. " signs")
+	notify("Signs", "Fired EditSign on " .. count .. "/" .. #signs .. " signs")
 end
 
 -- Edit slogan via Red network event "UpdateSlogan" (separate from sign text)
@@ -1985,6 +2118,7 @@ do
 			notify("Error", "Enter slogan text first!")
 		end
 	end)
+	createButton(tab, "Spy Sign Edit (F9)", o(), spySignEdit)
 	createButton(tab, "Discover Sign Method (F9)", o(), discoverSignMethod)
 
 	createSpacer(tab, o())
