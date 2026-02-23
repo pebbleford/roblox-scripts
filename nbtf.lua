@@ -207,6 +207,26 @@ local antiKickActive = false
 local antiRagdollActive = false
 local autoRejoinActive = false
 
+-- New feature states
+local killAuraActive = false
+local triggerBotActive = false
+local antiAimActive = false
+local bunnyHopActive = false
+local tpToMouseActive = false
+local longJumpActive = false
+local invisibleActive = false
+local tracersActive = false
+local fovCircleActive = false
+local crosshairActive = false
+local itemEspActive = false
+local chatSpyActive = false
+local joinNotifyActive = false
+local autoRespawnActive = false
+local orbitActive = false
+local attachActive = false
+local noFogActive = false
+local freecamActive = false
+
 local selectedWeapon = nil -- nil = auto-detect
 
 local targetPart = "Head" -- Head, HumanoidRootPart
@@ -219,6 +239,13 @@ local hitboxSize = 10
 local gravityValue = 196.2
 local windowVisible = true
 local activeTab = "Aim"
+local killAuraRange = 40
+local triggerBotDelay = 0.1
+local longJumpPower = 150
+local orbitRadius = 15
+local orbitSpeed = 2
+local tpForwardDist = 50
+local savedPositions = {} -- {name = CFrame}
 
 -- Connections / refs
 local flyConnection = nil
@@ -239,6 +266,22 @@ local espHighlights = {}
 local spectateTarget = nil
 local antiRagdollConnection = nil
 local killAllDelay = 0.3
+local killAuraConnection = nil
+local triggerBotConnection = nil
+local antiAimConnection = nil
+local bunnyHopConnection = nil
+local tracerLines = {}
+local fovCircleDrawing = nil
+local crosshairDrawing = nil
+local itemEspHighlights = {}
+local chatSpyConnection = nil
+local joinNotifyConnections = {}
+local orbitConnection = nil
+local orbitTarget = nil
+local attachConnection = nil
+local attachTarget = nil
+local freecamConnection = nil
+local freecamCF = nil
 
 -- ===================== HELPERS =====================
 local function getRoot()
@@ -412,6 +455,553 @@ end
 
 local function getDirection(origin, targetPos)
 	return (targetPos - origin).Unit * 1000
+end
+
+-- ===================== KILL AURA =====================
+-- Auto-kills any enemy within range without aiming
+local function startKillAura()
+	killAuraConnection = RunService.Heartbeat:Connect(function()
+		if not killAuraActive then return end
+		pcall(function()
+			local hrp = getRoot()
+			if not hrp then return end
+			local gun = findGunInBackpack()
+			if not gun then return end
+			equipGun(gun)
+
+			for _, player in ipairs(Players:GetPlayers()) do
+				if isEnemy(player) and isAlive(player) then
+					local head = player.Character and player.Character:FindFirstChild("Head")
+					if head and (head.Position - hrp.Position).Magnitude <= killAuraRange then
+						fireWeaponHit(player, gun)
+					end
+				end
+			end
+		end)
+	end)
+end
+
+local function stopKillAura()
+	if killAuraConnection then killAuraConnection:Disconnect() killAuraConnection = nil end
+end
+
+-- ===================== TRIGGER BOT =====================
+-- Auto-fires when crosshair is on an enemy
+local function startTriggerBot()
+	triggerBotConnection = RunService.Heartbeat:Connect(function()
+		if not triggerBotActive then return end
+		pcall(function()
+			local mouse = LocalPlayer:GetMouse()
+			local target = mouse.Target
+			if not target then return end
+
+			-- Check if mouse target belongs to an enemy
+			local model = target:FindFirstAncestorOfClass("Model")
+			if not model then return end
+			local targetPlayer = Players:GetPlayerFromCharacter(model)
+			if not targetPlayer or not isEnemy(targetPlayer) then return end
+
+			local gun = findGunInBackpack()
+			if gun then
+				equipGun(gun)
+				fireWeaponHit(targetPlayer, gun)
+			end
+		end)
+		task.wait(triggerBotDelay)
+	end)
+end
+
+local function stopTriggerBot()
+	if triggerBotConnection then triggerBotConnection:Disconnect() triggerBotConnection = nil end
+end
+
+-- ===================== ANTI-AIM =====================
+-- Spins character rapidly to make it harder to hit
+local function startAntiAim()
+	antiAimConnection = RunService.Heartbeat:Connect(function()
+		if not antiAimActive then return end
+		pcall(function()
+			local hrp = getRoot()
+			if hrp then
+				hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(30), 0)
+			end
+		end)
+	end)
+end
+
+local function stopAntiAim()
+	if antiAimConnection then antiAimConnection:Disconnect() antiAimConnection = nil end
+end
+
+-- ===================== BUNNY HOP =====================
+-- Auto-jumps while moving for speed
+local function startBunnyHop()
+	bunnyHopConnection = RunService.Heartbeat:Connect(function()
+		if not bunnyHopActive then return end
+		pcall(function()
+			local hum = getHumanoid()
+			if hum and hum.MoveDirection.Magnitude > 0 then
+				if hum.FloorMaterial ~= Enum.Material.Air then
+					hum:ChangeState(Enum.HumanoidStateType.Jumping)
+				end
+			end
+		end)
+	end)
+end
+
+local function stopBunnyHop()
+	if bunnyHopConnection then bunnyHopConnection:Disconnect() bunnyHopConnection = nil end
+end
+
+-- ===================== LONG JUMP =====================
+local function doLongJump()
+	pcall(function()
+		local hrp = getRoot()
+		local hum = getHumanoid()
+		if not hrp or not hum then return end
+		hum:ChangeState(Enum.HumanoidStateType.Jumping)
+		task.wait(0.1)
+		local bv = Instance.new("BodyVelocity")
+		bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+		bv.Velocity = hrp.CFrame.LookVector * longJumpPower + Vector3.new(0, longJumpPower * 0.3, 0)
+		bv.P = 9000
+		bv.Parent = hrp
+		task.delay(0.3, function() pcall(function() bv:Destroy() end) end)
+	end)
+end
+
+-- ===================== TP FORWARD =====================
+local function tpForward()
+	pcall(function()
+		local hrp = getRoot()
+		local char = LocalPlayer.Character
+		if hrp and char then
+			char:PivotTo(hrp.CFrame + hrp.CFrame.LookVector * tpForwardDist)
+			notify("TP", "Teleported " .. tpForwardDist .. " studs forward")
+		end
+	end)
+end
+
+-- ===================== TP TO MOUSE =====================
+local function tpToMouse()
+	pcall(function()
+		local mouse = LocalPlayer:GetMouse()
+		local char = LocalPlayer.Character
+		if char and mouse.Hit then
+			char:PivotTo(mouse.Hit + Vector3.new(0, 3, 0))
+		end
+	end)
+end
+
+-- ===================== SAVE / LOAD POSITION =====================
+local function savePosition(name)
+	local hrp = getRoot()
+	if hrp then
+		savedPositions[name] = hrp.CFrame
+		notify("Saved", "Position '" .. name .. "' saved!")
+	end
+end
+
+local function loadPosition(name)
+	local cf = savedPositions[name]
+	if cf then
+		local char = LocalPlayer.Character
+		if char then
+			char:PivotTo(cf)
+			notify("Loaded", "Teleported to '" .. name .. "'")
+		end
+	else
+		notify("Error", "No saved position '" .. name .. "'")
+	end
+end
+
+-- ===================== INVISIBLE MODE =====================
+local function startInvisible()
+	pcall(function()
+		local char = LocalPlayer.Character
+		if not char then return end
+		for _, part in ipairs(char:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.Transparency = 1
+			elseif part:IsA("Decal") or part:IsA("Texture") then
+				part.Transparency = 1
+			end
+		end
+		local face = char:FindFirstChild("Head") and char.Head:FindFirstChildOfClass("Decal")
+		if face then face.Transparency = 1 end
+		notify("Invisible", "You are now invisible (client-side)")
+	end)
+end
+
+local function stopInvisible()
+	pcall(function()
+		local char = LocalPlayer.Character
+		if not char then return end
+		for _, part in ipairs(char:GetDescendants()) do
+			if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+				part.Transparency = 0
+			elseif part:IsA("Decal") or part:IsA("Texture") then
+				part.Transparency = 0
+			end
+		end
+		notify("Invisible", "Visibility restored")
+	end)
+end
+
+-- ===================== TRACERS =====================
+local function clearTracers()
+	for _, line in pairs(tracerLines) do pcall(function() line:Remove() end) end
+	tracerLines = {}
+end
+
+local function updateTracers()
+	clearTracers()
+	if not tracersActive then return end
+	pcall(function()
+		if not Drawing then return end -- Drawing API required
+		local hrp = getRoot()
+		for _, player in ipairs(Players:GetPlayers()) do
+			if isEnemy(player) and isAlive(player) then
+				local pHRP = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+				if pHRP then
+					local screenPos, onScreen = camera:WorldToViewportPoint(pHRP.Position)
+					if onScreen then
+						local line = Drawing.new("Line")
+						line.From = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y)
+						line.To = Vector2.new(screenPos.X, screenPos.Y)
+						line.Color = Color3.fromRGB(255, 165, 0)
+						line.Thickness = 1.5
+						line.Transparency = 1
+						line.Visible = true
+						table.insert(tracerLines, line)
+					end
+				end
+			end
+		end
+	end)
+end
+
+local function startTracers()
+	task.spawn(function()
+		while tracersActive do updateTracers() task.wait(0.05) end
+		clearTracers()
+	end)
+end
+
+-- ===================== FOV CIRCLE =====================
+local function createFOVCircle()
+	pcall(function()
+		if not Drawing then return end
+		if fovCircleDrawing then fovCircleDrawing:Remove() end
+		fovCircleDrawing = Drawing.new("Circle")
+		fovCircleDrawing.Position = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+		fovCircleDrawing.Radius = fovRadius
+		fovCircleDrawing.Color = Color3.fromRGB(255, 165, 0)
+		fovCircleDrawing.Thickness = 1.5
+		fovCircleDrawing.Filled = false
+		fovCircleDrawing.Transparency = 0.7
+		fovCircleDrawing.Visible = true
+	end)
+end
+
+local function updateFOVCircle()
+	pcall(function()
+		if fovCircleDrawing then
+			fovCircleDrawing.Position = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+			fovCircleDrawing.Radius = fovRadius
+			fovCircleDrawing.Visible = fovCircleActive
+		end
+	end)
+end
+
+local function removeFOVCircle()
+	pcall(function() if fovCircleDrawing then fovCircleDrawing:Remove() fovCircleDrawing = nil end end)
+end
+
+-- ===================== CROSSHAIR =====================
+local crosshairLines = {}
+
+local function createCrosshair()
+	pcall(function()
+		if not Drawing then return end
+		for _, l in pairs(crosshairLines) do pcall(function() l:Remove() end) end
+		crosshairLines = {}
+		local cx = camera.ViewportSize.X / 2
+		local cy = camera.ViewportSize.Y / 2
+		local gap = 4
+		local size = 12
+		local color = Color3.fromRGB(0, 255, 0)
+
+		for _, offset in ipairs({
+			{Vector2.new(cx - size, cy), Vector2.new(cx - gap, cy)},   -- left
+			{Vector2.new(cx + gap, cy), Vector2.new(cx + size, cy)},   -- right
+			{Vector2.new(cx, cy - size), Vector2.new(cx, cy - gap)},   -- top
+			{Vector2.new(cx, cy + gap), Vector2.new(cx, cy + size)},   -- bottom
+		}) do
+			local line = Drawing.new("Line")
+			line.From = offset[1]
+			line.To = offset[2]
+			line.Color = color
+			line.Thickness = 2
+			line.Visible = true
+			table.insert(crosshairLines, line)
+		end
+	end)
+end
+
+local function removeCrosshair()
+	for _, l in pairs(crosshairLines) do pcall(function() l:Remove() end) end
+	crosshairLines = {}
+end
+
+-- ===================== ITEM ESP =====================
+local function clearItemESP()
+	for _, h in pairs(itemEspHighlights) do pcall(function() h:Destroy() end) end
+	itemEspHighlights = {}
+end
+
+local function updateItemESP()
+	clearItemESP()
+	if not itemEspActive then return end
+	pcall(function()
+		-- Search workspace for dropped tools/weapons
+		for _, obj in ipairs(workspace:GetChildren()) do
+			pcall(function()
+				local isTool = obj:IsA("Tool") or (obj:IsA("Model") and obj:FindFirstChildOfClass("Tool"))
+				local isWeapon = false
+				if not isTool then
+					local name = obj.Name:lower()
+					isWeapon = name:find("gun") or name:find("weapon") or name:find("rifle") or
+						name:find("pistol") or name:find("sword") or name:find("knife") or
+						name:find("ammo") or name:find("crate") or name:find("pickup")
+				end
+				if (isTool or isWeapon) and not Players:GetPlayerFromCharacter(obj) then
+					local part = obj:IsA("BasePart") and obj or obj:FindFirstChildWhichIsA("BasePart")
+					if part then
+						local hl = Instance.new("Highlight")
+						hl.Name = "ItemESP"
+						hl.FillColor = Color3.fromRGB(0, 255, 128)
+						hl.FillTransparency = 0.5
+						hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+						hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+						hl.Parent = obj
+						table.insert(itemEspHighlights, hl)
+
+						local bb = Instance.new("BillboardGui")
+						bb.Name = "ItemESP_BB"
+						bb.AlwaysOnTop = true
+						bb.Size = UDim2.new(3, 0, 0.5, 0)
+						bb.StudsOffset = Vector3.new(0, 2, 0)
+						bb.Adornee = part
+						bb.Parent = obj
+						table.insert(itemEspHighlights, bb)
+
+						local lbl = Instance.new("TextLabel")
+						lbl.Text = obj.Name
+						lbl.TextColor3 = Color3.fromRGB(0, 255, 128)
+						lbl.TextStrokeTransparency = 0
+						lbl.TextSize = 11
+						lbl.Font = Enum.Font.GothamBold
+						lbl.BackgroundTransparency = 1
+						lbl.Size = UDim2.new(1, 0, 1, 0)
+						lbl.Parent = bb
+					end
+				end
+			end)
+		end
+	end)
+end
+
+local function startItemESP()
+	task.spawn(function()
+		while itemEspActive do updateItemESP() task.wait(3) end
+		clearItemESP()
+	end)
+end
+
+-- ===================== CHAT SPY =====================
+local function startChatSpy()
+	chatSpyActive = true
+	pcall(function()
+		local TextChatService = game:GetService("TextChatService")
+		if TextChatService then
+			chatSpyConnection = TextChatService.MessageReceived:Connect(function(message)
+				if not chatSpyActive then return end
+				pcall(function()
+					local sender = message.TextSource
+					if sender then
+						local player = Players:GetPlayerByUserId(sender.UserId)
+						local name = player and player.DisplayName or "Unknown"
+						if player ~= LocalPlayer then
+							print("[CHAT SPY] " .. name .. ": " .. message.Text)
+						end
+					end
+				end)
+			end)
+		end
+	end)
+	notify("Chat Spy", "Logging all chat to F9")
+end
+
+local function stopChatSpy()
+	chatSpyActive = false
+	if chatSpyConnection then pcall(function() chatSpyConnection:Disconnect() end) chatSpyConnection = nil end
+end
+
+-- ===================== PLAYER JOIN/LEAVE NOTIFICATIONS =====================
+local function startJoinNotify()
+	joinNotifyActive = true
+	local joinConn = Players.PlayerAdded:Connect(function(player)
+		if joinNotifyActive then
+			notify("Joined", player.DisplayName .. " (@" .. player.Name .. ") joined")
+			print("[JOIN] " .. player.DisplayName .. " (@" .. player.Name .. ") joined the server")
+		end
+	end)
+	local leaveConn = Players.PlayerRemoving:Connect(function(player)
+		if joinNotifyActive then
+			notify("Left", player.DisplayName .. " left the server")
+			print("[LEAVE] " .. player.DisplayName .. " (@" .. player.Name .. ") left the server")
+		end
+	end)
+	table.insert(joinNotifyConnections, joinConn)
+	table.insert(joinNotifyConnections, leaveConn)
+end
+
+local function stopJoinNotify()
+	joinNotifyActive = false
+	for _, conn in ipairs(joinNotifyConnections) do pcall(function() conn:Disconnect() end) end
+	joinNotifyConnections = {}
+end
+
+-- ===================== AUTO RESPAWN =====================
+local function setupAutoRespawn()
+	LocalPlayer.CharacterAdded:Connect(function(char)
+		if not autoRespawnActive then return end
+		char:WaitForChild("Humanoid").Died:Connect(function()
+			if autoRespawnActive then
+				task.wait(1)
+				pcall(function()
+					-- Try to click respawn button
+					local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+					if playerGui then
+						for _, gui in ipairs(playerGui:GetDescendants()) do
+							pcall(function()
+								if (gui:IsA("TextButton") or gui:IsA("ImageButton")) then
+									local txt = gui.Text and gui.Text:lower() or ""
+									if txt:find("respawn") or txt:find("deploy") or txt:find("spawn") then
+										gui.MouseButton1Click:Fire()
+									end
+								end
+							end)
+						end
+					end
+					-- Fallback: just load character
+					task.wait(2)
+					pcall(function() LocalPlayer:LoadCharacter() end)
+				end)
+			end
+		end)
+	end)
+end
+
+-- ===================== ORBIT PLAYER =====================
+local function startOrbit(targetPlayer)
+	orbitTarget = targetPlayer
+	orbitActive = true
+	local angle = 0
+	orbitConnection = RunService.Heartbeat:Connect(function()
+		if not orbitActive or not orbitTarget then return end
+		pcall(function()
+			local theirHRP = orbitTarget.Character and orbitTarget.Character:FindFirstChild("HumanoidRootPart")
+			local char = LocalPlayer.Character
+			if not theirHRP or not char then return end
+			angle = angle + orbitSpeed * 0.03
+			local offset = Vector3.new(math.cos(angle) * orbitRadius, 0, math.sin(angle) * orbitRadius)
+			char:PivotTo(CFrame.new(theirHRP.Position + offset, theirHRP.Position))
+		end)
+	end)
+end
+
+local function stopOrbit()
+	orbitActive = false
+	orbitTarget = nil
+	if orbitConnection then orbitConnection:Disconnect() orbitConnection = nil end
+end
+
+-- ===================== ATTACH TO PLAYER =====================
+local function startAttach(targetPlayer)
+	attachTarget = targetPlayer
+	attachActive = true
+	attachConnection = RunService.Heartbeat:Connect(function()
+		if not attachActive or not attachTarget then return end
+		pcall(function()
+			local theirHRP = attachTarget.Character and attachTarget.Character:FindFirstChild("HumanoidRootPart")
+			local char = LocalPlayer.Character
+			if not theirHRP or not char then return end
+			char:PivotTo(theirHRP.CFrame * CFrame.new(0, 0, -5))
+		end)
+	end)
+end
+
+local function stopAttach()
+	attachActive = false
+	attachTarget = nil
+	if attachConnection then attachConnection:Disconnect() attachConnection = nil end
+end
+
+-- ===================== FREECAM =====================
+local function startFreecam()
+	freecamActive = true
+	local hrp = getRoot()
+	freecamCF = hrp and hrp.CFrame or camera.CFrame
+	camera.CameraType = Enum.CameraType.Scriptable
+
+	freecamConnection = RunService.RenderStepped:Connect(function()
+		if not freecamActive then return end
+		pcall(function()
+			local speed = flySpeed * 0.5
+			local moveVec = Vector3.zero
+			local camCF = camera.CFrame
+			if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveVec = moveVec + camCF.LookVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveVec = moveVec - camCF.LookVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveVec = moveVec - camCF.RightVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveVec = moveVec + camCF.RightVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveVec = moveVec + Vector3.new(0, 1, 0) end
+			if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveVec = moveVec - Vector3.new(0, 1, 0) end
+			if moveVec.Magnitude > 0 then
+				freecamCF = CFrame.new(freecamCF.Position + moveVec.Unit * speed * 0.016) * (camCF - camCF.Position)
+			end
+			camera.CFrame = freecamCF
+		end)
+	end)
+end
+
+local function stopFreecam()
+	freecamActive = false
+	if freecamConnection then freecamConnection:Disconnect() freecamConnection = nil end
+	pcall(function() camera.CameraType = Enum.CameraType.Custom end)
+end
+
+-- ===================== NO FOG =====================
+local savedFog = nil
+local function enableNoFog()
+	pcall(function()
+		local Lighting = game:GetService("Lighting")
+		savedFog = {FogEnd = Lighting.FogEnd, FogStart = Lighting.FogStart, FogColor = Lighting.FogColor}
+		Lighting.FogEnd = 9999999
+		Lighting.FogStart = 9999999
+	end)
+end
+
+local function disableNoFog()
+	pcall(function()
+		if savedFog then
+			local Lighting = game:GetService("Lighting")
+			Lighting.FogEnd = savedFog.FogEnd
+			Lighting.FogStart = savedFog.FogStart
+			Lighting.FogColor = savedFog.FogColor
+		end
+	end)
 end
 
 -- ===================== SILENT AIM =====================
@@ -1670,7 +2260,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "Synapse X The Revival - NBTF Hub v3.0"
+titleText.Text = "Synapse X The Revival - NBTF Hub v4.0"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 12
@@ -1718,18 +2308,18 @@ tabLayout.FillDirection = Enum.FillDirection.Horizontal
 tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
 tabLayout.Parent = tabBar
 
-local tabNames = {"Aim", "Combat", "Movement", "Visuals", "Teleport", "Players", "Settings"}
+local tabNames = {"Aim", "Combat", "Movement", "Visuals", "Teleport", "Players", "Misc", "Settings"}
 local tabButtons = {}
 local tabFrames = {}
 
 for i, name in ipairs(tabNames) do
 	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(0, 80, 1, 0)
+	btn.Size = UDim2.new(0, 70, 1, 0)
 	btn.BackgroundTransparency = 1
 	btn.Text = name
 	btn.TextColor3 = COLORS.textSecondary
 	btn.Font = Enum.Font.GothamMedium
-	btn.TextSize = 11
+	btn.TextSize = 10
 	btn.LayoutOrder = i
 	btn.Parent = tabBar
 	tabButtons[name] = btn
@@ -2052,6 +2642,41 @@ do
 		makeWeaponBtn(gunName, i + 1)
 	end
 	updateWeaponHighlight()
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Kill Aura", o())
+	createToggle(tab, "Kill Aura (Auto-Kill Nearby Enemies)", o(), function(on)
+		killAuraActive = on
+		if on then startKillAura() else stopKillAura() end
+	end)
+	createSlider(tab, "Kill Aura Range (studs)", 10, 100, killAuraRange, o(), function(val) killAuraRange = val end)
+	createInfoLabel(tab, "Auto-fires WeaponHit at ALL enemies within range", o())
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Trigger Bot", o())
+	createToggle(tab, "Trigger Bot (Auto-Fire on Crosshair)", o(), function(on)
+		triggerBotActive = on
+		if on then startTriggerBot() else stopTriggerBot() end
+	end)
+	createSlider(tab, "Trigger Delay (x100 ms)", 1, 50, math.floor(triggerBotDelay * 100), o(), function(val)
+		triggerBotDelay = val / 100
+	end)
+	createInfoLabel(tab, "Fires when your crosshair is on an enemy player", o())
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Target Part", o())
+	createButton(tab, "Target: Head (Current: " .. targetPart .. ")", o(), function()
+		targetPart = "Head"
+		notify("Target", "Targeting Head")
+	end)
+	createButton(tab, "Target: Torso (HumanoidRootPart)", o(), function()
+		targetPart = "HumanoidRootPart"
+		notify("Target", "Targeting Torso")
+	end)
+	createInfoLabel(tab, "Head = more damage, Torso = easier to hit", o())
 end
 
 -- ===================== BUILD COMBAT TAB =====================
@@ -2518,6 +3143,35 @@ do
 		end
 	end)
 	createInfoLabel(tab, "Sends via TextChatService or legacy SayMessageRequest", o())
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Anti-Aim", o())
+	createToggle(tab, "Anti-Aim (Spin to Dodge)", o(), function(on)
+		antiAimActive = on
+		if on then startAntiAim() else stopAntiAim() end
+	end)
+	createInfoLabel(tab, "Rapidly spins your character to make you harder to hit", o())
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Quick Actions", o())
+	createButton(tab, "Auto-Equip Best Gun", o(), function()
+		local gun = findGunInBackpack()
+		if gun then
+			equipGun(gun)
+			notify("Equip", "Equipped: " .. gun.Name)
+		else
+			notify("Error", "No gun found in backpack!")
+		end
+	end)
+	createButton(tab, "Drop All Weapons", o(), function()
+		pcall(function()
+			local hum = getHumanoid()
+			if hum then hum:UnequipTools() end
+		end)
+		notify("Weapons", "All weapons unequipped")
+	end)
 end
 
 -- ===================== BUILD MOVEMENT TAB =====================
@@ -2584,6 +3238,45 @@ do
 		if on then startAntiKick() end
 	end)
 	createInfoLabel(tab, "Disables Idled + hooks Kick method (needs executor support)", o())
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Advanced Movement", o())
+	createToggle(tab, "Bunny Hop (Auto-Jump While Moving)", o(), function(on)
+		bunnyHopActive = on
+		if on then startBunnyHop() else stopBunnyHop() end
+	end)
+	createButton(tab, "Long Jump (Launch Forward)", o(), function() doLongJump() end)
+	createSlider(tab, "Long Jump Power", 50, 400, longJumpPower, o(), function(val) longJumpPower = val end)
+	createInfoLabel(tab, "Bunny hop auto-jumps for max speed. Long jump launches you forward.", o())
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Teleport Tools", o())
+	createButton(tab, "TP Forward", o(), function() tpForward() end)
+	createSlider(tab, "TP Distance (studs)", 10, 200, tpForwardDist, o(), function(val) tpForwardDist = val end)
+	createButton(tab, "TP to Mouse Click Position", o(), function() tpToMouse() end)
+	createInfoLabel(tab, "TP Forward moves in facing direction. Mouse TP goes to cursor.", o())
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Camera", o())
+	createToggle(tab, "Freecam (Detach Camera)", o(), function(on)
+		freecamActive = on
+		if on then startFreecam() else stopFreecam() end
+	end)
+	createInfoLabel(tab, "WASD + Space/Shift to move camera freely. Character stays still.", o())
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Saved Positions", o())
+	createButton(tab, "Save Current Position (Slot 1)", o(), function() savePosition("slot1") end)
+	createButton(tab, "Save Current Position (Slot 2)", o(), function() savePosition("slot2") end)
+	createButton(tab, "Save Current Position (Slot 3)", o(), function() savePosition("slot3") end)
+	createButton(tab, "Load Position (Slot 1)", o(), function() loadPosition("slot1") end)
+	createButton(tab, "Load Position (Slot 2)", o(), function() loadPosition("slot2") end)
+	createButton(tab, "Load Position (Slot 3)", o(), function() loadPosition("slot3") end)
+	createInfoLabel(tab, "Save your position and teleport back anytime", o())
 end
 
 -- ===================== BUILD VISUALS TAB =====================
@@ -2607,6 +3300,53 @@ do
 		if on then enableFullbright() else disableFullbright() end
 	end)
 	createInfoLabel(tab, "Max brightness, no fog, no shadows", o())
+	createToggle(tab, "No Fog (Remove Fog Only)", o(), function(on)
+		noFogActive = on
+		if on then enableNoFog() else disableNoFog() end
+	end)
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Overlays (Requires Drawing API)", o())
+	createToggle(tab, "Tracers (Lines to Enemies)", o(), function(on)
+		tracersActive = on
+		if on then startTracers() end
+	end)
+	createToggle(tab, "FOV Circle (Show Aim FOV)", o(), function(on)
+		fovCircleActive = on
+		if on then
+			createFOVCircle()
+			task.spawn(function()
+				while fovCircleActive do updateFOVCircle() task.wait(0.03) end
+				removeFOVCircle()
+			end)
+		else
+			removeFOVCircle()
+		end
+	end)
+	createToggle(tab, "Crosshair Overlay", o(), function(on)
+		crosshairActive = on
+		if on then createCrosshair() else removeCrosshair() end
+	end)
+	createInfoLabel(tab, "Tracers/FOV/Crosshair need Drawing API (most executors)", o())
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Item ESP", o())
+	createToggle(tab, "Item / Weapon ESP (Ground Items)", o(), function(on)
+		itemEspActive = on
+		if on then startItemESP() else clearItemESP() end
+	end)
+	createInfoLabel(tab, "Highlights dropped weapons/tools/crates on the ground", o())
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Character", o())
+	createToggle(tab, "Invisible (Client-Side)", o(), function(on)
+		invisibleActive = on
+		if on then startInvisible() else stopInvisible() end
+	end)
+	createInfoLabel(tab, "Makes your character invisible locally (others still see you)", o())
 end
 
 -- ===================== BUILD TELEPORT TAB =====================
@@ -3038,6 +3778,301 @@ do
 	createSpacer(tab, o())
 
 	createButton(tab, "Stop Spectating", o(), unspectate)
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Orbit / Follow", o())
+
+	-- Orbit player list
+	local orbitFrame = Instance.new("Frame")
+	orbitFrame.Size = UDim2.new(1, 0, 0, 0)
+	orbitFrame.AutomaticSize = Enum.AutomaticSize.Y
+	orbitFrame.BackgroundTransparency = 1
+	orbitFrame.LayoutOrder = o()
+	orbitFrame.Parent = tab
+	local orbitLayout = Instance.new("UIListLayout")
+	orbitLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	orbitLayout.Padding = UDim.new(0, 3)
+	orbitLayout.Parent = orbitFrame
+
+	local function refreshOrbitList()
+		for _, child in ipairs(orbitFrame:GetChildren()) do
+			if child:IsA("Frame") then child:Destroy() end
+		end
+		local idx = 0
+		for _, player in ipairs(Players:GetPlayers()) do
+			if player ~= LocalPlayer then
+				idx = idx + 1
+				local row = Instance.new("Frame")
+				row.Size = UDim2.new(1, 0, 0, 26)
+				row.BackgroundColor3 = COLORS.panel
+				row.BorderSizePixel = 0
+				row.LayoutOrder = idx
+				row.Parent = orbitFrame
+				addCorner(row, 4)
+
+				local lbl = Instance.new("TextLabel")
+				lbl.Size = UDim2.new(1, -120, 1, 0)
+				lbl.Position = UDim2.new(0, 8, 0, 0)
+				lbl.BackgroundTransparency = 1
+				lbl.Text = player.DisplayName
+				lbl.TextColor3 = COLORS.textPrimary
+				lbl.Font = Enum.Font.Gotham
+				lbl.TextSize = 10
+				lbl.TextXAlignment = Enum.TextXAlignment.Left
+				lbl.Parent = row
+
+				local orbitBtn = Instance.new("TextButton")
+				orbitBtn.Size = UDim2.new(0, 45, 0, 20)
+				orbitBtn.Position = UDim2.new(1, -112, 0.5, -10)
+				orbitBtn.BackgroundColor3 = COLORS.accent
+				orbitBtn.Text = "Orbit"
+				orbitBtn.TextColor3 = Color3.fromRGB(10, 10, 10)
+				orbitBtn.Font = Enum.Font.GothamBold
+				orbitBtn.TextSize = 9
+				orbitBtn.Parent = row
+				addCorner(orbitBtn, 4)
+				orbitBtn.MouseButton1Click:Connect(function()
+					stopOrbit()
+					stopAttach()
+					startOrbit(player)
+					notify("Orbit", "Orbiting " .. player.DisplayName)
+				end)
+
+				local followBtn = Instance.new("TextButton")
+				followBtn.Size = UDim2.new(0, 50, 0, 20)
+				followBtn.Position = UDim2.new(1, -60, 0.5, -10)
+				followBtn.BackgroundColor3 = COLORS.accent
+				followBtn.Text = "Follow"
+				followBtn.TextColor3 = Color3.fromRGB(10, 10, 10)
+				followBtn.Font = Enum.Font.GothamBold
+				followBtn.TextSize = 9
+				followBtn.Parent = row
+				addCorner(followBtn, 4)
+				followBtn.MouseButton1Click:Connect(function()
+					stopOrbit()
+					stopAttach()
+					startAttach(player)
+					notify("Follow", "Following " .. player.DisplayName)
+				end)
+			end
+		end
+	end
+
+	createButton(tab, "Refresh Orbit/Follow List", o(), refreshOrbitList)
+	createButton(tab, "Stop Orbit / Follow", o(), function()
+		stopOrbit()
+		stopAttach()
+		notify("Stopped", "No longer orbiting or following")
+	end)
+	createSlider(tab, "Orbit Radius (studs)", 5, 50, orbitRadius, o(), function(val) orbitRadius = val end)
+	createSlider(tab, "Orbit Speed", 1, 10, orbitSpeed, o(), function(val) orbitSpeed = val end)
+	createInfoLabel(tab, "Orbit circles around them. Follow stays behind them.", o())
+
+	refreshOrbitList()
+end
+
+-- ===================== BUILD MISC TAB =====================
+do
+	local tab = tabFrames["Misc"]
+	local n = 0
+	local function o() n = n + 1 return n end
+
+	createSectionLabel(tab, "Chat Spy", o())
+	createToggle(tab, "Chat Spy (Log All Chat to F9)", o(), function(on)
+		chatSpyActive = on
+		if on then startChatSpy() else stopChatSpy() end
+	end)
+	createInfoLabel(tab, "Logs all chat messages to F9 console", o())
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Join / Leave Notifications", o())
+	createToggle(tab, "Player Join/Leave Alerts", o(), function(on)
+		joinNotifyActive = on
+		if on then startJoinNotify() else stopJoinNotify() end
+	end)
+	createInfoLabel(tab, "Notification + F9 log when players join/leave", o())
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Auto Respawn", o())
+	createToggle(tab, "Auto Respawn on Death", o(), function(on)
+		autoRespawnActive = on
+		if on then
+			notify("Auto Respawn", "Will auto-respawn when you die")
+		end
+	end)
+	createInfoLabel(tab, "Clicks respawn button or loads character on death", o())
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Player Count", o())
+	local playerCountLabel = Instance.new("TextLabel")
+	playerCountLabel.Size = UDim2.new(1, 0, 0, 20)
+	playerCountLabel.BackgroundColor3 = COLORS.panel
+	playerCountLabel.BorderSizePixel = 0
+	playerCountLabel.Text = "Players: " .. #Players:GetPlayers() .. "/" .. Players.MaxPlayers
+	playerCountLabel.TextColor3 = COLORS.textPrimary
+	playerCountLabel.Font = Enum.Font.Gotham
+	playerCountLabel.TextSize = 11
+	playerCountLabel.LayoutOrder = o()
+	playerCountLabel.Parent = tab
+	addCorner(playerCountLabel, 5)
+
+	task.spawn(function()
+		while task.wait(5) do
+			pcall(function()
+				playerCountLabel.Text = "Players: " .. #Players:GetPlayers() .. "/" .. Players.MaxPlayers
+			end)
+		end
+	end)
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "FPS Display", o())
+	local fpsLabel = Instance.new("TextLabel")
+	fpsLabel.Size = UDim2.new(1, 0, 0, 20)
+	fpsLabel.BackgroundColor3 = COLORS.panel
+	fpsLabel.BorderSizePixel = 0
+	fpsLabel.Text = "FPS: --"
+	fpsLabel.TextColor3 = COLORS.success
+	fpsLabel.Font = Enum.Font.GothamBold
+	fpsLabel.TextSize = 12
+	fpsLabel.LayoutOrder = o()
+	fpsLabel.Parent = tab
+	addCorner(fpsLabel, 5)
+
+	task.spawn(function()
+		while task.wait(0.5) do
+			pcall(function()
+				local fps = math.floor(1 / RunService.RenderStepped:Wait())
+				fpsLabel.Text = "FPS: " .. fps
+				if fps >= 50 then
+					fpsLabel.TextColor3 = COLORS.success
+				elseif fps >= 30 then
+					fpsLabel.TextColor3 = COLORS.warning
+				else
+					fpsLabel.TextColor3 = COLORS.error
+				end
+			end)
+		end
+	end)
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Workspace Scanner", o())
+	createButton(tab, "Print All Teams (F9)", o(), function()
+		print("=== TEAMS ===")
+		pcall(function()
+			for _, team in ipairs(game:GetService("Teams"):GetTeams()) do
+				local count = #team:GetPlayers()
+				print("  [" .. team.Name .. "] Color: " .. tostring(team.TeamColor) .. " | " .. count .. " players")
+			end
+		end)
+		notify("Teams", "Printed to F9")
+	end)
+	createButton(tab, "Print All Sounds (F9)", o(), function()
+		print("=== SOUNDS IN WORKSPACE ===")
+		local count = 0
+		pcall(function()
+			for _, obj in ipairs(workspace:GetDescendants()) do
+				if obj:IsA("Sound") then
+					count = count + 1
+					print("  [Sound] " .. obj:GetFullName() .. " ID=" .. tostring(obj.SoundId) .. " Playing=" .. tostring(obj.Playing))
+				end
+			end
+		end)
+		print("=== " .. count .. " SOUNDS ===")
+		notify("Sounds", count .. " sounds found - F9")
+	end)
+	createButton(tab, "Print Leaderstats (F9)", o(), function()
+		print("=== YOUR LEADERSTATS ===")
+		pcall(function()
+			local ls = LocalPlayer:FindFirstChild("leaderstats")
+			if ls then
+				for _, stat in ipairs(ls:GetChildren()) do
+					print("  " .. stat.Name .. " = " .. tostring(stat.Value) .. " (" .. stat.ClassName .. ")")
+				end
+			else
+				print("  No leaderstats found")
+			end
+		end)
+		notify("Stats", "Printed to F9")
+	end)
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Fun", o())
+	createButton(tab, "Seizure Mode (Flash Colors)", o(), function()
+		task.spawn(function()
+			local Lighting = game:GetService("Lighting")
+			for i = 1, 30 do
+				Lighting.Ambient = Color3.fromRGB(math.random(0,255), math.random(0,255), math.random(0,255))
+				Lighting.OutdoorAmbient = Color3.fromRGB(math.random(0,255), math.random(0,255), math.random(0,255))
+				task.wait(0.1)
+			end
+			Lighting.Ambient = Color3.fromRGB(0, 0, 0)
+			Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
+		end)
+	end)
+	createButton(tab, "Tiny Character", o(), function()
+		pcall(function()
+			local char = LocalPlayer.Character
+			if char then
+				local hum = char:FindFirstChildOfClass("Humanoid")
+				if hum then
+					hum.HeadScale.Value = 0.5
+					hum.BodyDepthScale.Value = 0.5
+					hum.BodyWidthScale.Value = 0.5
+					hum.BodyHeightScale.Value = 0.5
+					notify("Fun", "Tiny mode!")
+				end
+			end
+		end)
+	end)
+	createButton(tab, "Giant Character", o(), function()
+		pcall(function()
+			local char = LocalPlayer.Character
+			if char then
+				local hum = char:FindFirstChildOfClass("Humanoid")
+				if hum then
+					hum.HeadScale.Value = 3
+					hum.BodyDepthScale.Value = 3
+					hum.BodyWidthScale.Value = 3
+					hum.BodyHeightScale.Value = 3
+					notify("Fun", "Giant mode!")
+				end
+			end
+		end)
+	end)
+	createButton(tab, "Normal Size", o(), function()
+		pcall(function()
+			local char = LocalPlayer.Character
+			if char then
+				local hum = char:FindFirstChildOfClass("Humanoid")
+				if hum then
+					hum.HeadScale.Value = 1
+					hum.BodyDepthScale.Value = 1
+					hum.BodyWidthScale.Value = 1
+					hum.BodyHeightScale.Value = 1
+					notify("Fun", "Normal size restored")
+				end
+			end
+		end)
+	end)
+	createButton(tab, "Dance (Emote)", o(), function()
+		pcall(function()
+			local hum = getHumanoid()
+			if hum then
+				local anim = Instance.new("Animation")
+				anim.AnimationId = "rbxassetid://507771019"
+				local track = hum:LoadAnimation(anim)
+				track:Play()
+				task.delay(5, function() track:Stop() end)
+			end
+		end)
+	end)
 end
 
 -- ===================== BUILD SETTINGS TAB =====================
@@ -3169,7 +4204,7 @@ do
 	createSpacer(tab, o())
 
 	createSectionLabel(tab, "About", o())
-	createInfoLabel(tab, "Synapse X The Revival - NBTF Hub v3.0", o())
+	createInfoLabel(tab, "Synapse X The Revival - NBTF Hub v4.0", o())
 	createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -3202,11 +4237,17 @@ LocalPlayer.CharacterAdded:Connect(function()
 	if antiRagdollActive then stopAntiRagdoll() task.wait(0.3) startAntiRagdoll() end
 	if infAmmoActive then modGuns() end
 	if noRecoilActive then modGuns() end
+	if bunnyHopActive then stopBunnyHop() task.wait(0.1) startBunnyHop() end
+	if antiAimActive then stopAntiAim() task.wait(0.1) startAntiAim() end
+	if invisibleActive then task.wait(0.5) startInvisible() end
 end)
 
+-- Setup auto respawn listener
+setupAutoRespawn()
+
 -- ===================== STARTUP =====================
-notify("SX NBTF v3.0", "Loaded! Right Shift to toggle")
-print("[SX NBTF v3.0] Synapse X The Revival - NBTF Hub v3.0")
-print("[SX NBTF v3.0] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Settings")
-print("[SX NBTF v3.0] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v3.0] Stealth mode active - configurable cooldowns in Settings")
+notify("SX NBTF v4.0", "Loaded! Right Shift to toggle")
+print("[SX NBTF v4.0] Synapse X The Revival - NBTF Hub v4.0")
+print("[SX NBTF v4.0] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v4.0] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v4.0] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
