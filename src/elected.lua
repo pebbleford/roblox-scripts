@@ -1053,209 +1053,131 @@ local function discoverSignMethod()
 		print(text)
 	end
 
-	L("=== SIGN DISCOVERY - FULL GAME SCAN ===")
-	local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+	L("=== SIGN DISCOVERY v2 - RED EVENT NAMES ===")
 
-	-- 1. List ALL RemoteEvents and RemoteFunctions in the game
-	L("\n--- ALL REMOTES IN GAME ---")
-	local remoteCount = 0
-	for _, desc in ipairs(game:GetDescendants()) do
-		pcall(function()
-			if desc:IsA("RemoteEvent") or desc:IsA("RemoteFunction") or desc:IsA("UnreliableRemoteEvent") then
-				remoteCount = remoteCount + 1
-				L("  [" .. desc.ClassName .. "] " .. desc:GetFullName())
-			end
-		end)
-	end
-	L("  Total remotes: " .. remoteCount)
-
-	-- 2. Check what's connected to sign ClickDetectors
-	L("\n--- SIGN CLICKDETECTOR CONNECTIONS ---")
-	local signs = findSigns(false)
-	L("  Found " .. #signs .. " signs total")
-	if #signs > 0 then
-		local firstSign = signs[1]
-		L("  Checking first sign: " .. firstSign:GetFullName())
-		for _, desc in ipairs(firstSign:GetDescendants()) do
-			if desc:IsA("ClickDetector") then
-				L("  ClickDetector: " .. desc:GetFullName() .. " MaxDist=" .. desc.MaxActivationDistance)
-				pcall(function()
-					if getconnections then
-						local conns = getconnections(desc.MouseClick)
-						L("  MouseClick connections: " .. #conns)
-						for i, conn in ipairs(conns) do
-							L("    [" .. i .. "] Function: " .. tostring(conn.Function))
-							pcall(function()
-								local info = getinfo and getinfo(conn.Function) or debug.getinfo(conn.Function)
-								if info then
-									L("      source: " .. tostring(info.source or info.short_src))
-									L("      line: " .. tostring(info.currentline or info.linedefined))
-								end
-							end)
-						end
-					else
-						L("  getconnections not available")
-					end
-				end)
-			end
-		end
-
-		-- 3. Check sign attributes
-		L("\n--- SIGN ATTRIBUTES ---")
-		for i = 1, math.min(3, #signs) do
-			local sign = signs[i]
-			L("  Sign: " .. sign:GetFullName())
+	-- 1. Decompile ALL game modules in ReplicatedFirst and find Network.Event("xxx") calls
+	L("\n--- ALL RED NETWORK EVENT NAMES (from ReplicatedFirst) ---")
+	local eventNames = {}
+	local repFirst = game:FindFirstChild("ReplicatedFirst")
+	if repFirst then
+		for _, desc in ipairs(repFirst:GetDescendants()) do
 			pcall(function()
-				local attrs = sign:GetAttributes()
-				for k, v in pairs(attrs) do
-					L("    [Attr] " .. k .. " = " .. tostring(v) .. " (" .. typeof(v) .. ")")
-				end
-			end)
-			for _, part in ipairs(sign:GetDescendants()) do
-				pcall(function()
-					if part:IsA("BasePart") then
-						local attrs = part:GetAttributes()
-						for k, v in pairs(attrs) do
-							L("    [Part " .. part.Name .. " Attr] " .. k .. " = " .. tostring(v) .. " (" .. typeof(v) .. ")")
-						end
-					end
-				end)
-			end
-		end
-	end
-
-	-- 4. Check SloganFrame details
-	L("\n--- SLOGANFRAME DETAILS ---")
-	if playerGui then
-		local gui = playerGui:FindFirstChild("Gui")
-		if gui then
-			local sloganFrame = gui:FindFirstChild("SloganFrame")
-			if sloganFrame then
-				L("  SloganFrame found! Visible=" .. tostring(sloganFrame.Visible))
-				for _, child in ipairs(sloganFrame:GetDescendants()) do
-					pcall(function()
-						local vis = ""
-						pcall(function() vis = " Visible=" .. tostring(child.Visible) end)
-						local txt = ""
-						pcall(function() txt = " Text='" .. child.Text:sub(1, 30) .. "'" end)
-						L("    " .. child.ClassName .. " " .. child.Name .. vis .. txt)
-					end)
-				end
-				local updateBtn = sloganFrame:FindFirstChild("UpdateButton")
-				if updateBtn then
-					L("  UpdateButton connections:")
-					pcall(function()
-						if getconnections then
-							local conns = getconnections(updateBtn.MouseButton1Click)
-							L("    MouseButton1Click: " .. #conns .. " connections")
-							for i, conn in ipairs(conns) do
-								L("    [" .. i .. "] " .. tostring(conn.Function))
-								pcall(function()
-									local info = getinfo and getinfo(conn.Function) or debug.getinfo(conn.Function)
-									if info then
-										L("      source: " .. tostring(info.source or info.short_src))
-									end
-								end)
-							end
-						else
-							L("    getconnections not available")
-						end
-					end)
-				end
-			else
-				L("  SloganFrame NOT FOUND in Gui")
-				L("  Gui children:")
-				for _, child in ipairs(gui:GetChildren()) do
-					L("    " .. child.ClassName .. " " .. child.Name)
-				end
-			end
-		else
-			L("  No 'Gui' in PlayerGui")
-		end
-	end
-
-	-- 5. Check ToolGui for sign editing
-	L("\n--- TOOLGUI SIGN ELEMENTS ---")
-	if playerGui then
-		local toolGui = playerGui:FindFirstChild("ToolGui")
-		if toolGui then
-			for _, desc in ipairs(toolGui:GetDescendants()) do
-				pcall(function()
-					local name = desc.Name:lower()
-					if name:find("sign") or name:find("slogan") or name:find("text") or name:find("edit") then
-						local txt = ""
-						pcall(function() txt = " Text='" .. desc.Text:sub(1, 40) .. "'" end)
-						local vis = ""
-						pcall(function() vis = " Visible=" .. tostring(desc.Visible) end)
-						L("  " .. desc.ClassName .. " " .. desc:GetFullName() .. vis .. txt)
-					end
-				end)
-			end
-		else
-			L("  No ToolGui found")
-		end
-	end
-
-	-- 6. Scan ModuleScripts for sign-related code
-	L("\n--- MODULES WITH 'SIGN' OR 'SLOGAN' ---")
-	local moduleCount = 0
-	for _, desc in ipairs(game:GetDescendants()) do
-		pcall(function()
-			if desc:IsA("ModuleScript") then
-				local name = desc.Name:lower()
-				if name:find("sign") or name:find("slogan") or name:find("banner") or name:find("lectern") then
-					moduleCount = moduleCount + 1
-					L("  [ModuleScript] " .. desc:GetFullName())
+				if desc:IsA("ModuleScript") then
 					pcall(function()
 						if decompile then
 							local src = decompile(desc)
 							if src then
-								for line in src:gmatch("[^\n]+") do
-									local ll = line:lower()
-									if ll:find("fire") or ll:find("remote") or ll:find("red") or ll:find("server") then
-										L("    >> " .. line:sub(1, 120))
+								-- Find all Network.Event("xxx") patterns
+								for eventName in src:gmatch('[Ee]vent%(%s*"([^"]+)"%s*%)') do
+									if not eventNames[eventName] then
+										eventNames[eventName] = desc:GetFullName()
+										L("  Event: \"" .. eventName .. "\" in " .. desc.Name)
+									end
+								end
+								-- Also find any SignTextBox or sign text references
+								if src:lower():find("signtext") or src:lower():find("sign_text") or src:lower():find("signtextbox") then
+									L("  ** SIGN TEXT REF in: " .. desc:GetFullName())
+									for line in src:gmatch("[^\n]+") do
+										if line:lower():find("signtext") or line:lower():find("sign_text") or line:lower():find("signtextbox") then
+											L("    >> " .. line:sub(1, 150))
+										end
 									end
 								end
 							end
 						end
 					end)
 				end
-			end
-		end)
+			end)
+		end
 	end
-	L("  Found " .. moduleCount .. " sign-related modules")
 
-	-- 7. Scan LocalScripts for sign code
-	L("\n--- LOCALSCRIPTS WITH 'SIGN' OR 'SLOGAN' ---")
-	local lsCount = 0
-	for _, desc in ipairs(game:GetDescendants()) do
-		pcall(function()
-			if desc:IsA("LocalScript") then
-				local name = desc.Name:lower()
-				if name:find("sign") or name:find("slogan") or name:find("banner") or name:find("build") then
-					lsCount = lsCount + 1
-					L("  [LocalScript] " .. desc:GetFullName())
+	-- 2. Also scan ReplicatedStorage.Shared for event names
+	L("\n--- ALL RED NETWORK EVENT NAMES (from Shared) ---")
+	local shared = ReplicatedStorage:FindFirstChild("Shared")
+	if shared then
+		for _, desc in ipairs(shared:GetDescendants()) do
+			pcall(function()
+				if desc:IsA("ModuleScript") then
 					pcall(function()
 						if decompile then
 							local src = decompile(desc)
-							if src and (src:lower():find("sign") or src:lower():find("slogan")) then
-								L("    (contains sign/slogan references)")
-								for line in src:gmatch("[^\n]+") do
-									local ll = line:lower()
-									if ll:find("sign") or ll:find("slogan") then
-										L("    >> " .. line:sub(1, 120))
+							if src then
+								for eventName in src:gmatch('[Ee]vent%(%s*"([^"]+)"%s*%)') do
+									if not eventNames[eventName] then
+										eventNames[eventName] = desc:GetFullName()
+										L("  Event: \"" .. eventName .. "\" in " .. desc.Name)
 									end
 								end
 							end
 						end
 					end)
 				end
+			end)
+		end
+	end
+
+	-- 3. Scan ServerScriptService if accessible
+	L("\n--- ALL RED NETWORK EVENT NAMES (from ServerScriptService) ---")
+	pcall(function()
+		local sss = game:GetService("ServerScriptService")
+		for _, desc in ipairs(sss:GetDescendants()) do
+			pcall(function()
+				if desc:IsA("ModuleScript") then
+					pcall(function()
+						if decompile then
+							local src = decompile(desc)
+							if src then
+								for eventName in src:gmatch('[Ee]vent%(%s*"([^"]+)"%s*%)') do
+									if not eventNames[eventName] then
+										eventNames[eventName] = desc:GetFullName()
+										L("  Event: \"" .. eventName .. "\" in " .. desc.Name)
+									end
+								end
+							end
+						end
+					end)
+				end
+			end)
+		end
+	end)
+
+	-- 4. Summary of all event names found
+	L("\n--- ALL EVENT NAMES SUMMARY ---")
+	local allNames = {}
+	for name, source in pairs(eventNames) do
+		table.insert(allNames, name)
+	end
+	table.sort(allNames)
+	for _, name in ipairs(allNames) do
+		L("  \"" .. name .. "\" -> " .. eventNames[name])
+	end
+	L("  Total unique events: " .. #allNames)
+
+	-- 5. Search ALL modules for SignTextBox references
+	L("\n--- SIGNTEXTBOX REFERENCES IN ALL MODULES ---")
+	for _, desc in ipairs(game:GetDescendants()) do
+		pcall(function()
+			if desc:IsA("ModuleScript") or desc:IsA("LocalScript") then
+				-- Skip CorePackages
+				if desc:GetFullName():find("CorePackages") then return end
+				pcall(function()
+					if decompile then
+						local src = decompile(desc)
+						if src and src:find("SignTextBox") then
+							L("  FOUND SignTextBox in: " .. desc:GetFullName())
+							for line in src:gmatch("[^\n]+") do
+								if line:find("SignTextBox") then
+									L("    >> " .. line:sub(1, 150))
+								end
+							end
+						end
+					end
+				end)
 			end
 		end)
 	end
-	L("  Found " .. lsCount .. " sign-related LocalScripts")
 
-	L("\n=== END SIGN DISCOVERY ===")
+	L("\n=== END SIGN DISCOVERY v2 ===")
 
 	-- Save to file so user can send it
 	pcall(function()
