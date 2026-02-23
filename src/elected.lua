@@ -739,65 +739,122 @@ local function interactWithSign(sign)
 	return interacted
 end
 
--- Find and fill the sign edit GUI that appeared in PlayerGui
+-- Click a GUI button reliably using firesignal or fallback
+local function clickButton(btn)
+	if not btn then return end
+	pcall(function()
+		if firesignal then
+			firesignal(btn.MouseButton1Click)
+		else
+			btn.MouseButton1Click:Fire()
+		end
+	end)
+end
+
+-- Fill the sign edit GUI that appeared in PlayerGui
+-- Game uses SloganFrame for signs/speakers and LecternFrame for lecterns
 local function fillSignEditGUI(newText)
-	local filled = false
 	local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
 	if not playerGui then return false end
 
-	-- Search for any visible TextBox that could be the sign editor
-	-- First, snapshot all TextBoxes BEFORE interaction so we can detect new ones
-	for _, gui in ipairs(playerGui:GetDescendants()) do
+	-- Method 1: SloganFrame (signs and speakers)
+	-- Path: PlayerGui.Gui.SloganFrame.SloganBox + UpdateButton
+	local gui = playerGui:FindFirstChild("Gui")
+	if gui then
+		local sloganFrame = gui:FindFirstChild("SloganFrame")
+		if sloganFrame then
+			local sloganBox = sloganFrame:FindFirstChild("SloganBox")
+			local updateBtn = sloganFrame:FindFirstChild("UpdateButton")
+			if sloganBox and sloganBox:IsA("TextBox") then
+				local visible = true
+				pcall(function() visible = sloganFrame.Visible end)
+				if visible then
+					print("[SX Elected] Found SloganFrame! Setting text...")
+					sloganBox.Text = newText
+					sloganBox:CaptureFocus()
+					task.wait(0.1)
+					sloganBox:ReleaseFocus(true)
+					task.wait(0.1)
+					if updateBtn then
+						print("[SX Elected] Clicking UpdateButton")
+						clickButton(updateBtn)
+					end
+					return true
+				end
+			end
+		end
+
+		-- Method 2: LecternFrame (lecterns/podiums)
+		-- Path: PlayerGui.Gui.LecternFrame.LecternFrame.TextBox
+		local lecternFrame = gui:FindFirstChild("LecternFrame")
+		if lecternFrame then
+			local innerFrame = lecternFrame:FindFirstChild("LecternFrame")
+			local textBox = innerFrame and innerFrame:FindFirstChild("TextBox")
+			if not textBox then
+				-- Search directly in LecternFrame
+				for _, desc in ipairs(lecternFrame:GetDescendants()) do
+					if desc:IsA("TextBox") then
+						textBox = desc
+						break
+					end
+				end
+			end
+			if textBox then
+				local visible = true
+				pcall(function() visible = lecternFrame.Visible end)
+				if visible then
+					print("[SX Elected] Found LecternFrame! Setting text...")
+					textBox.Text = newText
+					textBox:CaptureFocus()
+					task.wait(0.1)
+					textBox:ReleaseFocus(true)
+					task.wait(0.1)
+					-- Click any confirm-like button in LecternFrame
+					for _, desc in ipairs(lecternFrame:GetDescendants()) do
+						pcall(function()
+							if (desc:IsA("TextButton") or desc:IsA("ImageButton")) and desc.Visible then
+								local btnText = desc.Text:lower()
+								if btnText:find("save") or btnText:find("submit") or btnText:find("done")
+									or btnText:find("confirm") or btnText:find("update") or btnText:find("ok") then
+									clickButton(desc)
+								end
+							end
+						end)
+					end
+					return true
+				end
+			end
+		end
+	end
+
+	-- Method 3: Fallback - search for any visible sign-related TextBox
+	for _, desc in ipairs(playerGui:GetDescendants()) do
 		pcall(function()
-			if gui:IsA("TextBox") then
-				local isVisible = gui.Visible
-				local parent = gui.Parent
+			if desc:IsA("TextBox") and desc.Name:lower():find("sign") or
+				(desc:IsA("TextBox") and desc.Name:lower():find("slogan")) then
+				local visible = desc.Visible
+				local parent = desc.Parent
 				while parent and parent ~= playerGui do
 					pcall(function()
 						if parent:IsA("GuiObject") and not parent.Visible then
-							isVisible = false
+							visible = false
 						end
 					end)
 					parent = parent.Parent
 				end
-				if isVisible then
-					print("[SX Elected] Found TextBox: " .. gui:GetFullName() .. " Text='" .. gui.Text:sub(1,30) .. "'")
-					gui.Text = newText
-					gui:CaptureFocus()
+				if visible then
+					print("[SX Elected] Fallback: editing " .. desc:GetFullName())
+					desc.Text = newText
+					desc:CaptureFocus()
 					task.wait(0.1)
-					gui:ReleaseFocus(true)
-					filled = true
+					desc:ReleaseFocus(true)
+					return true
 				end
 			end
 		end)
 	end
 
-	-- Find and click Save/Submit/Done/Confirm buttons
-	if filled then
-		task.wait(0.15)
-		for _, gui in ipairs(playerGui:GetDescendants()) do
-			pcall(function()
-				if gui:IsA("TextButton") or gui:IsA("ImageButton") then
-					local btnText = ""
-					pcall(function() btnText = gui.Text:lower() end)
-					if btnText:find("save") or btnText:find("submit") or btnText:find("confirm")
-						or btnText:find("done") or btnText:find("ok") or btnText:find("apply")
-						or btnText:find("set") or btnText:find("update") or btnText:find("enter") then
-						print("[SX Elected] Clicking button: " .. gui:GetFullName() .. " '" .. gui.Text .. "'")
-						pcall(function()
-							if firesignal then
-								firesignal(gui.MouseButton1Click)
-							else
-								gui.MouseButton1Click:Fire()
-							end
-						end)
-					end
-				end
-			end)
-		end
-	end
-
-	return filled
+	return false
 end
 
 -- Scan all GUIs in PlayerGui for sign-related elements and print to F9
@@ -831,6 +888,31 @@ local function scanPlayerGUI()
 	notify("GUI Scan", textboxes .. " TextBoxes, " .. buttons .. " TextButtons - F9")
 end
 
+-- Wait for SloganFrame or LecternFrame to become visible after clicking a sign
+local function waitForSignGUI(timeout)
+	timeout = timeout or 2
+	local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+	if not playerGui then return false end
+	local gui = playerGui:FindFirstChild("Gui")
+	if not gui then return false end
+
+	local start = tick()
+	while tick() - start < timeout do
+		local sloganFrame = gui:FindFirstChild("SloganFrame")
+		if sloganFrame then
+			local ok, vis = pcall(function() return sloganFrame.Visible end)
+			if ok and vis then return true end
+		end
+		local lecternFrame = gui:FindFirstChild("LecternFrame")
+		if lecternFrame then
+			local ok, vis = pcall(function() return lecternFrame.Visible end)
+			if ok and vis then return true end
+		end
+		task.wait(0.05)
+	end
+	return false
+end
+
 local function editSignCore(signs, newText, label)
 	if #signs == 0 then
 		notify("Signs", "No signs found")
@@ -851,9 +933,9 @@ local function editSignCore(signs, newText, label)
 				local cf = getItemCFrame(sign)
 				if not cf then return end
 
-				-- TP close to the sign
+				-- TP close to the sign (within ClickDetector range)
 				char:PivotTo(cf + Vector3.new(0, 0, 3))
-				task.wait(0.15)
+				task.wait(0.2)
 
 				-- Point camera at sign
 				pcall(function()
@@ -861,39 +943,46 @@ local function editSignCore(signs, newText, label)
 				end)
 				task.wait(0.1)
 
-				-- Try all interaction methods
+				-- Fire ClickDetectors on the sign (this opens SloganFrame)
 				interactWithSign(sign)
-				task.wait(0.5)
 
-				-- Check if edit UI appeared
-				local ok = fillSignEditGUI(newText)
-				if ok then
-					count = count + 1
-					print("[SX Elected] Edited sign via UI: " .. sign:GetFullName())
-				else
-					-- Try Red event directly
-					local redOk = editSignViaRed(sign, newText)
-					if redOk then
+				-- Wait for SloganFrame/LecternFrame to appear
+				local guiAppeared = waitForSignGUI(1.5)
+
+				if guiAppeared then
+					task.wait(0.1)
+					local ok = fillSignEditGUI(newText)
+					if ok then
 						count = count + 1
-						print("[SX Elected] Fired Red events for sign: " .. sign:GetFullName())
+						print("[SX Elected] Edited sign via UI: " .. sign:GetFullName())
 					else
-						-- Last resort: click again with slight offset
-						char:PivotTo(cf + cf.LookVector * -2 + Vector3.new(0, 0, 0))
+						print("[SX Elected] GUI appeared but could not fill: " .. sign:GetFullName())
+					end
+				else
+					-- Retry: move closer and click again
+					char:PivotTo(cf + Vector3.new(0, 0, 1.5))
+					task.wait(0.15)
+					pcall(function() camera.CFrame = CFrame.lookAt(hrp.Position, cf.Position) end)
+					interactWithSign(sign)
+					local retry = waitForSignGUI(1.5)
+					if retry then
 						task.wait(0.1)
-						pcall(function() camera.CFrame = CFrame.lookAt(hrp.Position, cf.Position) end)
-						mouse1click()
-						task.wait(0.5)
 						if fillSignEditGUI(newText) then
 							count = count + 1
-						else
-							print("[SX Elected] Could not edit sign: " .. sign:GetFullName())
+							print("[SX Elected] Edited sign on retry: " .. sign:GetFullName())
 						end
+					else
+						-- Last resort: try Red event directly
+						editSignViaRed(sign, newText)
+						print("[SX Elected] Tried Red fallback for: " .. sign:GetFullName())
 					end
 				end
 
+				-- Close any open GUI before moving to next sign
+				task.wait(0.2)
 				char:PivotTo(savedCF)
 			end)
-			task.wait(0.5)
+			task.wait(0.3)
 		end
 		notify("Signs", "Edited " .. count .. "/" .. #signs .. " signs")
 	end)
