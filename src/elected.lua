@@ -624,10 +624,9 @@ local function findSignClickDetector(sign)
 	return nil
 end
 
--- Edit a single sign by triggering the game's own code path:
--- 1. Fire ClickDetector (BlockController sets up FocusLost handler on SignTextBox)
--- 2. Set SignTextBox.Text to new text
--- 3. Fire FocusLost signal (BlockController's handler fires EditSign remote for us)
+-- Edit a single sign by triggering the FocusLost handler on SignTextBox
+-- FocusLost connection already exists permanently (BlockController sets it up on sign creation)
+-- We just need to: set text -> trigger the handler function
 local function editSignText(sign, newText)
 	local stb = findSignTextBox(sign)
 	if not stb then
@@ -635,88 +634,48 @@ local function editSignText(sign, newText)
 		return false
 	end
 
-	local cd = findSignClickDetector(sign)
-	if not cd then
-		print("[SX Elected] No ClickDetector in: " .. sign:GetFullName())
-		return false
-	end
+	local edited = false
 
-	-- Check FocusLost connections BEFORE click
-	local connsBefore = 0
-	pcall(function()
-		if getconnections then
-			connsBefore = #getconnections(stb.FocusLost)
-		end
-	end)
-	print("[SX Elected] " .. sign.Name .. " FocusLost connections BEFORE: " .. connsBefore)
-
-	-- Step 1: Fire ClickDetector to trigger BlockController's click handler
-	local oldDist = cd.MaxActivationDistance
-	cd.MaxActivationDistance = 9999
-
-	pcall(function()
-		if fireclickdetector then
-			fireclickdetector(cd)
-			print("[SX Elected] fireclickdetector fired on " .. cd:GetFullName())
-		end
-	end)
-	pcall(function()
-		if firesignal then
-			firesignal(cd.MouseClick, LocalPlayer)
-			print("[SX Elected] firesignal MouseClick fired")
-		end
-	end)
-
-	cd.MaxActivationDistance = oldDist
-
-	-- Step 2: Wait for BlockController to set up FocusLost handler
-	task.wait(0.5)
-
-	-- Check FocusLost connections AFTER click
-	local connsAfter = 0
-	pcall(function()
-		if getconnections then
-			connsAfter = #getconnections(stb.FocusLost)
-		end
-	end)
-	print("[SX Elected] " .. sign.Name .. " FocusLost connections AFTER: " .. connsAfter)
-
-	-- Step 3: Set the text
-	stb.Text = newText
-	print("[SX Elected] Set SignTextBox.Text = '" .. newText:sub(1, 30) .. "'")
-
-	-- Step 4: Try ALL methods to trigger the edit
-
-	-- Method A: firesignal on FocusLost
-	pcall(function()
-		if firesignal then
-			firesignal(stb.FocusLost, true)
-			print("[SX Elected] Method A: firesignal FocusLost")
-		end
-	end)
-
-	-- Method B: Fire each FocusLost connection directly
+	-- Method 1: Get the FocusLost handler function and call it directly
+	-- Most reliable since firesignal doesn't exist on Xeno
 	pcall(function()
 		if getconnections then
 			local conns = getconnections(stb.FocusLost)
-			for ci, conn in ipairs(conns) do
-				pcall(function()
-					conn:Fire(true)
-					print("[SX Elected] Method B: conn[" .. ci .. "]:Fire(true)")
-				end)
+			print("[SX Elected] " .. sign.Name .. " has " .. #conns .. " FocusLost connections")
+			if #conns > 0 then
+				stb.Text = newText
+				local func = conns[1].Function
+				if func then
+					-- Call the handler: FocusLost fires with (enterPressed: bool)
+					local callOk, callErr = pcall(func, true)
+					if callOk then
+						edited = true
+						print("[SX Elected] Method 1 OK: called handler directly for " .. sign.Name)
+					else
+						print("[SX Elected] Method 1 FAIL: " .. tostring(callErr))
+					end
+				else
+					print("[SX Elected] Method 1: Function is nil")
+				end
 			end
 		end
 	end)
 
-	-- Method C: CaptureFocus then ReleaseFocus (natural way)
+	if edited then return true end
+
+	-- Method 2: CaptureFocus -> set text -> ReleaseFocus
+	-- Set text AFTER CaptureFocus so it doesn't get overwritten
 	pcall(function()
 		stb:CaptureFocus()
 		task.wait(0.15)
+		stb.Text = newText
+		task.wait(0.15)
 		stb:ReleaseFocus(true)
-		print("[SX Elected] Method C: CaptureFocus + ReleaseFocus")
+		edited = true
+		print("[SX Elected] Method 2: CaptureFocus -> text -> ReleaseFocus for " .. sign.Name)
 	end)
 
-	return true
+	return edited
 end
 
 -- Decompile the Network/Red modules to find event identifier mapping
@@ -793,39 +752,17 @@ local function editAllSigns(newText, ownerOnly)
 		return
 	end
 
-	-- Need to be near signs for ClickDetector to work
-	local char = LocalPlayer.Character
-	local hrp = getRoot()
-	if not char or not hrp then
-		notify("Signs", "No character")
-		return
-	end
-	local savedCF = hrp.CFrame
-
 	notify("Signs", "Editing " .. #signs .. " signs...")
-
-	task.spawn(function()
-		local count = 0
-		for i, sign in ipairs(signs) do
-			pcall(function()
-				-- TP to sign (need to be within ClickDetector range)
-				local cf = getItemCFrame(sign)
-				if cf then
-					char:PivotTo(CFrame.new(cf.Position + Vector3.new(0, 0, -3), cf.Position))
-					task.wait(0.15)
-				end
-
-				if editSignText(sign, newText) then
-					count = count + 1
-				end
-			end)
-			task.wait(0.5)
-		end
-
-		-- TP back
-		pcall(function() char:PivotTo(savedCF) end)
-		notify("Signs", "Edited " .. count .. "/" .. #signs .. " signs")
-	end)
+	local count = 0
+	for i, sign in ipairs(signs) do
+		pcall(function()
+			if editSignText(sign, newText) then
+				count = count + 1
+			end
+		end)
+		if i < #signs then task.wait(0.3) end
+	end
+	notify("Signs", "Edited " .. count .. "/" .. #signs .. " signs")
 end
 
 -- Edit slogan via Red network event "UpdateSlogan" (separate from sign text)
