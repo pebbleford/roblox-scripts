@@ -602,153 +602,145 @@ local function findSigns(ownerOnly)
 	return signs
 end
 
--- Get the inner Part of a sign block (the one with SignMesh or SurfaceGui)
--- Signs structure: Model "Sign" > Part "Sign" > MeshPart "SignMesh" > SurfaceGui > SignTextBox
--- The EditSign event expects the inner Part, not the outer Model
-local function getSignPart(signModel)
-	-- If this itself has SignMesh or SurfaceGui with SignTextBox, it's already the right part
-	local hasDirect = false
-	pcall(function()
-		if signModel:FindFirstChild("SignMesh") or signModel:FindFirstChild("SurfaceGui") then
-			hasDirect = true
+-- Find the SignTextBox inside a sign block
+-- Signs structure: Model > Part > SignMesh > SurfaceGui > SignTextBox
+-- or: Model > Part > SurfaceGui > SignTextBox
+local function findSignTextBox(sign)
+	for _, desc in ipairs(sign:GetDescendants()) do
+		if desc.Name == "SignTextBox" and desc:IsA("TextBox") then
+			return desc
 		end
-	end)
-	if hasDirect then return signModel end
-
-	-- Search children for the inner part
-	for _, child in ipairs(signModel:GetChildren()) do
-		pcall(function()
-			if child:IsA("BasePart") or child:IsA("Model") then
-				if child:FindFirstChild("SignMesh") or child:FindFirstChild("SurfaceGui") then
-					hasDirect = true
-					signModel = child
-				end
-			end
-		end)
-		if hasDirect then return signModel end
 	end
-
-	-- Fallback: return first BasePart child
-	for _, child in ipairs(signModel:GetChildren()) do
-		if child:IsA("BasePart") then return child end
-	end
-	return signModel
+	return nil
 end
 
--- Edit a single sign using the EditSign Red event
--- From BlockController: Network.Event("EditSign"):Client():Fire(block, text)
--- Red library packs: ReliableRedEvent:FireServer({["EditSign"] = {{block, text}}})
--- (outer array = batch of calls, inner array = args for one call)
+-- Find the ClickDetector inside a sign block
+local function findSignClickDetector(sign)
+	for _, desc in ipairs(sign:GetDescendants()) do
+		if desc:IsA("ClickDetector") then
+			return desc
+		end
+	end
+	return nil
+end
+
+-- Edit a single sign by triggering the game's own code path:
+-- 1. Fire ClickDetector (BlockController sets up FocusLost handler on SignTextBox)
+-- 2. Set SignTextBox.Text to new text
+-- 3. Fire FocusLost signal (BlockController's handler fires EditSign remote for us)
 local function editSignText(sign, newText)
-	if not RedEvent then
-		notify("Signs", "ReliableRedEvent not found!")
+	local stb = findSignTextBox(sign)
+	if not stb then
+		print("[SX Elected] No SignTextBox in: " .. sign:GetFullName())
 		return false
 	end
-	local signPart = getSignPart(sign)
-	local ok = false
 
-	-- Try format 1: double nested (Red batches calls as array of arg-arrays)
-	pcall(function()
-		RedEvent:FireServer({["EditSign"] = {{signPart, newText}}})
-		ok = true
-		print("[SX Elected] EditSign format1 (batch) for: " .. signPart:GetFullName())
-	end)
-
-	-- Try format 2: single array (in case Red doesn't batch)
-	pcall(function()
-		RedEvent:FireServer({["EditSign"] = {signPart, newText}})
-		print("[SX Elected] EditSign format2 (flat) for: " .. signPart:GetFullName())
-	end)
-
-	-- Try format 3: pass the outer Model in case server wants that
-	if signPart ~= sign then
-		pcall(function()
-			RedEvent:FireServer({["EditSign"] = {{sign, newText}}})
-			print("[SX Elected] EditSign format3 (model batch) for: " .. sign:GetFullName())
-		end)
-		pcall(function()
-			RedEvent:FireServer({["EditSign"] = {sign, newText}})
-			print("[SX Elected] EditSign format4 (model flat) for: " .. sign:GetFullName())
-		end)
+	local cd = findSignClickDetector(sign)
+	if not cd then
+		print("[SX Elected] No ClickDetector in: " .. sign:GetFullName())
+		return false
 	end
 
-	return ok
+	-- Step 1: Fire ClickDetector to trigger BlockController's click handler
+	-- This sets up the FocusLost connection on SignTextBox
+	local oldDist = cd.MaxActivationDistance
+	cd.MaxActivationDistance = 9999
+
+	pcall(function()
+		if fireclickdetector then
+			fireclickdetector(cd)
+		end
+	end)
+
+	cd.MaxActivationDistance = oldDist
+
+	-- Step 2: Wait for BlockController to set up FocusLost handler
+	task.wait(0.3)
+
+	-- Step 3: Set the text
+	stb.Text = newText
+
+	-- Step 4: Fire FocusLost to trigger BlockController's handler
+	-- FocusLost passes (enterPressed: bool) - we pass true
+	pcall(function()
+		if firesignal then
+			firesignal(stb.FocusLost, true)
+			print("[SX Elected] firesignal FocusLost for: " .. sign:GetFullName())
+		else
+			-- Fallback: CaptureFocus then ReleaseFocus
+			stb:CaptureFocus()
+			task.wait(0.1)
+			stb:ReleaseFocus(true)
+			print("[SX Elected] ReleaseFocus for: " .. sign:GetFullName())
+		end
+	end)
+
+	return true
 end
 
--- Spy on ReliableRedEvent to capture the real packet format
--- Click a sign manually, type text, and this will print exactly what gets sent
-local function spySignEdit()
-	if not RedEvent then
-		notify("Spy", "ReliableRedEvent not found!")
-		return
-	end
+-- Decompile the Network/Red modules to find event identifier mapping
+local function decompileNetworkModule()
+	print("[SX Elected] === DECOMPILE NETWORK MODULE ===")
+	local log = {}
+	local function L(t) table.insert(log, t) print(t) end
 
-	notify("Spy", "Monitoring for 30s - click a sign and edit it!")
-	print("[SX Elected] === SIGN EDIT SPY ACTIVE (30s) ===")
-	print("[SX Elected] Click a sign, type text, press Enter to capture the packet")
+	-- Try to decompile ReplicatedStorage.Shared.Network
+	local locations = {
+		{ReplicatedStorage, "Shared", "Network"},
+		{ReplicatedStorage, "Shared", "Red"},
+		{game:GetService("ReplicatedFirst"), "Shared", "Network"},
+		{game:GetService("ReplicatedFirst"), "Shared", "Red"},
+	}
 
-	local spyConn
-	spyConn = RedEvent.OnClientEvent:Connect(function(...)
-		local args = {...}
-		print("[SPY-IN] Received " .. #args .. " args")
-		for i, arg in ipairs(args) do
-			print("  arg[" .. i .. "] = " .. typeof(arg) .. ": " .. tostring(arg))
-			if typeof(arg) == "table" then
-				for k, v in pairs(arg) do
-					print("    [" .. tostring(k) .. "] = " .. typeof(v) .. ": " .. tostring(v))
-					if typeof(v) == "table" then
-						for k2, v2 in pairs(v) do
-							print("      [" .. tostring(k2) .. "] = " .. typeof(v2) .. ": " .. tostring(v2))
-							if typeof(v2) == "table" then
-								for k3, v3 in pairs(v2) do
-									print("        [" .. tostring(k3) .. "] = " .. typeof(v3) .. ": " .. tostring(v3))
-								end
-							end
+	for _, path in ipairs(locations) do
+		pcall(function()
+			local current = path[1]
+			for i = 2, #path do
+				current = current:FindFirstChild(path[i])
+				if not current then return end
+			end
+			if current and current:IsA("ModuleScript") and decompile then
+				L("\n--- " .. current:GetFullName() .. " ---")
+				local src = decompile(current)
+				if src then
+					local lines = 0
+					for line in src:gmatch("[^\n]+") do
+						lines = lines + 1
+						if lines <= 100 then
+							L(line)
 						end
 					end
+					if lines > 100 then L("... (" .. lines .. " total lines)") end
+				else
+					L("  decompile returned nil")
 				end
+			end
+		end)
+	end
+
+	-- Also decompile BlockController to see full sign edit code
+	pcall(function()
+		local bc = game:GetService("ReplicatedFirst"):FindFirstChild("Controllers")
+		if bc then bc = bc:FindFirstChild("BlockController") end
+		if bc and bc:IsA("ModuleScript") and decompile then
+			L("\n--- BlockController (first 150 lines) ---")
+			local src = decompile(bc)
+			if src then
+				local lines = 0
+				for line in src:gmatch("[^\n]+") do
+					lines = lines + 1
+					if lines <= 150 then L(line) end
+				end
+				if lines > 150 then L("... (" .. lines .. " total lines)") end
 			end
 		end
 	end)
 
-	-- Also spy on outgoing
-	local oldFire = nil
 	pcall(function()
-		if hookfunction and newcclosure then
-			oldFire = hookfunction(RedEvent.FireServer, newcclosure(function(self, ...)
-				local args = {...}
-				print("[SPY-OUT] FireServer called with " .. #args .. " args")
-				for i, arg in ipairs(args) do
-					print("  arg[" .. i .. "] = " .. typeof(arg) .. ": " .. tostring(arg))
-					if typeof(arg) == "table" then
-						for k, v in pairs(arg) do
-							print("    [" .. tostring(k) .. "] = " .. typeof(v) .. ": " .. tostring(v))
-							if typeof(v) == "table" then
-								for k2, v2 in pairs(v) do
-									print("      [" .. tostring(k2) .. "] = " .. typeof(v2) .. ": " .. tostring(v2))
-									if typeof(v2) == "table" then
-										for k3, v3 in pairs(v2) do
-											print("        [" .. tostring(k3) .. "] = " .. typeof(v3) .. ": " .. tostring(v3))
-										end
-									end
-								end
-							end
-						end
-					end
-				end
-				return oldFire(self, ...)
-			end))
-			print("[SX Elected] Spy: hookfunction active for outgoing")
-		else
-			print("[SX Elected] Spy: hookfunction not available, outgoing spy skipped")
-		end
-	end)
-
-	task.delay(30, function()
-		pcall(function() spyConn:Disconnect() end)
-		-- Can't unhook easily, but it will stop printing
-		print("[SX Elected] === SIGN EDIT SPY ENDED ===")
-		notify("Spy", "Spy ended after 30s")
+		local output = table.concat(log, "\n")
+		writefile("SXNetworkDecompile.txt", output)
+		L("\nSaved to workspace/SXNetworkDecompile.txt")
+		notify("Decompile", "Saved to SXNetworkDecompile.txt")
 	end)
 end
 
@@ -760,15 +752,39 @@ local function editAllSigns(newText, ownerOnly)
 		return
 	end
 
-	notify("Signs", "Editing " .. #signs .. " signs...")
-	local count = 0
-	for i, sign in ipairs(signs) do
-		if editSignText(sign, newText) then
-			count = count + 1
-		end
-		if i < #signs then task.wait(0.15) end
+	-- Need to be near signs for ClickDetector to work
+	local char = LocalPlayer.Character
+	local hrp = getRoot()
+	if not char or not hrp then
+		notify("Signs", "No character")
+		return
 	end
-	notify("Signs", "Fired EditSign on " .. count .. "/" .. #signs .. " signs")
+	local savedCF = hrp.CFrame
+
+	notify("Signs", "Editing " .. #signs .. " signs...")
+
+	task.spawn(function()
+		local count = 0
+		for i, sign in ipairs(signs) do
+			pcall(function()
+				-- TP to sign (need to be within ClickDetector range)
+				local cf = getItemCFrame(sign)
+				if cf then
+					char:PivotTo(CFrame.new(cf.Position + Vector3.new(0, 0, -3), cf.Position))
+					task.wait(0.15)
+				end
+
+				if editSignText(sign, newText) then
+					count = count + 1
+				end
+			end)
+			task.wait(0.5)
+		end
+
+		-- TP back
+		pcall(function() char:PivotTo(savedCF) end)
+		notify("Signs", "Edited " .. count .. "/" .. #signs .. " signs")
+	end)
 end
 
 -- Edit slogan via Red network event "UpdateSlogan" (separate from sign text)
@@ -2118,7 +2134,7 @@ do
 			notify("Error", "Enter slogan text first!")
 		end
 	end)
-	createButton(tab, "Spy Sign Edit (F9)", o(), spySignEdit)
+	createButton(tab, "Decompile Network (F9)", o(), decompileNetworkModule)
 	createButton(tab, "Discover Sign Method (F9)", o(), discoverSignMethod)
 
 	createSpacer(tab, o())
