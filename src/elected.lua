@@ -1510,37 +1510,26 @@ local LETTER_PIXELS = {
 	[" "] = {"00000","00000","00000","00000","00000"},
 }
 
-local wordBlockSize = 4 -- studs per pixel
+local wordBlockSize = 3 -- studs per pixel (Normal blocks are 3x3x3)
 
--- Extract BuildBlock Red event from game code
--- Same technique as EditSign: find a connection with the event in its upvalues
+-- Extract BuildBlock Red event from tool.Activated upvalues
+-- From BuildController decompile: tool.Activated handler has:
+--   upvalue [5] = Red client event (has .Fire method)
+-- Fire format: evt:Fire(cframe, blockTemplate, colorData, scaleMode)
 local buildBlockEvent = nil
-
-local function searchUpvaluesForFire(func, depth)
-	if depth <= 0 then return nil end
-	local found = nil
-	pcall(function()
-		if not getupvalues then return end
-		local upvals = getupvalues(func)
-		for i, v in pairs(upvals) do
-			if typeof(v) == "table" and v.Fire and not found then
-				found = v
-			end
-			-- Search nested functions too
-			if typeof(v) == "function" and not found then
-				found = searchUpvaluesForFire(v, depth - 1)
-			end
-		end
-	end)
-	return found
-end
+local buildBlockRef = nil
 
 local function getBuildBlockEvent()
 	if buildBlockEvent then return buildBlockEvent end
 
-	-- Search tool connections (Activated, Equipped) for the BuildBlock event
 	pcall(function()
 		if not getconnections or not getupvalues then return end
+
+		-- Get block template reference
+		pcall(function()
+			buildBlockRef = game:GetService("ReplicatedStorage").Assets.Blocks.Block
+		end)
+
 		local char = LocalPlayer.Character
 		local backpack = LocalPlayer:FindFirstChild("Backpack")
 		local tools = {}
@@ -1555,79 +1544,33 @@ local function getBuildBlockEvent()
 			end
 		end
 
-		-- Check Activated and Equipped signals, search 3 levels deep
+		-- Search tool.Activated handlers for Red event in upvalues
 		for _, tool in ipairs(tools) do
-			for _, signal in ipairs({tool.Activated, tool.Equipped}) do
-				pcall(function()
-					local conns = getconnections(signal)
-					for _, conn in ipairs(conns) do
-						pcall(function()
-							local func = conn.Function
-							if func then
-								local evt = searchUpvaluesForFire(func, 3)
-								if evt then
-									buildBlockEvent = evt
-									print("[SX Elected] Found BuildBlock event from " .. tool.Name)
-								end
+			pcall(function()
+				local conns = getconnections(tool.Activated)
+				for _, conn in ipairs(conns) do
+					pcall(function()
+						local func = conn.Function
+						if not func then return end
+						local upvals = getupvalues(func)
+						for i, v in pairs(upvals) do
+							if typeof(v) == "table" and v.Fire then
+								buildBlockEvent = v
+								print("[SX Elected] Found BuildBlock event from " .. tool.Name .. " upvalue " .. tostring(i))
+								break
 							end
-						end)
-						if buildBlockEvent then return end
-					end
-				end)
-				if buildBlockEvent then break end
-			end
+						end
+					end)
+					if buildBlockEvent then return end
+				end
+			end)
 			if buildBlockEvent then break end
 		end
 	end)
 
-	-- Also search UserInputService.InputBegan connections
 	if not buildBlockEvent then
-		pcall(function()
-			if not getconnections or not getupvalues then return end
-			local UIS = game:GetService("UserInputService")
-			local conns = getconnections(UIS.InputBegan)
-			print("[SX Elected] Searching " .. #conns .. " InputBegan connections for BuildBlock...")
-			for ci, conn in ipairs(conns) do
-				pcall(function()
-					local func = conn.Function
-					if func then
-						local evt = searchUpvaluesForFire(func, 2)
-						if evt then
-							buildBlockEvent = evt
-							print("[SX Elected] Found event from InputBegan conn #" .. ci)
-						end
-					end
-				end)
-				if buildBlockEvent then break end
-			end
-		end)
+		print("[SX Elected] BuildBlock event NOT found - equip a build tool first")
 	end
-
-	-- Search getreg if available
-	if not buildBlockEvent then
-		pcall(function()
-			if not getreg then return end
-			for _, v in pairs(getreg()) do
-				pcall(function()
-					if typeof(v) == "table" and v.Fire then
-						-- Could be any Red event, we'll take the first one we find
-						-- and hope it's BuildBlock
-						-- Skip if it's the EditSign event
-						if v ~= editSignEvent then
-							buildBlockEvent = v
-							print("[SX Elected] Found event from getreg")
-						end
-					end
-				end)
-				if buildBlockEvent then break end
-			end
-		end)
-	end
-
-	if not buildBlockEvent then
-		print("[SX Elected] BuildBlock event NOT found")
-	end
-
 	return buildBlockEvent
 end
 
@@ -1669,30 +1612,52 @@ local function buildWord(text, blockColor)
 	local char = LocalPlayer.Character
 	if not hrp or not char then notify("Error", "No character") return end
 
-	-- Try to extract the BuildBlock event
 	local evt = getBuildBlockEvent()
-
 	if not evt then
-		notify("Error", "Could not extract BuildBlock event. Try 'Dump BuildController' and send the file.")
+		notify("Error", "BuildBlock event not found. Equip a build tool first!")
+		return
+	end
+
+	-- Get block template from ReplicatedStorage.Assets.Blocks.Block
+	local blockRef = buildBlockRef
+	if not blockRef then
+		pcall(function()
+			blockRef = game:GetService("ReplicatedStorage").Assets.Blocks.Block
+		end)
+	end
+	if not blockRef then
+		notify("Error", "Block template not found in ReplicatedStorage.Assets.Blocks")
 		return
 	end
 
 	text = text:upper()
-	-- Build in front of player, grid-snapped
+
+	-- Snap right direction to nearest axis for clean grid alignment
+	local rawRight = hrp.CFrame.RightVector
+	local ax, ay, az = math.abs(rawRight.X), math.abs(rawRight.Y), math.abs(rawRight.Z)
+	local rightDir
+	if ax >= ay and ax >= az then
+		rightDir = Vector3.new(rawRight.X > 0 and 1 or -1, 0, 0)
+	elseif az >= ax and az >= ay then
+		rightDir = Vector3.new(0, 0, rawRight.Z > 0 and 1 or -1)
+	else
+		rightDir = Vector3.new(1, 0, 0)
+	end
+	local upDir = Vector3.new(0, 1, 0)
+
+	-- Build in front of player, grid-snapped to 3 studs
 	local startPos = hrp.Position + hrp.CFrame.LookVector * 15 + Vector3.new(0, 5, 0)
 	startPos = Vector3.new(
 		math.floor(startPos.X / wordBlockSize + 0.5) * wordBlockSize,
 		math.floor(startPos.Y / wordBlockSize + 0.5) * wordBlockSize,
 		math.floor(startPos.Z / wordBlockSize + 0.5) * wordBlockSize
 	)
-	local rightDir = hrp.CFrame.RightVector
-	local upDir = Vector3.new(0, 1, 0)
 
 	local blocksPlaced = 0
 	local charOffset = 0
 
 	notify("Building", "Building: " .. text)
-	print("[SX Elected] Building word at: " .. tostring(startPos))
+	print("[SX Elected] Building word at: " .. tostring(startPos) .. " dir: " .. tostring(rightDir))
 
 	task.spawn(function()
 		for ci = 1, #text do
@@ -1707,13 +1672,14 @@ local function buildWord(text, blockColor)
 							local pos = startPos + rightDir * x + upDir * y
 							local cf = CFrame.new(pos)
 
-							-- Fire BuildBlock with various arg formats
-							pcall(function() evt:Fire(cf) end)
-							pcall(function() evt:Fire(cf, 0) end)
-							pcall(function() evt:Fire(pos, 0) end)
+							-- Fire with exact format from BuildController decompile:
+							-- evt:Fire(cframe, blockTemplate, colorData, scaleMode)
+							pcall(function()
+								evt:Fire(cf, blockRef, nil, "Normal")
+							end)
 
 							blocksPlaced = blocksPlaced + 1
-							task.wait(0.1)
+							task.wait(0.15)
 						end
 					end
 				end
