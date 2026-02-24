@@ -6,7 +6,7 @@ if not keyOk or not keySystem or not keySystem.validate() then return end
 -- ================================================================
 -- Synapse X The Revival - RIVALS Hub
 -- Dedicated admin for RIVALS FPS
--- v1.0
+-- v1.1
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -270,7 +270,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 40, 1, 0)
 versionLabel.Position = UDim2.new(0, 130, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v1.0"
+versionLabel.Text = "v1.1"
 versionLabel.TextColor3 = COLORS.accent
 versionLabel.Font = Enum.Font.Gotham
 versionLabel.TextSize = 10
@@ -700,9 +700,10 @@ end
 
 -- ===================== AIMBOT: GET CLOSEST PLAYER IN FOV =====================
 local function getClosestPlayerInFOV()
+	local cam = workspace.CurrentCamera
 	local closest = nil
 	local closestDist = aimbotFOV
-	local screenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+	local screenCenter = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
 
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player ~= LocalPlayer and player.Character then
@@ -718,7 +719,7 @@ local function getClosestPlayerInFOV()
 				if humanoid and humanoid.Health > 0 then
 					local targetPart = character:FindFirstChild(aimbotAimPart) or character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart")
 					if targetPart then
-						local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
+						local screenPos, onScreen = cam:WorldToViewportPoint(targetPart.Position)
 						if onScreen then
 							local screenDist = (Vector2.new(screenPos.X, screenPos.Y) - screenCenter).Magnitude
 							if screenDist < closestDist then
@@ -739,9 +740,8 @@ local aimbotInputBeganConn = nil
 local aimbotInputEndedConn = nil
 
 local function startAimbot()
-	-- Track when aimbot key is held
-	aimbotInputBeganConn = UserInputService.InputBegan:Connect(function(input, gpe)
-		if gpe then return end
+	-- Track when aimbot key is held (ignore gpe so it works even when game processes the input)
+	aimbotInputBeganConn = UserInputService.InputBegan:Connect(function(input)
 		if input.UserInputType == aimbotKey or input.KeyCode == Enum.KeyCode.Q then
 			aimbotHolding = true
 		end
@@ -752,20 +752,38 @@ local function startAimbot()
 		end
 	end)
 
-	aimbotConnection = RunService.RenderStepped:Connect(function()
+	-- Use Heartbeat (fires AFTER camera update) so our CFrame sticks instead of being overwritten
+	aimbotConnection = RunService.Heartbeat:Connect(function()
 		if not aimbotEnabled or not aimbotHolding then return end
 		pcall(function()
-			Camera = workspace.CurrentCamera
+			local cam = workspace.CurrentCamera
 			local target = getClosestPlayerInFOV()
 			if not target then return end
 
-			-- Smooth aim toward target
-			local currentCF = Camera.CFrame
-			local targetCF = CFrame.new(currentCF.Position, target.Position)
-			Camera.CFrame = currentCF:Lerp(targetCF, 1 / aimbotSmoothing)
+			local targetPos = target.Position
+			local camPos = cam.CFrame.Position
+
+			-- Method 1: mousemoverel (most reliable in FPS games - moves actual mouse)
+			local screenPos = cam:WorldToViewportPoint(targetPos)
+			local screenCenter = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
+			local delta = Vector2.new(screenPos.X - screenCenter.X, screenPos.Y - screenCenter.Y)
+
+			-- Apply smoothing (lower = snappier)
+			local moveX = delta.X / aimbotSmoothing
+			local moveY = delta.Y / aimbotSmoothing
+
+			-- Use mousemoverel if available (works on most executors)
+			if mousemoverel then
+				mousemoverel(moveX, moveY)
+			else
+				-- Fallback: direct CFrame set (may be overwritten by game camera)
+				local currentCF = cam.CFrame
+				local targetCF = CFrame.new(camPos, targetPos)
+				cam.CFrame = currentCF:Lerp(targetCF, 1 / aimbotSmoothing)
+			end
 		end)
 	end)
-	addLog("[AIMBOT] ON (Hold RMB to aim)", COLORS.success)
+	addLog("[AIMBOT] ON (Hold RMB or Q)", COLORS.success)
 end
 
 local function stopAimbot()
@@ -1585,7 +1603,7 @@ do
 	local tab = tabFrames["Main"]
 
 	createSectionLabel(tab, "Info", 1)
-	createInfoLabel(tab, "RIVALS Hub v1.0", 2)
+	createInfoLabel(tab, "RIVALS Hub v1.1", 2)
 	createInfoLabel(tab, "SX The Revival", 3)
 
 	local spacer = Instance.new("Frame")
@@ -2132,7 +2150,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ===================== STARTUP =====================
-addLog("RIVALS Hub v1.0", COLORS.accent)
+addLog("RIVALS Hub v1.1", COLORS.accent)
 addLog("Type ;cmds for command list", COLORS.textSecondary)
 addLog("Use Right Shift to toggle GUI", COLORS.textSecondary)
-print("[RIVALS Hub] v1.0 loaded")
+print("[RIVALS Hub] v1.1 loaded")
