@@ -17,7 +17,6 @@ local KEY_SYSTEM = {}
 -- CONFIG
 -- ============================================================
 local VALID_KEYS = {
-    ["synapsextherevivalontop"] = true,
     ["sxr-midnight-4f82k"] = true,
 }
 local AUTH_SALT = "SXR_2024_PEBBLEFORD_REVIVAL"
