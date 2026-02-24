@@ -4,8 +4,9 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate() then return end
 
 -- ================================================================
--- Synapse X The Revival - Executor + Admin
--- Script executor with Infinite Yield-style admin
+-- Synapse X The Revival - Brookhaven RP Admin Hub
+-- Dedicated admin for Brookhaven RP
+-- v1.0
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -13,57 +14,56 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TeleportService = game:GetService("TeleportService")
 local Lighting = game:GetService("Lighting")
-local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 
 local _spawn = (task and task.spawn) or spawn
 local _wait = (task and task.wait) or wait
 
--- ===================== COLOR PALETTE =====================
+-- ===================== COLOR PALETTE (Blue Theme) =====================
 local COLORS = {
-	bg = Color3.fromRGB(20, 20, 20),
-	bgSecondary = Color3.fromRGB(30, 30, 30),
-	tabBg = Color3.fromRGB(45, 45, 45),
-	accent = Color3.fromRGB(255, 102, 0),
-	accentHover = Color3.fromRGB(255, 133, 51),
-	accentDark = Color3.fromRGB(180, 72, 0),
+	bg = Color3.fromRGB(20, 20, 25),
+	bgSecondary = Color3.fromRGB(30, 30, 38),
+	tabBg = Color3.fromRGB(45, 45, 55),
+	accent = Color3.fromRGB(0, 150, 255),
+	accentHover = Color3.fromRGB(50, 170, 255),
+	accentDark = Color3.fromRGB(0, 100, 180),
 	textPrimary = Color3.fromRGB(255, 255, 255),
 	textSecondary = Color3.fromRGB(176, 176, 176),
 	textDim = Color3.fromRGB(120, 120, 120),
-	border = Color3.fromRGB(50, 50, 50),
-	toggleOn = Color3.fromRGB(255, 102, 0),
+	border = Color3.fromRGB(50, 50, 60),
+	toggleOn = Color3.fromRGB(0, 150, 255),
 	toggleOff = Color3.fromRGB(85, 85, 85),
 	error = Color3.fromRGB(255, 68, 68),
 	success = Color3.fromRGB(68, 255, 68),
-	editor = Color3.fromRGB(15, 15, 15),
-	editorLine = Color3.fromRGB(35, 35, 35),
-	btnExecute = Color3.fromRGB(255, 102, 0),
+	warning = Color3.fromRGB(255, 200, 0),
+	editor = Color3.fromRGB(15, 15, 20),
+	btnExecute = Color3.fromRGB(0, 150, 255),
 	btnClear = Color3.fromRGB(60, 60, 60),
 }
 
 -- ===================== STATE =====================
 local espEnabled = false
 local flyEnabled = false
-local flingEnabled = false
-local walkFlingEnabled = false
-local speedEnabled = false
 local noclipEnabled = false
-local godEnabled = false
+local speedEnabled = false
 local infJumpEnabled = false
-local killAuraEnabled = false
+local godEnabled = false
 local invisibleEnabled = false
 local spinEnabled = false
 local seizureEnabled = false
-local vehicleFlyEnabled = false
+local flingEnabled = false
+local walkFlingEnabled = false
 local carNoclipEnabled = false
-local carFlingEnabled = false
+local rainbowCarEnabled = false
+local rainbowHouseEnabled = false
 local emoteActive = false
+local killAuraEnabled = false
 
-local flingPower = 99999
-local walkFlingPower = 10000
-local carFlingPower = 50000
 local flySpeed = 80
 local speedValue = 100
+local flingPower = 99999
+local walkFlingPower = 10000
 local jumpPowerValue = 50
 local gravityValue = 196.2
 local origWalkSpeed = 16
@@ -76,27 +76,24 @@ local espConnections = {}
 local flyConnection = nil
 local bodyGyro = nil
 local bodyVelocity = nil
-local touchConnections = {}
 local noclipConnection = nil
 local infJumpConnection = nil
 local killAuraConnection = nil
 local spinConnection = nil
 local spinBAV = nil
-local walkFlingThread = nil
-local savedPhysProps = {}
 local seizureConnection = nil
-local vehicleFlyConnection = nil
-local vehicleFlyBV = nil
-local vehicleFlyBG = nil
+local flingConnection = nil
+local savedPhysProps = {}
+local walkFlingThread = nil
+local walkFlingProps = {}
 local carNoclipConnection = nil
-local carFlingConnection = nil
-local carFlingBAV = nil
-local carFlingOrigProps = {}
+local rainbowCarConnection = nil
+local rainbowHouseConnection = nil
 local emoteTracks = {}
 local emoteConnection = nil
 local selectedPlayer = nil
 local windowVisible = true
-local activeTab = "Execute"
+local activeTab = "Main"
 local logLines = {}
 local MAX_LOG_LINES = 50
 
@@ -107,19 +104,36 @@ local FILL_TRANSPARENCY = 0.5
 local OUTLINE_TRANSPARENCY = 0
 local REFRESH_INTERVAL = 5
 
+-- Brookhaven teleport locations
+local TELEPORT_LOCATIONS = {
+	{"School", CFrame.new(-147, 18, -148)},
+	{"Hospital", CFrame.new(-78, 18, 93)},
+	{"Airport", CFrame.new(453, 18, -256)},
+	{"Bank", CFrame.new(-26, 18, -59)},
+	{"Police Station", CFrame.new(-40, 18, -15)},
+	{"Fire Station", CFrame.new(70, 18, 15)},
+	{"Church", CFrame.new(-210, 18, -67)},
+	{"Mall", CFrame.new(103, 18, -133)},
+	{"Island", CFrame.new(600, 18, 200)},
+	{"Agency", CFrame.new(-310, 18, -60)},
+	{"Abandoned House", CFrame.new(-360, 18, -140)},
+	{"Diner", CFrame.new(35, 18, -95)},
+	{"Salon", CFrame.new(60, 18, -60)},
+}
+
 -- ===================== SCREEN GUI =====================
 -- Kill old instance if re-executing
 pcall(function()
-	local old = game:GetService("CoreGui"):FindFirstChild("SynapseXRevival")
+	local old = game:GetService("CoreGui"):FindFirstChild("SXBrookhaven")
 	if old then old:Destroy() end
 end)
 pcall(function()
-	local old = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("SynapseXRevival")
+	local old = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("SXBrookhaven")
 	if old then old:Destroy() end
 end)
 
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "SynapseXRevival"
+screenGui.Name = "SXBrookhaven"
 screenGui.ResetOnSpawn = false
 screenGui.DisplayOrder = 999
 screenGui.IgnoreGuiInset = true
@@ -168,8 +182,8 @@ end
 -- ===================== MAIN WINDOW =====================
 local mainWindow = Instance.new("Frame")
 mainWindow.Name = "MainWindow"
-mainWindow.Size = UDim2.new(0, 600, 0, 420)
-mainWindow.Position = UDim2.new(0.5, -300, 0.5, -210)
+mainWindow.Size = UDim2.new(0, 580, 0, 400)
+mainWindow.Position = UDim2.new(0.5, -290, 0.5, -200)
 mainWindow.BackgroundColor3 = COLORS.bg
 mainWindow.BorderSizePixel = 0
 mainWindow.Active = true
@@ -207,7 +221,7 @@ titleBarCover.BackgroundColor3 = COLORS.bgSecondary
 titleBarCover.BorderSizePixel = 0
 titleBarCover.Parent = titleBar
 
--- Orange accent line under title
+-- Blue accent line under title
 local titleAccent = Instance.new("Frame")
 titleAccent.Size = UDim2.new(1, 0, 0, 2)
 titleAccent.Position = UDim2.new(0, 0, 1, 0)
@@ -215,7 +229,7 @@ titleAccent.BackgroundColor3 = COLORS.accent
 titleAccent.BorderSizePixel = 0
 titleAccent.Parent = titleBar
 
--- Logo icon (orange square)
+-- Logo icon (blue square with B)
 local logoIcon = Instance.new("Frame")
 logoIcon.Size = UDim2.new(0, 18, 0, 18)
 logoIcon.Position = UDim2.new(0, 10, 0.5, -9)
@@ -227,7 +241,7 @@ addCorner(logoIcon, 3)
 local logoText = Instance.new("TextLabel")
 logoText.Size = UDim2.new(1, 0, 1, 0)
 logoText.BackgroundTransparency = 1
-logoText.Text = "S"
+logoText.Text = "B"
 logoText.TextColor3 = COLORS.textPrimary
 logoText.Font = Enum.Font.GothamBold
 logoText.TextSize = 12
@@ -237,7 +251,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -120, 1, 0)
 titleLabel.Position = UDim2.new(0, 34, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "Synapse X - The Revival"
+titleLabel.Text = "Brookhaven RP Hub"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextSize = 14
@@ -246,9 +260,9 @@ titleLabel.Parent = titleBar
 
 local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 40, 1, 0)
-versionLabel.Position = UDim2.new(0, 200, 0, 0)
+versionLabel.Position = UDim2.new(0, 180, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v2.1"
+versionLabel.Text = "v1.0"
 versionLabel.TextColor3 = COLORS.accent
 versionLabel.Font = Enum.Font.Gotham
 versionLabel.TextSize = 10
@@ -307,7 +321,7 @@ do
 	end)
 end
 
--- ===================== TAB BAR (horizontal, Synapse X style) =====================
+-- ===================== TAB BAR (horizontal) =====================
 local tabBar = Instance.new("Frame")
 tabBar.Name = "TabBar"
 tabBar.Size = UDim2.new(1, 0, 0, 30)
@@ -323,7 +337,7 @@ tabBarDivider.BackgroundColor3 = COLORS.border
 tabBarDivider.BorderSizePixel = 0
 tabBarDivider.Parent = tabBar
 
-local tabNames = {"Execute", "Main", "Player", "Server", "ESP", "Movement", "Fun"}
+local tabNames = {"Main", "Teleport", "Player", "Vehicle", "House", "Trolling", "Fun"}
 local tabButtons = {}
 local tabFrames = {}
 
@@ -336,24 +350,24 @@ tabBarLayout.Parent = tabBar
 for i, tabName in ipairs(tabNames) do
 	local tabBtn = Instance.new("TextButton")
 	tabBtn.Name = tabName .. "Tab"
-	tabBtn.Size = UDim2.new(0, 86, 1, 0)
+	tabBtn.Size = UDim2.new(0, 83, 1, 0)
 	tabBtn.BackgroundColor3 = COLORS.bg
-	tabBtn.BackgroundTransparency = (tabName == "Execute") and 0 or 1
+	tabBtn.BackgroundTransparency = (tabName == "Main") and 0 or 1
 	tabBtn.Text = tabName
-	tabBtn.TextColor3 = (tabName == "Execute") and COLORS.accent or COLORS.textDim
+	tabBtn.TextColor3 = (tabName == "Main") and COLORS.accent or COLORS.textDim
 	tabBtn.Font = Enum.Font.GothamBold
 	tabBtn.TextSize = 11
 	tabBtn.LayoutOrder = i
 	tabBtn.Parent = tabBar
 
-	-- Active indicator (bottom orange line)
+	-- Active indicator (bottom blue line)
 	local indicator = Instance.new("Frame")
 	indicator.Name = "Indicator"
 	indicator.Size = UDim2.new(1, 0, 0, 2)
 	indicator.Position = UDim2.new(0, 0, 1, -2)
 	indicator.BackgroundColor3 = COLORS.accent
 	indicator.BorderSizePixel = 0
-	indicator.Visible = (tabName == "Execute")
+	indicator.Visible = (tabName == "Main")
 	indicator.Parent = tabBtn
 
 	tabButtons[tabName] = tabBtn
@@ -375,10 +389,10 @@ toggleBtn.Name = "ToggleBtn"
 toggleBtn.Size = UDim2.new(0, 44, 0, 44)
 toggleBtn.Position = UDim2.new(0, 10, 0.5, -22)
 toggleBtn.BackgroundColor3 = COLORS.accent
-toggleBtn.Text = "SX"
+toggleBtn.Text = "BH"
 toggleBtn.TextColor3 = COLORS.textPrimary
 toggleBtn.Font = Enum.Font.GothamBold
-toggleBtn.TextSize = 15
+toggleBtn.TextSize = 13
 toggleBtn.Visible = false
 toggleBtn.Parent = screenGui
 addCorner(toggleBtn, 22)
@@ -412,7 +426,7 @@ local function createTabFrame(name)
 	frame.BorderSizePixel = 0
 	frame.ScrollBarThickness = 4
 	frame.ScrollBarImageColor3 = COLORS.accent
-	frame.Visible = (name == "Execute")
+	frame.Visible = (name == "Main")
 	frame.CanvasSize = UDim2.new(0, 0, 0, 0)
 	frame.AutomaticCanvasSize = Enum.AutomaticSize.Y
 	frame.Parent = contentArea
@@ -428,21 +442,8 @@ local function createTabFrame(name)
 	return frame
 end
 
--- Create Execute tab as a raw frame (not scrolling, needs custom layout)
-local executeFrame = Instance.new("Frame")
-executeFrame.Name = "ExecuteFrame"
-executeFrame.Size = UDim2.new(1, 0, 1, 0)
-executeFrame.BackgroundTransparency = 1
-executeFrame.BorderSizePixel = 0
-executeFrame.Visible = true
-executeFrame.Parent = contentArea
-tabFrames["Execute"] = executeFrame
-
--- Create the other tabs as scrolling frames
 for _, name in ipairs(tabNames) do
-	if name ~= "Execute" then
-		createTabFrame(name)
-	end
+	createTabFrame(name)
 end
 
 -- ===================== TAB SWITCHING =====================
@@ -687,325 +688,6 @@ local function addLog(msg, color)
 		logFrame.CanvasSize = UDim2.new(0, 0, 0, #logLines * 16)
 		logFrame.CanvasPosition = Vector2.new(0, math.max(0, #logLines * 16 - logFrame.AbsoluteSize.Y))
 	end
-end
-
--- =====================================================================
--- ======================== EXECUTOR TAB ==============================
--- =====================================================================
-do
-	local tab = executeFrame
-
-	-- Script editor area (main big text box)
-	local editorFrame = Instance.new("Frame")
-	editorFrame.Size = UDim2.new(1, -16, 1, -58)
-	editorFrame.Position = UDim2.new(0, 8, 0, 8)
-	editorFrame.BackgroundColor3 = COLORS.editor
-	editorFrame.BorderSizePixel = 0
-	editorFrame.ClipsDescendants = true
-	editorFrame.Parent = tab
-	addCorner(editorFrame, 6)
-	addStroke(editorFrame, COLORS.border, 1)
-
-	-- Line number gutter
-	local lineGutter = Instance.new("Frame")
-	lineGutter.Size = UDim2.new(0, 36, 1, 0)
-	lineGutter.BackgroundColor3 = COLORS.editorLine
-	lineGutter.BorderSizePixel = 0
-	lineGutter.Parent = editorFrame
-
-	local gutterDivider = Instance.new("Frame")
-	gutterDivider.Size = UDim2.new(0, 1, 1, 0)
-	gutterDivider.Position = UDim2.new(1, 0, 0, 0)
-	gutterDivider.BackgroundColor3 = COLORS.border
-	gutterDivider.BorderSizePixel = 0
-	gutterDivider.Parent = lineGutter
-
-	-- Line numbers label (auto updates)
-	local lineNumbers = Instance.new("TextLabel")
-	lineNumbers.Size = UDim2.new(1, -4, 1, 0)
-	lineNumbers.Position = UDim2.new(0, 2, 0, 0)
-	lineNumbers.BackgroundTransparency = 1
-	lineNumbers.Text = "1"
-	lineNumbers.TextColor3 = COLORS.textDim
-	lineNumbers.Font = Enum.Font.Code
-	lineNumbers.TextSize = 14
-	lineNumbers.TextXAlignment = Enum.TextXAlignment.Right
-	lineNumbers.TextYAlignment = Enum.TextYAlignment.Top
-	lineNumbers.Parent = lineGutter
-	addPadding(lineNumbers, 6, 4, 0, 0)
-
-	-- Script text input
-	local scriptInput = Instance.new("TextBox")
-	scriptInput.Size = UDim2.new(1, -40, 1, 0)
-	scriptInput.Position = UDim2.new(0, 40, 0, 0)
-	scriptInput.BackgroundTransparency = 1
-	scriptInput.TextColor3 = COLORS.textPrimary
-	scriptInput.PlaceholderText = '-- Paste your script here...\n-- Press "Execute" to run\nprint("Hello from Synapse X The Revival!")'
-	scriptInput.PlaceholderColor3 = COLORS.textDim
-	scriptInput.Font = Enum.Font.Code
-	scriptInput.TextSize = 14
-	scriptInput.Text = ""
-	scriptInput.ClearTextOnFocus = false
-	scriptInput.MultiLine = true
-	scriptInput.TextXAlignment = Enum.TextXAlignment.Left
-	scriptInput.TextYAlignment = Enum.TextYAlignment.Top
-	scriptInput.TextWrapped = true
-	scriptInput.Parent = editorFrame
-	addPadding(scriptInput, 6, 8, 6, 4)
-
-	-- Update line numbers when text changes
-	local function updateLineNumbers()
-		local text = scriptInput.Text
-		local lines = 1
-		for _ in text:gmatch("\n") do
-			lines = lines + 1
-		end
-		local nums = {}
-		for i = 1, lines do
-			table.insert(nums, tostring(i))
-		end
-		lineNumbers.Text = table.concat(nums, "\n")
-	end
-
-	scriptInput:GetPropertyChangedSignal("Text"):Connect(updateLineNumbers)
-
-	-- Bottom button bar
-	local btnBar = Instance.new("Frame")
-	btnBar.Size = UDim2.new(1, -16, 0, 40)
-	btnBar.Position = UDim2.new(0, 8, 1, -46)
-	btnBar.BackgroundTransparency = 1
-	btnBar.BorderSizePixel = 0
-	btnBar.Parent = tab
-
-	local btnBarLayout = Instance.new("UIListLayout")
-	btnBarLayout.FillDirection = Enum.FillDirection.Horizontal
-	btnBarLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	btnBarLayout.Padding = UDim.new(0, 8)
-	btnBarLayout.Parent = btnBar
-
-	-- Execute button
-	local executeBtn = Instance.new("TextButton")
-	executeBtn.Size = UDim2.new(0, 120, 0, 36)
-	executeBtn.BackgroundColor3 = COLORS.btnExecute
-	executeBtn.Text = "Execute"
-	executeBtn.TextColor3 = COLORS.textPrimary
-	executeBtn.Font = Enum.Font.GothamBold
-	executeBtn.TextSize = 14
-	executeBtn.LayoutOrder = 1
-	executeBtn.Parent = btnBar
-	addCorner(executeBtn, 6)
-
-	-- Clear button
-	local clearBtn = Instance.new("TextButton")
-	clearBtn.Size = UDim2.new(0, 90, 0, 36)
-	clearBtn.BackgroundColor3 = COLORS.btnClear
-	clearBtn.Text = "Clear"
-	clearBtn.TextColor3 = COLORS.textSecondary
-	clearBtn.Font = Enum.Font.GothamBold
-	clearBtn.TextSize = 13
-	clearBtn.LayoutOrder = 2
-	clearBtn.Parent = btnBar
-	addCorner(clearBtn, 6)
-
-	-- Clipboard paste button
-	local pasteBtn = Instance.new("TextButton")
-	pasteBtn.Size = UDim2.new(0, 130, 0, 36)
-	pasteBtn.BackgroundColor3 = COLORS.btnClear
-	pasteBtn.Text = "Paste Clipboard"
-	pasteBtn.TextColor3 = COLORS.textSecondary
-	pasteBtn.Font = Enum.Font.GothamBold
-	pasteBtn.TextSize = 13
-	pasteBtn.LayoutOrder = 3
-	pasteBtn.Parent = btnBar
-	addCorner(pasteBtn, 6)
-
-	-- Script Hub button
-	local hubBtn = Instance.new("TextButton")
-	hubBtn.Size = UDim2.new(0, 110, 0, 36)
-	hubBtn.BackgroundColor3 = COLORS.accentDark
-	hubBtn.Text = "Script Hub"
-	hubBtn.TextColor3 = COLORS.textPrimary
-	hubBtn.Font = Enum.Font.GothamBold
-	hubBtn.TextSize = 13
-	hubBtn.LayoutOrder = 4
-	hubBtn.Parent = btnBar
-	addCorner(hubBtn, 6)
-
-	-- Execute logic
-	executeBtn.MouseButton1Click:Connect(function()
-		local code = scriptInput.Text
-		if code == "" then
-			addLog("[EXEC] No script to execute", COLORS.error)
-			return
-		end
-		addLog("[EXEC] Executing script...", COLORS.accent)
-		local fn, err = loadstring(code)
-		if not fn then
-			addLog("[EXEC] Compile error: " .. tostring(err), COLORS.error)
-			return
-		end
-		local ok, runtimeErr = pcall(fn)
-		if ok then
-			addLog("[EXEC] Script executed successfully", COLORS.success)
-		else
-			addLog("[EXEC] Runtime error: " .. tostring(runtimeErr), COLORS.error)
-		end
-	end)
-
-	-- Clear logic
-	clearBtn.MouseButton1Click:Connect(function()
-		scriptInput.Text = ""
-		updateLineNumbers()
-		addLog("[EXEC] Editor cleared", COLORS.textSecondary)
-	end)
-
-	-- Paste clipboard
-	pasteBtn.MouseButton1Click:Connect(function()
-		pcall(function()
-			-- Try different clipboard functions available in exploits
-			local clipboard = nil
-			if getclipboard then
-				clipboard = getclipboard()
-			elseif readclipboard then
-				clipboard = readclipboard()
-			end
-			if clipboard and clipboard ~= "" then
-				scriptInput.Text = clipboard
-				updateLineNumbers()
-				addLog("[EXEC] Pasted from clipboard", COLORS.success)
-			else
-				addLog("[EXEC] Clipboard empty or not supported", COLORS.error)
-			end
-		end)
-	end)
-
-	-- Script Hub (popup with preset scripts)
-	local hubOpen = false
-	local hubFrame
-
-	hubBtn.MouseButton1Click:Connect(function()
-		if hubOpen and hubFrame then
-			hubFrame:Destroy()
-			hubOpen = false
-			return
-		end
-
-		hubFrame = Instance.new("Frame")
-		hubFrame.Size = UDim2.new(1, -16, 0, 200)
-		hubFrame.Position = UDim2.new(0, 8, 1, -250)
-		hubFrame.BackgroundColor3 = COLORS.bgSecondary
-		hubFrame.BorderSizePixel = 0
-		hubFrame.ZIndex = 10
-		hubFrame.Parent = tab
-		addCorner(hubFrame, 6)
-		addStroke(hubFrame, COLORS.accent, 1)
-		hubOpen = true
-
-		local hubTitle = Instance.new("TextLabel")
-		hubTitle.Size = UDim2.new(1, 0, 0, 28)
-		hubTitle.BackgroundColor3 = COLORS.accent
-		hubTitle.Text = "  Script Hub"
-		hubTitle.TextColor3 = COLORS.textPrimary
-		hubTitle.Font = Enum.Font.GothamBold
-		hubTitle.TextSize = 12
-		hubTitle.TextXAlignment = Enum.TextXAlignment.Left
-		hubTitle.ZIndex = 10
-		hubTitle.Parent = hubFrame
-		addCorner(hubTitle, 6)
-
-		local hubTitleCover = Instance.new("Frame")
-		hubTitleCover.Size = UDim2.new(1, 0, 0, 8)
-		hubTitleCover.Position = UDim2.new(0, 0, 0, 22)
-		hubTitleCover.BackgroundColor3 = COLORS.accent
-		hubTitleCover.BorderSizePixel = 0
-		hubTitleCover.ZIndex = 10
-		hubTitleCover.Parent = hubFrame
-
-		local hubClose = Instance.new("TextButton")
-		hubClose.Size = UDim2.new(0, 24, 0, 24)
-		hubClose.Position = UDim2.new(1, -26, 0, 2)
-		hubClose.BackgroundTransparency = 1
-		hubClose.Text = "X"
-		hubClose.TextColor3 = COLORS.textPrimary
-		hubClose.Font = Enum.Font.GothamBold
-		hubClose.TextSize = 12
-		hubClose.ZIndex = 11
-		hubClose.Parent = hubFrame
-		hubClose.MouseButton1Click:Connect(function()
-			hubFrame:Destroy()
-			hubOpen = false
-		end)
-
-		local hubScroll = Instance.new("ScrollingFrame")
-		hubScroll.Size = UDim2.new(1, -8, 1, -34)
-		hubScroll.Position = UDim2.new(0, 4, 0, 30)
-		hubScroll.BackgroundTransparency = 1
-		hubScroll.ScrollBarThickness = 3
-		hubScroll.ScrollBarImageColor3 = COLORS.accent
-		hubScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-		hubScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-		hubScroll.ZIndex = 10
-		hubScroll.Parent = hubFrame
-
-		local hubLayout = Instance.new("UIListLayout")
-		hubLayout.Padding = UDim.new(0, 4)
-		hubLayout.SortOrder = Enum.SortOrder.LayoutOrder
-		hubLayout.Parent = hubScroll
-
-		-- Preset scripts
-		local presets = {
-			{"Infinite Yield", "loadstring(game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source'))()"},
-			{"Dark Dex Explorer", "loadstring(game:HttpGet('https://raw.githubusercontent.com/infyiff/backup/main/dex.lua'))()"},
-			{"Simple Spy", "loadstring(game:HttpGet('https://github.com/infyiff/backup/blob/main/SimpleSpyV3/main.lua?raw=true'))()"},
-			{"Print All Players", 'for _,v in pairs(game.Players:GetPlayers()) do print(v.Name) end'},
-			{"Print Workspace Children", 'for _,v in pairs(workspace:GetChildren()) do print(v.Name, v.ClassName) end'},
-			{"Anti AFK", 'local vu = game:GetService("VirtualUser")\ngame:GetService("Players").LocalPlayer.Idled:Connect(function()\n\tvu:Button2Down(Vector2.new(0,0),workspace.CurrentCamera.CFrame)\n\twait(1)\n\tvu:Button2Up(Vector2.new(0,0),workspace.CurrentCamera.CFrame)\nend)'},
-			{"Remove All Fog", 'game.Lighting.FogStart = 999999\ngame.Lighting.FogEnd = 9999999'},
-			{"Fullbright", 'game.Lighting.Brightness = 2\ngame.Lighting.ClockTime = 14\ngame.Lighting.FogEnd = 100000\ngame.Lighting.GlobalShadows = false\ngame.Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)'},
-			{"Spin Fling", "loadstring(game:HttpGet('https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/spinfling.lua'))()"},
-			{"ESP Loader", "loadstring(game:HttpGet('https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/esp.lua'))()"},
-			{"Steal a Brainrot Hub (Only for Steal a Brainrot)", "loadstring(game:HttpGet('https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/stealabrainrot.lua'))()"},
-			{"SAB Admin Tool (Only for Steal a Brainrot)", "loadstring(game:HttpGet('https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/stealabrainrot-admin.lua'))()"},
-			{"99 Nights Hub (Only for 99 Nights in the Forest)", "loadstring(game:HttpGet('https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/99nights.lua'))()"},
-			{"NBTF Hub (Only for Nuclear Blast Testing Facility)", "loadstring(game:HttpGet('https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/nbtf.lua'))()"},
-		}
-
-		for i, preset in ipairs(presets) do
-			local pBtn = Instance.new("TextButton")
-			pBtn.Size = UDim2.new(1, -4, 0, 28)
-			pBtn.BackgroundColor3 = COLORS.tabBg
-			pBtn.Text = "  " .. preset[1]
-			pBtn.TextColor3 = COLORS.accent
-			pBtn.Font = Enum.Font.GothamBold
-			pBtn.TextSize = 11
-			pBtn.TextXAlignment = Enum.TextXAlignment.Left
-			pBtn.LayoutOrder = i
-			pBtn.ZIndex = 10
-			pBtn.Parent = hubScroll
-			addCorner(pBtn, 4)
-
-			pBtn.MouseEnter:Connect(function() pBtn.BackgroundColor3 = COLORS.bgSecondary end)
-			pBtn.MouseLeave:Connect(function() pBtn.BackgroundColor3 = COLORS.tabBg end)
-
-			pBtn.MouseButton1Click:Connect(function()
-				scriptInput.Text = preset[2]
-				updateLineNumbers()
-				hubFrame:Destroy()
-				hubOpen = false
-				addLog("[HUB] Loaded: " .. preset[1], COLORS.success)
-			end)
-		end
-	end)
-
-	-- Hover effects
-	executeBtn.MouseEnter:Connect(function() executeBtn.BackgroundColor3 = COLORS.accentHover end)
-	executeBtn.MouseLeave:Connect(function() executeBtn.BackgroundColor3 = COLORS.btnExecute end)
-	clearBtn.MouseEnter:Connect(function() clearBtn.BackgroundColor3 = COLORS.tabBg end)
-	clearBtn.MouseLeave:Connect(function() clearBtn.BackgroundColor3 = COLORS.btnClear end)
-	pasteBtn.MouseEnter:Connect(function() pasteBtn.BackgroundColor3 = COLORS.tabBg end)
-	pasteBtn.MouseLeave:Connect(function() pasteBtn.BackgroundColor3 = COLORS.btnClear end)
-	hubBtn.MouseEnter:Connect(function() hubBtn.BackgroundColor3 = COLORS.accent end)
-	hubBtn.MouseLeave:Connect(function() hubBtn.BackgroundColor3 = COLORS.accentDark end)
 end
 
 -- ===================== ESP LOGIC =====================
@@ -1338,11 +1020,7 @@ local function stopCarNoclip()
 	addLog("[CAR NOCLIP] OFF", COLORS.error)
 end
 
--- ===================== SPIN FLING LOGIC (Infinite Yield Style) =====================
--- High density + BodyAngularVelocity on ALL axes + noclip + velocity perturbation
-
-local flingConnection = nil
-
+-- ===================== SPIN FLING LOGIC =====================
 local function startFling()
 	local ok, err = pcall(function()
 		local character = LocalPlayer.Character
@@ -1370,21 +1048,20 @@ local function startFling()
 		spinBAV.P = math.huge
 		spinBAV.Parent = root
 
-		-- Disable collision on character parts (noclip handles this too but be sure)
+		-- Disable collision on character parts
 		for _, part in ipairs(character:GetDescendants()) do
 			if part:IsA("BasePart") then
 				part.CanCollide = false
 			end
 		end
 
-		-- Heartbeat: random velocity perturbation to keep physics active + create collision events
+		-- Heartbeat: random velocity perturbation to keep physics active
 		flingConnection = RunService.Heartbeat:Connect(function()
 			pcall(function()
 				local char = LocalPlayer.Character
 				if not char then return end
 				local rt = char:FindFirstChild("HumanoidRootPart")
 				if not rt then return end
-				-- Small random velocity nudge to trigger collision detection
 				rt.Velocity = rt.Velocity + Vector3.new(
 					math.random(-50, 50),
 					0,
@@ -1393,7 +1070,7 @@ local function startFling()
 			end)
 		end)
 
-		-- Pulse spin on/off (0.15s on, 0.05s off) for repeated impulse spikes
+		-- Pulse spin on/off for repeated impulse spikes
 		spawn(function()
 			while flingEnabled do
 				if spinBAV and spinBAV.Parent then
@@ -1410,7 +1087,6 @@ local function startFling()
 		addLog("[SPIN FLING] ON - Walk into players!", COLORS.success)
 	end)
 	if not ok then
-		warn("[SPIN FLING ERROR] " .. tostring(err))
 		addLog("[SPIN FLING] Error: " .. tostring(err), COLORS.error)
 	end
 end
@@ -1447,114 +1123,7 @@ local function stopFling()
 	addLog("[SPIN FLING] OFF", COLORS.error)
 end
 
--- ===================== CAR FLING LOGIC =====================
-local function startCarFling()
-	local ok, err = pcall(function()
-		local vehicle, vPart = getVehicle()
-		if not vPart then
-			addLog("[CAR FLING] Sit in a vehicle first!", COLORS.error)
-			return
-		end
-
-		-- Save original physics and set density to 100 (super heavy)
-		carFlingOrigProps = {}
-		for _, part in ipairs(vehicle:GetDescendants()) do
-			if part:IsA("BasePart") then
-				carFlingOrigProps[part] = part.CustomPhysicalProperties
-				part.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
-			end
-		end
-
-		-- Also make character super heavy
-		local character = LocalPlayer.Character
-		if character then
-			for _, part in ipairs(character:GetDescendants()) do
-				if part:IsA("BasePart") then
-					carFlingOrigProps[part] = part.CustomPhysicalProperties
-					part.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
-				end
-			end
-		end
-
-		-- Auto-enable car noclip so vehicle doesn't get stuck
-		if not carNoclipEnabled then
-			carNoclipEnabled = true
-			startCarNoclip()
-		end
-		wait(0.1)
-
-		-- BodyAngularVelocity on vehicle - spin on ALL axes for chaotic collision
-		carFlingBAV = Instance.new("BodyAngularVelocity")
-		carFlingBAV.AngularVelocity = Vector3.new(carFlingPower, carFlingPower, carFlingPower)
-		carFlingBAV.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-		carFlingBAV.P = math.huge
-		carFlingBAV.Parent = vPart
-
-		-- Set vehicle parts massless + zero velocity
-		for _, part in ipairs(vehicle:GetDescendants()) do
-			if part:IsA("BasePart") then
-				part.Massless = true
-				part.Velocity = Vector3.new(0, 0, 0)
-			end
-		end
-
-		-- Pulse spin on/off for repeated impulse spikes
-		spawn(function()
-			while carFlingEnabled do
-				if carFlingBAV and carFlingBAV.Parent then
-					carFlingBAV.AngularVelocity = Vector3.new(carFlingPower, carFlingPower, carFlingPower)
-				end
-				wait(0.15)
-				if carFlingBAV and carFlingBAV.Parent then
-					carFlingBAV.AngularVelocity = Vector3.new(0, 0, 0)
-				end
-				wait(0.05)
-			end
-		end)
-
-		addLog("[CAR FLING] ON - Drive into players!", COLORS.success)
-	end)
-	if not ok then
-		warn("[CAR FLING ERROR] " .. tostring(err))
-		addLog("[CAR FLING] Error: " .. tostring(err), COLORS.error)
-	end
-end
-
-local function stopCarFling()
-	-- Remove BodyAngularVelocity
-	if carFlingBAV then pcall(function() carFlingBAV:Destroy() end) carFlingBAV = nil end
-
-	-- Restore physics properties
-	pcall(function()
-		for part, props in pairs(carFlingOrigProps) do
-			if part and part.Parent then
-				if props then
-					part.CustomPhysicalProperties = props
-				else
-					part.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
-				end
-				part.Massless = false
-				part.Velocity = Vector3.new(0, 0, 0)
-				part.RotVelocity = Vector3.new(0, 0, 0)
-			end
-		end
-	end)
-	carFlingOrigProps = {}
-
-	-- Disable car noclip if it was auto-enabled
-	if carNoclipEnabled then
-		carNoclipEnabled = false
-		stopCarNoclip()
-	end
-
-	addLog("[CAR FLING] OFF", COLORS.error)
-end
-
--- ===================== WALK FLING LOGIC (Dinos Anim Style) =====================
--- High density + velocity spike each physics frame - walk normally while flinging
-
-local walkFlingProps = {}
-
+-- ===================== WALK FLING LOGIC =====================
 local function startWalkFling()
 	local ok, err = pcall(function()
 		local character = LocalPlayer.Character
@@ -1562,7 +1131,7 @@ local function startWalkFling()
 		local root = character:FindFirstChild("HumanoidRootPart")
 		if not root then return end
 
-		-- Set density to 100 (heavy = impulse on collision)
+		-- Set density to 100
 		walkFlingProps = {}
 		for _, part in ipairs(character:GetDescendants()) do
 			if part:IsA("BasePart") then
@@ -1574,7 +1143,7 @@ local function startWalkFling()
 		-- Enable noclip
 		if not noclipEnabled then noclipEnabled = true startNoclip() end
 
-		-- Velocity spike loop using Heartbeat only
+		-- Velocity spike loop
 		walkFlingThread = spawn(function()
 			local frame = 0
 			while walkFlingEnabled do
@@ -1583,13 +1152,10 @@ local function startWalkFling()
 				local rt = char and char:FindFirstChild("HumanoidRootPart")
 				if char and char.Parent and rt and rt.Parent then
 					frame = frame + 1
-					-- Every other frame: spike then restore
 					if frame % 2 == 1 then
-						-- SPIKE: massive velocity burst in movement direction
 						local vel = rt.Velocity
 						rt.AssemblyLinearVelocity = vel * walkFlingPower + Vector3.new(0, walkFlingPower * 0.5, 0)
 					else
-						-- RESTORE: small random nudge to keep physics active
 						rt.AssemblyLinearVelocity = Vector3.new(
 							math.random(-10, 10),
 							math.random(-5, 5),
@@ -1603,7 +1169,6 @@ local function startWalkFling()
 		addLog("[WALK FLING] ON - Walk into players!", COLORS.success)
 	end)
 	if not ok then
-		warn("[WALK FLING ERROR] " .. tostring(err))
 		addLog("[WALK FLING] Error: " .. tostring(err), COLORS.error)
 	end
 end
@@ -1807,6 +1372,57 @@ local function stopSeizure()
 	addLog("[SEIZURE] OFF", COLORS.error)
 end
 
+-- ===================== RAINBOW CAR LOGIC =====================
+local function startRainbowCar()
+	rainbowCarConnection = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			local vehicle, vPart = getVehicle()
+			if not vehicle then return end
+			local hue = tick() % 5 / 5
+			local color = Color3.fromHSV(hue, 1, 1)
+			for _, part in ipairs(vehicle:GetDescendants()) do
+				if part:IsA("BasePart") then
+					part.Color = color
+				end
+			end
+		end)
+	end)
+	addLog("[RAINBOW CAR] ON", COLORS.success)
+end
+
+local function stopRainbowCar()
+	if rainbowCarConnection then rainbowCarConnection:Disconnect() rainbowCarConnection = nil end
+	addLog("[RAINBOW CAR] OFF", COLORS.error)
+end
+
+-- ===================== RAINBOW HOUSE LOGIC =====================
+local function startRainbowHouse()
+	rainbowHouseConnection = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			-- Find the player's house/plot
+			local plots = workspace:FindFirstChild("Plots") or workspace:FindFirstChild("Houses")
+			if not plots then return end
+			for _, plot in ipairs(plots:GetChildren()) do
+				if plot:IsA("Model") and plot.Name:find(LocalPlayer.Name) then
+					local hue = tick() % 5 / 5
+					local color = Color3.fromHSV(hue, 1, 1)
+					for _, part in ipairs(plot:GetDescendants()) do
+						if part:IsA("BasePart") then
+							part.Color = color
+						end
+					end
+				end
+			end
+		end)
+	end)
+	addLog("[RAINBOW HOUSE] ON", COLORS.success)
+end
+
+local function stopRainbowHouse()
+	if rainbowHouseConnection then rainbowHouseConnection:Disconnect() rainbowHouseConnection = nil end
+	addLog("[RAINBOW HOUSE] OFF", COLORS.error)
+end
+
 -- ===================== EMOTE LOGIC =====================
 local function stopEmote()
 	emoteActive = false
@@ -1880,7 +1496,7 @@ local function playJerkEmote()
 				end)
 			end)
 		else
-			-- R15 fallback: Bug Net swing looped at suggestive time range
+			-- R15 fallback
 			local anim = Instance.new("Animation")
 			anim.AnimationId = "rbxassetid://698251653"
 			local track = hum:LoadAnimation(anim)
@@ -1902,109 +1518,48 @@ local function playJerkEmote()
 	end)
 end
 
--- ===================== VEHICLE FLY =====================
-local function startVehicleFly()
-	local vehicle, part = getVehicle()
-	if not part then
-		addLog("[VFLY] Sit in a vehicle first!", COLORS.error)
-		return
-	end
-
+-- ===================== TELEPORT FUNCTIONS =====================
+local function teleportTo(cf)
 	pcall(function()
-		for _, obj in ipairs(part.Parent:GetDescendants()) do
-			if obj:IsA("BodyVelocity") or obj:IsA("BodyGyro") or obj:IsA("BodyPosition") then
-				if obj.Name ~= "SX_VFly_BV" and obj.Name ~= "SX_VFly_BG" then
-					obj:Destroy()
-				end
-			end
-		end
-		for _, obj in ipairs(part.Parent:GetDescendants()) do
-			if obj:IsA("BasePart") then obj.Anchored = false end
-		end
+		local character = LocalPlayer.Character
+		if not character then return end
+		local root = character:FindFirstChild("HumanoidRootPart")
+		if root then root.CFrame = cf end
 	end)
-
-	vehicleFlyBV = Instance.new("BodyVelocity")
-	vehicleFlyBV.Name = "SX_VFly_BV"
-	vehicleFlyBV.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-	vehicleFlyBV.Velocity = Vector3.new(0, 0, 0)
-	vehicleFlyBV.P = 9000
-	vehicleFlyBV.Parent = part
-
-	vehicleFlyBG = Instance.new("BodyGyro")
-	vehicleFlyBG.Name = "SX_VFly_BG"
-	vehicleFlyBG.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-	vehicleFlyBG.P = 9000
-	vehicleFlyBG.CFrame = part.CFrame
-	vehicleFlyBG.Parent = part
-
-	vehicleFlyConnection = RunService.RenderStepped:Connect(function()
-		pcall(function()
-			if not vehicleFlyBV or not vehicleFlyBV.Parent then return end
-			local cam = workspace.CurrentCamera
-			local moveVec = Vector3.zero
-			if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveVec = moveVec + cam.CFrame.LookVector end
-			if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveVec = moveVec - cam.CFrame.LookVector end
-			if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveVec = moveVec - cam.CFrame.RightVector end
-			if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveVec = moveVec + cam.CFrame.RightVector end
-			if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveVec = moveVec + cam.CFrame.UpVector end
-			if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveVec = moveVec - cam.CFrame.UpVector end
-			vehicleFlyBV.Velocity = moveVec.Magnitude > 0 and moveVec.Unit * flySpeed or Vector3.zero
-			vehicleFlyBG.CFrame = cam.CFrame
-		end)
-	end)
-	addLog("[VFLY] Vehicle fly ON", COLORS.success)
 end
 
-local function stopVehicleFly()
-	if vehicleFlyConnection then vehicleFlyConnection:Disconnect() vehicleFlyConnection = nil end
-	if vehicleFlyBV then pcall(function() vehicleFlyBV:Destroy() end) vehicleFlyBV = nil end
-	if vehicleFlyBG then pcall(function() vehicleFlyBG:Destroy() end) vehicleFlyBG = nil end
-	addLog("[VFLY] Vehicle fly OFF", COLORS.error)
-end
-
--- ===================== TELEPORT / SPECTATE =====================
-local function teleportToPlayer(targetPlayer)
+local function teleportToPlayer(target)
 	pcall(function()
-		local myChar = LocalPlayer.Character
-		local theirChar = targetPlayer.Character
-		if myChar and theirChar then
-			local myHRP = myChar:FindFirstChild("HumanoidRootPart")
-			local theirHRP = theirChar:FindFirstChild("HumanoidRootPart")
-			if myHRP and theirHRP then
-				myHRP.CFrame = theirHRP.CFrame * CFrame.new(0, 0, -5)
-				addLog("[TP] Teleported to " .. targetPlayer.DisplayName, COLORS.success)
+		if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+			local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+			if myRoot then
+				myRoot.CFrame = target.Character.HumanoidRootPart.CFrame + Vector3.new(3, 0, 0)
+				addLog("[TP] Teleported to " .. target.DisplayName, COLORS.success)
 			end
 		end
 	end)
 end
 
-local spectating = false
-
-local function spectatePlayer(targetPlayer)
+-- ===================== CHARACTER SCALE =====================
+local function setCharacterScale(scale)
 	pcall(function()
-		if targetPlayer and targetPlayer.Character then
-			local humanoid = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
-			if humanoid then
-				workspace.CurrentCamera.CameraSubject = humanoid
-				spectating = true
-				addLog("[SPECTATE] Watching " .. targetPlayer.DisplayName, COLORS.success)
-			end
-		end
+		local character = LocalPlayer.Character
+		if not character then return end
+		local hum = character:FindFirstChildOfClass("Humanoid")
+		if not hum then return end
+		-- R15 scaling
+		local headScale = hum:FindFirstChild("HeadScale")
+		local bodyDepth = hum:FindFirstChild("BodyDepthScale")
+		local bodyWidth = hum:FindFirstChild("BodyWidthScale")
+		local bodyHeight = hum:FindFirstChild("BodyHeightScale")
+		if headScale then headScale.Value = scale end
+		if bodyDepth then bodyDepth.Value = scale end
+		if bodyWidth then bodyWidth.Value = scale end
+		if bodyHeight then bodyHeight.Value = scale end
 	end)
 end
 
-local function unspectate()
-	pcall(function()
-		local myChar = LocalPlayer.Character
-		if myChar then
-			local humanoid = myChar:FindFirstChildOfClass("Humanoid")
-			if humanoid then workspace.CurrentCamera.CameraSubject = humanoid end
-		end
-		spectating = false
-		addLog("[SPECTATE] Stopped", COLORS.error)
-	end)
-end
-
+-- ===================== JUMP POWER / GRAVITY HELPERS =====================
 local function setJumpPower(value)
 	pcall(function()
 		local character = LocalPlayer.Character
@@ -2019,63 +1574,42 @@ local function setGravity(value)
 	pcall(function() workspace.Gravity = value end)
 end
 
--- ===================== SERVER FUNCTIONS =====================
-local function rejoinServer()
-	pcall(function() TeleportService:Teleport(game.PlaceId, LocalPlayer) end)
-	addLog("[SERVER] Rejoining...", COLORS.accent)
-end
-
-local function serverHop()
-	pcall(function()
-		local servers = HttpService:JSONDecode(
-			game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100")
-		)
-		if servers and servers.data then
-			for _, server in ipairs(servers.data) do
-				if server.id ~= game.JobId and server.playing < server.maxPlayers then
-					TeleportService:TeleportToPlaceInstance(game.PlaceId, server.id, LocalPlayer)
-					addLog("[SERVER] Hopping...", COLORS.accent)
-					return
-				end
-			end
-		end
-		addLog("[SERVER] No available servers found", COLORS.error)
-	end)
-end
-
--- ===================== BUILD MAIN TAB =====================
+-- =====================================================================
+-- ======================== BUILD MAIN TAB ============================
+-- =====================================================================
 do
 	local tab = tabFrames["Main"]
 
-	createSectionLabel(tab, "Welcome", 1)
-	createInfoLabel(tab, "Synapse X - The Revival v2.1", 2)
-	createInfoLabel(tab, "Player: " .. LocalPlayer.DisplayName .. " (@" .. LocalPlayer.Name .. ")", 3)
+	createSectionLabel(tab, "Info", 1)
+	createInfoLabel(tab, "Brookhaven RP Hub v1.0", 2)
+	createInfoLabel(tab, "SX The Revival", 3)
+	createInfoLabel(tab, "Player: " .. LocalPlayer.DisplayName .. " (@" .. LocalPlayer.Name .. ")", 4)
 
 	local spacer = Instance.new("Frame")
 	spacer.Size = UDim2.new(1, 0, 0, 4)
 	spacer.BackgroundTransparency = 1
-	spacer.LayoutOrder = 4
+	spacer.LayoutOrder = 5
 	spacer.Parent = tab
 
-	createSectionLabel(tab, "Quick Toggles", 5)
+	createSectionLabel(tab, "Quick Toggles", 6)
 
-	createToggle(tab, "ESP", 6, function(on)
+	createToggle(tab, "ESP", 7, function(on)
 		espEnabled = on
 		if on then enableESP() else disableESP() end
 	end)
-	createToggle(tab, "Fly", 7, function(on)
+	createToggle(tab, "Fly", 8, function(on)
 		flyEnabled = on
 		if on then startFly() else stopFly() end
 	end)
-	createToggle(tab, "Noclip", 8, function(on)
+	createToggle(tab, "Noclip", 9, function(on)
 		noclipEnabled = on
 		if on then startNoclip() else stopNoclip() end
 	end)
-	createToggle(tab, "God Mode", 9, function(on)
+	createToggle(tab, "God Mode", 10, function(on)
 		godEnabled = on
 		if on then startGod() else stopGod() end
 	end)
-	createToggle(tab, "Infinite Jump", 10, function(on)
+	createToggle(tab, "Infinite Jump", 11, function(on)
 		infJumpEnabled = on
 		if on then startInfJump() else stopInfJump() end
 	end)
@@ -2083,10 +1617,10 @@ do
 	local spacer2 = Instance.new("Frame")
 	spacer2.Size = UDim2.new(1, 0, 0, 4)
 	spacer2.BackgroundTransparency = 1
-	spacer2.LayoutOrder = 11
+	spacer2.LayoutOrder = 12
 	spacer2.Parent = tab
 
-	createSectionLabel(tab, "Output Log", 12)
+	createSectionLabel(tab, "Output Log", 13)
 
 	logFrame = Instance.new("ScrollingFrame")
 	logFrame.Size = UDim2.new(1, 0, 0, 100)
@@ -2095,7 +1629,7 @@ do
 	logFrame.ScrollBarThickness = 3
 	logFrame.ScrollBarImageColor3 = COLORS.accent
 	logFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-	logFrame.LayoutOrder = 13
+	logFrame.LayoutOrder = 14
 	logFrame.Parent = tab
 	addCorner(logFrame, 5)
 	addStroke(logFrame, COLORS.border, 1)
@@ -2107,324 +1641,106 @@ do
 	logLayout.Parent = logFrame
 end
 
--- ===================== BUILD PLAYER TAB =====================
-local playerListFrame
-local playerButtons = {}
-local selectedPlayerLabel
-
+-- =====================================================================
+-- ======================== BUILD TELEPORT TAB ========================
+-- =====================================================================
 do
-	local tab = tabFrames["Player"]
+	local tab = tabFrames["Teleport"]
 
-	createSectionLabel(tab, "Selected Player", 1)
+	createSectionLabel(tab, "Map Locations", 1)
 
-	selectedPlayerLabel = Instance.new("TextLabel")
-	selectedPlayerLabel.Size = UDim2.new(1, 0, 0, 22)
-	selectedPlayerLabel.BackgroundColor3 = COLORS.tabBg
-	selectedPlayerLabel.Text = "  None selected"
-	selectedPlayerLabel.TextColor3 = COLORS.textSecondary
-	selectedPlayerLabel.Font = Enum.Font.Gotham
-	selectedPlayerLabel.TextSize = 12
-	selectedPlayerLabel.TextXAlignment = Enum.TextXAlignment.Left
-	selectedPlayerLabel.LayoutOrder = 2
-	selectedPlayerLabel.Parent = tab
-	addCorner(selectedPlayerLabel, 5)
-
-	createSectionLabel(tab, "Actions", 3)
-
-	createActionButton(tab, "Teleport to Player", 4, function()
-		if selectedPlayer then teleportToPlayer(selectedPlayer)
-		else addLog("[TP] No player selected", COLORS.error) end
-	end)
-	createActionButton(tab, "Spectate Player", 5, function()
-		if selectedPlayer then spectatePlayer(selectedPlayer)
-		else addLog("[SPECTATE] No player selected", COLORS.error) end
-	end)
-	createActionButton(tab, "Unspectate", 6, function() unspectate() end)
-	createActionButton(tab, "Fling Player", 7, function()
-		if not selectedPlayer or not selectedPlayer.Character then
-			addLog("[FLING] No player selected", COLORS.error)
-			return
-		end
-		local targetHRP = selectedPlayer.Character:FindFirstChild("HumanoidRootPart")
-		if not targetHRP then
-			addLog("[FLING] Target has no HumanoidRootPart", COLORS.error)
-			return
-		end
-		local myChar = LocalPlayer.Character
-		local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
-		if not myHRP then return end
-
-		addLog("[FLING] Flinging " .. selectedPlayer.DisplayName .. "...", COLORS.warning)
-
-		task.spawn(function()
-			local savedCF = myHRP.CFrame
-
-			-- Make character super heavy so contact launches the target
-			local savedProps = {}
-			for _, part in ipairs(myChar:GetDescendants()) do
-				if part:IsA("BasePart") then
-					savedProps[part] = part.CustomPhysicalProperties
-					part.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
-				end
-			end
-
-			-- Spin at high angular velocity
-			local spinBAVLocal = Instance.new("BodyAngularVelocity")
-			spinBAVLocal.AngularVelocity = Vector3.new(0, flingPower, 0)
-			spinBAVLocal.MaxTorque = Vector3.new(0, math.huge, 0)
-			spinBAVLocal.P = math.huge
-			spinBAVLocal.Parent = myHRP
-
-			-- Ram into target for 2 seconds
-			local startTime = tick()
-			while tick() - startTime < 2 do
-				pcall(function()
-					if not targetHRP or not targetHRP.Parent then return end
-					myHRP.CFrame = CFrame.new(targetHRP.Position)
-				end)
-				task.wait()
-			end
-
-			-- Cleanup
-			pcall(function() spinBAVLocal:Destroy() end)
-			for part, props in pairs(savedProps) do
-				pcall(function()
-					if props then part.CustomPhysicalProperties = props
-					else part.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5) end
-				end)
-			end
-
-			task.wait(0.2)
-			pcall(function() myHRP.CFrame = savedCF end)
-			addLog("[FLING] Flung " .. selectedPlayer.DisplayName .. "!", COLORS.success)
+	for i, loc in ipairs(TELEPORT_LOCATIONS) do
+		createActionButton(tab, loc[1], i + 1, function()
+			teleportTo(loc[2])
+			addLog("[TP] Teleported to " .. loc[1], COLORS.success)
 		end)
-	end)
+	end
 
-	createToggle(tab, "Kill Aura", 8, function(on)
-		killAuraEnabled = on
-		if on then startKillAura() else stopKillAura() end
-	end)
-
+	local spacerOrder = #TELEPORT_LOCATIONS + 3
 	local spacer = Instance.new("Frame")
 	spacer.Size = UDim2.new(1, 0, 0, 4)
 	spacer.BackgroundTransparency = 1
-	spacer.LayoutOrder = 9
+	spacer.LayoutOrder = spacerOrder
 	spacer.Parent = tab
 
-	createSectionLabel(tab, "Player List", 10)
+	createSectionLabel(tab, "Players", spacerOrder + 1)
 
-	playerListFrame = Instance.new("Frame")
-	playerListFrame.Size = UDim2.new(1, 0, 0, 0)
-	playerListFrame.BackgroundTransparency = 1
-	playerListFrame.AutomaticSize = Enum.AutomaticSize.Y
-	playerListFrame.LayoutOrder = 11
-	playerListFrame.Parent = tab
+	-- Player name input + goto button row
+	local gotoRow = Instance.new("Frame")
+	gotoRow.Size = UDim2.new(1, 0, 0, 30)
+	gotoRow.BackgroundTransparency = 1
+	gotoRow.LayoutOrder = spacerOrder + 2
+	gotoRow.Parent = tab
 
-	local playerListLayout = Instance.new("UIListLayout")
-	playerListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	playerListLayout.Padding = UDim.new(0, 3)
-	playerListLayout.Parent = playerListFrame
-end
+	local playerInput = Instance.new("TextBox")
+	playerInput.Size = UDim2.new(0.65, -4, 1, 0)
+	playerInput.BackgroundColor3 = COLORS.tabBg
+	playerInput.TextColor3 = COLORS.textPrimary
+	playerInput.PlaceholderText = "Player name..."
+	playerInput.PlaceholderColor3 = COLORS.textDim
+	playerInput.Font = Enum.Font.Gotham
+	playerInput.TextSize = 12
+	playerInput.ClearTextOnFocus = false
+	playerInput.Text = ""
+	playerInput.Parent = gotoRow
+	addCorner(playerInput, 4)
 
-local function refreshPlayerList()
-	for _, btn in pairs(playerButtons) do pcall(function() btn:Destroy() end) end
-	playerButtons = {}
-	local order = 0
-	for _, player in ipairs(Players:GetPlayers()) do
-		if player ~= LocalPlayer then
-			order = order + 1
-			local btn = Instance.new("TextButton")
-			btn.Size = UDim2.new(1, 0, 0, 26)
-			btn.BackgroundColor3 = (selectedPlayer == player) and COLORS.accent or COLORS.tabBg
-			btn.Text = "  " .. player.DisplayName .. " (@" .. player.Name .. ")"
-			btn.TextColor3 = (selectedPlayer == player) and COLORS.textPrimary or COLORS.textSecondary
-			btn.Font = Enum.Font.Gotham
-			btn.TextSize = 11
-			btn.TextXAlignment = Enum.TextXAlignment.Left
-			btn.LayoutOrder = order
-			btn.Parent = playerListFrame
-			addCorner(btn, 4)
-			btn.MouseButton1Click:Connect(function()
-				selectedPlayer = player
-				selectedPlayerLabel.Text = "  " .. player.DisplayName .. " (@" .. player.Name .. ")"
-				selectedPlayerLabel.TextColor3 = COLORS.accent
-				refreshPlayerList()
-			end)
-			playerButtons[player] = btn
-		end
-	end
-end
+	local gotoBtn = Instance.new("TextButton")
+	gotoBtn.Size = UDim2.new(0.35, -4, 1, 0)
+	gotoBtn.Position = UDim2.new(0.65, 4, 0, 0)
+	gotoBtn.BackgroundColor3 = COLORS.accent
+	gotoBtn.Text = "Goto Player"
+	gotoBtn.TextColor3 = COLORS.textPrimary
+	gotoBtn.Font = Enum.Font.GothamBold
+	gotoBtn.TextSize = 12
+	gotoBtn.Parent = gotoRow
+	addCorner(gotoBtn, 4)
 
-Players.PlayerAdded:Connect(function() _wait(0.5) refreshPlayerList() end)
-Players.PlayerRemoving:Connect(function(player)
-	if selectedPlayer == player then
-		selectedPlayer = nil
-		selectedPlayerLabel.Text = "  None selected"
-		selectedPlayerLabel.TextColor3 = COLORS.textSecondary
-	end
-	_wait(0.1) refreshPlayerList()
-end)
-refreshPlayerList()
-
--- ===================== BUILD SERVER TAB =====================
-do
-	local tab = tabFrames["Server"]
-
-	createSectionLabel(tab, "Server Info", 1)
-	createInfoLabel(tab, "Place ID: " .. tostring(game.PlaceId), 2)
-	createInfoLabel(tab, "Server ID: " .. tostring(game.JobId):sub(1, 24) .. "...", 3)
-
-	local playerCountLabel = createInfoLabel(tab, "Players: " .. #Players:GetPlayers(), 4)
-	_spawn(function()
-		while true do
-			playerCountLabel.Text = "Players: " .. #Players:GetPlayers()
-			_wait(5)
+	gotoBtn.MouseButton1Click:Connect(function()
+		local name = playerInput.Text
+		if name == "" then addLog("[TP] Enter a player name", COLORS.error) return end
+		local target = findPlayer(name)
+		if target then
+			teleportToPlayer(target)
+		else
+			addLog("[TP] Player not found: " .. name, COLORS.error)
 		end
 	end)
-
-	local spacer = Instance.new("Frame")
-	spacer.Size = UDim2.new(1, 0, 0, 4)
-	spacer.BackgroundTransparency = 1
-	spacer.LayoutOrder = 5
-	spacer.Parent = tab
-
-	createSectionLabel(tab, "Actions", 6)
-	createActionButton(tab, "Rejoin Server", 7, function() rejoinServer() end)
-	createActionButton(tab, "Server Hop", 8, function() serverHop() end)
-
-	createActionButton(tab, "Copy Server ID", 9, function()
-		pcall(function()
-			if setclipboard then setclipboard(game.JobId) addLog("[SERVER] Server ID copied", COLORS.success)
-			elseif toclipboard then toclipboard(game.JobId) addLog("[SERVER] Server ID copied", COLORS.success)
-			else addLog("[SERVER] Clipboard not supported", COLORS.error) end
-		end)
-	end)
-	createActionButton(tab, "Copy Place ID", 10, function()
-		pcall(function()
-			if setclipboard then setclipboard(tostring(game.PlaceId)) addLog("[SERVER] Place ID copied", COLORS.success)
-			elseif toclipboard then toclipboard(tostring(game.PlaceId)) addLog("[SERVER] Place ID copied", COLORS.success)
-			else addLog("[SERVER] Clipboard not supported", COLORS.error) end
-		end)
-	end)
-end
-
--- ===================== BUILD ESP TAB =====================
-do
-	local tab = tabFrames["ESP"]
-
-	createSectionLabel(tab, "ESP Settings", 1)
-	createToggle(tab, "ESP Enabled", 2, function(on)
-		espEnabled = on
-		if on then enableESP() else disableESP() end
-	end)
-
-	local spacer = Instance.new("Frame")
-	spacer.Size = UDim2.new(1, 0, 0, 4)
-	spacer.BackgroundTransparency = 1
-	spacer.LayoutOrder = 3
-	spacer.Parent = tab
-
-	createSectionLabel(tab, "Fill Color", 4)
-
-	local fillColors = {
-		{Color3.fromRGB(255, 0, 0), "Red"},
-		{Color3.fromRGB(0, 255, 0), "Green"},
-		{Color3.fromRGB(0, 100, 255), "Blue"},
-		{Color3.fromRGB(255, 102, 0), "Orange"},
-	}
-	local fillRow = Instance.new("Frame")
-	fillRow.Size = UDim2.new(1, 0, 0, 26)
-	fillRow.BackgroundTransparency = 1
-	fillRow.LayoutOrder = 5
-	fillRow.Parent = tab
-	for i, preset in ipairs(fillColors) do
-		local colorBtn = Instance.new("TextButton")
-		colorBtn.Size = UDim2.new(0.25, -4, 1, 0)
-		colorBtn.Position = UDim2.new((i-1)*0.25, 2, 0, 0)
-		colorBtn.BackgroundColor3 = preset[1]
-		colorBtn.Text = preset[2]
-		colorBtn.TextColor3 = COLORS.textPrimary
-		colorBtn.Font = Enum.Font.GothamBold
-		colorBtn.TextSize = 10
-		colorBtn.Parent = fillRow
-		addCorner(colorBtn, 4)
-		colorBtn.MouseButton1Click:Connect(function()
-			HIGHLIGHT_COLOR = preset[1]
-			for _, hl in pairs(highlights) do pcall(function() hl.FillColor = preset[1] end) end
-			addLog("[ESP] Fill: " .. preset[2], COLORS.accent)
-		end)
-	end
-
-	createSectionLabel(tab, "Outline Color", 6)
-
-	local outlineColors = {
-		{Color3.fromRGB(255, 255, 255), "White"},
-		{Color3.fromRGB(255, 0, 0), "Red"},
-		{Color3.fromRGB(255, 102, 0), "Orange"},
-		{Color3.fromRGB(0, 255, 255), "Cyan"},
-	}
-	local outRow = Instance.new("Frame")
-	outRow.Size = UDim2.new(1, 0, 0, 26)
-	outRow.BackgroundTransparency = 1
-	outRow.LayoutOrder = 7
-	outRow.Parent = tab
-	for i, preset in ipairs(outlineColors) do
-		local colorBtn = Instance.new("TextButton")
-		colorBtn.Size = UDim2.new(0.25, -4, 1, 0)
-		colorBtn.Position = UDim2.new((i-1)*0.25, 2, 0, 0)
-		colorBtn.BackgroundColor3 = preset[1]
-		colorBtn.Text = preset[2]
-		colorBtn.TextColor3 = (preset[2] == "White") and COLORS.bg or COLORS.textPrimary
-		colorBtn.Font = Enum.Font.GothamBold
-		colorBtn.TextSize = 10
-		colorBtn.Parent = outRow
-		addCorner(colorBtn, 4)
-		colorBtn.MouseButton1Click:Connect(function()
-			OUTLINE_COLOR = preset[1]
-			for _, hl in pairs(highlights) do pcall(function() hl.OutlineColor = preset[1] end) end
-			addLog("[ESP] Outline: " .. preset[2], COLORS.accent)
-		end)
-	end
+	gotoBtn.MouseEnter:Connect(function() gotoBtn.BackgroundColor3 = COLORS.accentHover end)
+	gotoBtn.MouseLeave:Connect(function() gotoBtn.BackgroundColor3 = COLORS.accent end)
 
 	local spacer2 = Instance.new("Frame")
 	spacer2.Size = UDim2.new(1, 0, 0, 4)
 	spacer2.BackgroundTransparency = 1
-	spacer2.LayoutOrder = 8
+	spacer2.LayoutOrder = spacerOrder + 3
 	spacer2.Parent = tab
 
-	createSectionLabel(tab, "Refresh", 9)
-	createSlider(tab, "Interval (seconds)", 1, 30, REFRESH_INTERVAL, 10, function(val)
-		REFRESH_INTERVAL = val
+	createActionButton(tab, "Print My Position", spacerOrder + 4, function()
+		pcall(function()
+			local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+			if root then
+				local cf = root.CFrame
+				local pos = string.format("CFrame.new(%.1f, %.1f, %.1f)", cf.X, cf.Y, cf.Z)
+				addLog("[POS] " .. pos, COLORS.accent)
+				print("[BROOKHAVEN POS] " .. pos)
+			end
+		end)
 	end)
 end
 
--- ===================== BUILD MOVEMENT TAB =====================
+-- =====================================================================
+-- ======================== BUILD PLAYER TAB ==========================
+-- =====================================================================
 do
-	local tab = tabFrames["Movement"]
+	local tab = tabFrames["Player"]
 
-	createSectionLabel(tab, "Flight", 1)
-	createToggle(tab, "Fly", 2, function(on)
-		flyEnabled = on
-		if on then startFly() else stopFly() end
-	end)
-	createSlider(tab, "Fly Speed", 10, 500, flySpeed, 3, function(val) flySpeed = val end)
-	createToggle(tab, "Vehicle Fly (Sit First)", 4, function(on)
-		vehicleFlyEnabled = on
-		if on then startVehicleFly() else stopVehicleFly() end
-	end)
+	createSectionLabel(tab, "Movement", 1)
 
-	local spacer = Instance.new("Frame")
-	spacer.Size = UDim2.new(1, 0, 0, 4)
-	spacer.BackgroundTransparency = 1
-	spacer.LayoutOrder = 5
-	spacer.Parent = tab
-
-	createSectionLabel(tab, "Movement", 6)
-	createToggle(tab, "Speed Boost", 7, function(on)
+	createToggle(tab, "Speed Boost", 2, function(on)
 		speedEnabled = on
 		if on then startSpeed() else stopSpeed() end
 	end)
-	createSlider(tab, "Walk Speed", 16, 500, speedValue, 8, function(val)
+	createSlider(tab, "Walk Speed", 16, 500, speedValue, 3, function(val)
 		speedValue = val
 		if speedEnabled then
 			pcall(function()
@@ -2436,13 +1752,31 @@ do
 			end)
 		end
 	end)
-	createToggle(tab, "Noclip", 9, function(on)
+	createToggle(tab, "Fly", 4, function(on)
+		flyEnabled = on
+		if on then startFly() else stopFly() end
+	end)
+	createSlider(tab, "Fly Speed", 10, 500, flySpeed, 5, function(val) flySpeed = val end)
+	createToggle(tab, "Noclip", 6, function(on)
 		noclipEnabled = on
 		if on then startNoclip() else stopNoclip() end
 	end)
-	createToggle(tab, "Car Noclip (Sit First)", 10, function(on)
-		carNoclipEnabled = on
-		if on then startCarNoclip() else stopCarNoclip() end
+
+	local spacer = Instance.new("Frame")
+	spacer.Size = UDim2.new(1, 0, 0, 4)
+	spacer.BackgroundTransparency = 1
+	spacer.LayoutOrder = 7
+	spacer.Parent = tab
+
+	createSectionLabel(tab, "Jumping", 8)
+
+	createToggle(tab, "Infinite Jump", 9, function(on)
+		infJumpEnabled = on
+		if on then startInfJump() else stopInfJump() end
+	end)
+	createSlider(tab, "Jump Power", 10, 500, jumpPowerValue, 10, function(val)
+		jumpPowerValue = val
+		setJumpPower(val)
 	end)
 
 	local spacer2 = Instance.new("Frame")
@@ -2451,29 +1785,81 @@ do
 	spacer2.LayoutOrder = 11
 	spacer2.Parent = tab
 
-	createSectionLabel(tab, "Jumping", 13)
-	createToggle(tab, "Infinite Jump", 14, function(on)
-		infJumpEnabled = on
-		if on then startInfJump() else stopInfJump() end
+	createSectionLabel(tab, "Character", 12)
+
+	createToggle(tab, "God Mode", 13, function(on)
+		godEnabled = on
+		if on then startGod() else stopGod() end
 	end)
-	createSlider(tab, "Jump Power", 10, 500, jumpPowerValue, 15, function(val) jumpPowerValue = val setJumpPower(val) end)
-
-	local spacer3 = Instance.new("Frame")
-	spacer3.Size = UDim2.new(1, 0, 0, 4)
-	spacer3.BackgroundTransparency = 1
-	spacer3.LayoutOrder = 16
-	spacer3.Parent = tab
-
-	createSectionLabel(tab, "World", 17)
-	createSlider(tab, "Gravity", 0, 1000, math.floor(gravityValue), 18, function(val) gravityValue = val setGravity(val) end)
+	createToggle(tab, "Invisible", 14, function(on)
+		invisibleEnabled = on
+		if on then startInvisible() else stopInvisible() end
+	end)
+	createSlider(tab, "Gravity", 0, 1000, math.floor(gravityValue), 15, function(val)
+		gravityValue = val
+		setGravity(val)
+	end)
 end
 
--- ===================== BUILD FUN TAB =====================
+-- =====================================================================
+-- ======================== BUILD VEHICLE TAB =========================
+-- =====================================================================
 do
-	local tab = tabFrames["Fun"]
+	local tab = tabFrames["Vehicle"]
+
+	createSectionLabel(tab, "Vehicle Features", 1)
+
+	createToggle(tab, "Car Noclip", 2, function(on)
+		carNoclipEnabled = on
+		if on then startCarNoclip() else stopCarNoclip() end
+	end)
+	createToggle(tab, "Rainbow Car", 3, function(on)
+		rainbowCarEnabled = on
+		if on then startRainbowCar() else stopRainbowCar() end
+	end)
+
+	local spacer = Instance.new("Frame")
+	spacer.Size = UDim2.new(1, 0, 0, 4)
+	spacer.BackgroundTransparency = 1
+	spacer.LayoutOrder = 4
+	spacer.Parent = tab
+
+	createSectionLabel(tab, "Info", 5)
+	createInfoLabel(tab, "Sit in a vehicle before enabling", 6)
+end
+
+-- =====================================================================
+-- ======================== BUILD HOUSE TAB ===========================
+-- =====================================================================
+do
+	local tab = tabFrames["House"]
+
+	createSectionLabel(tab, "House Features", 1)
+
+	createToggle(tab, "Rainbow House", 2, function(on)
+		rainbowHouseEnabled = on
+		if on then startRainbowHouse() else stopRainbowHouse() end
+	end)
+
+	local spacer = Instance.new("Frame")
+	spacer.Size = UDim2.new(1, 0, 0, 4)
+	spacer.BackgroundTransparency = 1
+	spacer.LayoutOrder = 3
+	spacer.Parent = tab
+
+	createSectionLabel(tab, "Info", 4)
+	createInfoLabel(tab, "House features are experimental", 5)
+end
+
+-- =====================================================================
+-- ======================== BUILD TROLLING TAB ========================
+-- =====================================================================
+do
+	local tab = tabFrames["Trolling"]
 
 	createSectionLabel(tab, "Fling", 1)
-	createToggle(tab, "Spin Fling (IY Style)", 2, function(on)
+
+	createToggle(tab, "Spin Fling", 2, function(on)
 		flingEnabled = on
 		if on then
 			if walkFlingEnabled then walkFlingEnabled = false stopWalkFling() end
@@ -2481,7 +1867,7 @@ do
 		else stopFling() end
 	end)
 	createSlider(tab, "Spin Fling Power", 1000, 99999, flingPower, 3, function(val) flingPower = val end)
-	createToggle(tab, "Walk Fling (Dinos Anim)", 4, function(on)
+	createToggle(tab, "Walk Fling", 4, function(on)
 		walkFlingEnabled = on
 		if on then
 			if flingEnabled then flingEnabled = false stopFling() end
@@ -2489,27 +1875,28 @@ do
 		else stopWalkFling() end
 	end)
 	createSlider(tab, "Walk Fling Power", 1000, 50000, walkFlingPower, 5, function(val) walkFlingPower = val end)
-	createToggle(tab, "Car Fling (Sit First)", 6, function(on)
-		carFlingEnabled = on
-		if on then
-			if flingEnabled then flingEnabled = false stopFling() end
-			if walkFlingEnabled then walkFlingEnabled = false stopWalkFling() end
-			startCarFling()
-		else stopCarFling() end
-	end)
-	createSlider(tab, "Car Fling Power", 1000, 99999, carFlingPower, 7, function(val) carFlingPower = val end)
 
 	local spacer = Instance.new("Frame")
 	spacer.Size = UDim2.new(1, 0, 0, 4)
 	spacer.BackgroundTransparency = 1
-	spacer.LayoutOrder = 8
+	spacer.LayoutOrder = 6
 	spacer.Parent = tab
 
-	createSectionLabel(tab, "Visual Effects", 9)
-	createToggle(tab, "Invisible", 10, function(on)
-		invisibleEnabled = on
-		if on then startInvisible() else stopInvisible() end
+	createSectionLabel(tab, "Combat", 7)
+
+	createToggle(tab, "Kill Aura", 8, function(on)
+		killAuraEnabled = on
+		if on then startKillAura() else stopKillAura() end
 	end)
+
+	local spacer2 = Instance.new("Frame")
+	spacer2.Size = UDim2.new(1, 0, 0, 4)
+	spacer2.BackgroundTransparency = 1
+	spacer2.LayoutOrder = 9
+	spacer2.Parent = tab
+
+	createSectionLabel(tab, "Visual", 10)
+
 	createToggle(tab, "Spin", 11, function(on)
 		spinEnabled = on
 		if on then startSpin() else stopSpin() end
@@ -2518,59 +1905,129 @@ do
 		seizureEnabled = on
 		if on then startSeizure() else stopSeizure() end
 	end)
+end
 
-	local spacer2 = Instance.new("Frame")
-	spacer2.Size = UDim2.new(1, 0, 0, 4)
-	spacer2.BackgroundTransparency = 1
-	spacer2.LayoutOrder = 13
-	spacer2.Parent = tab
+-- =====================================================================
+-- ======================== BUILD FUN TAB =============================
+-- =====================================================================
+do
+	local tab = tabFrames["Fun"]
 
-	createSectionLabel(tab, "Emotes", 14)
-	createActionButton(tab, "Emote 1", 15, function()
+	createSectionLabel(tab, "Emotes", 1)
+
+	createActionButton(tab, "Emote 1", 2, function()
 		playJerkEmote()
 	end)
-	createActionButton(tab, "Dance", 16, function()
+	createActionButton(tab, "Dance", 3, function()
 		playEmote(507771019, 1, 10)
 		addLog("[EMOTE] Dance!", COLORS.success)
 	end)
-	createActionButton(tab, "Dab", 17, function()
+	createActionButton(tab, "Dab", 4, function()
 		playEmote(183412246, 1, 3)
 		addLog("[EMOTE] Dab!", COLORS.success)
 	end)
-	createActionButton(tab, "Crouch", 18, function()
+	createActionButton(tab, "Crouch", 5, function()
 		playEmote(182724289, 1, nil)
 		addLog("[EMOTE] Crouch (;stopemote to stop)", COLORS.success)
 	end)
-	createActionButton(tab, "Stop Emote", 19, function()
+	createActionButton(tab, "Stop Emote", 6, function()
 		stopEmote()
 		addLog("[EMOTE] Stopped", COLORS.error)
 	end)
+
+	local spacer = Instance.new("Frame")
+	spacer.Size = UDim2.new(1, 0, 0, 4)
+	spacer.BackgroundTransparency = 1
+	spacer.LayoutOrder = 7
+	spacer.Parent = tab
+
+	createSectionLabel(tab, "Size", 8)
+
+	createActionButton(tab, "Giant (3x)", 9, function()
+		setCharacterScale(3)
+		addLog("[SIZE] Giant mode!", COLORS.success)
+	end)
+	createActionButton(tab, "Tiny (0.5x)", 10, function()
+		setCharacterScale(0.5)
+		addLog("[SIZE] Tiny mode!", COLORS.success)
+	end)
+	createActionButton(tab, "Normal Size (1x)", 11, function()
+		setCharacterScale(1)
+		addLog("[SIZE] Normal size restored", COLORS.success)
+	end)
 end
 
--- ===================== COMMAND BAR (hidden inline at bottom of Main tab) =====================
--- Commands can be run from the executor tab by typing them as scripts
--- but we also support ; prefix commands via a chat hook
-
+-- =====================================================================
+-- ======================== CHAT COMMANDS =============================
+-- =====================================================================
 local commands = {}
-commands["esp"] = function() espEnabled = true enableESP() end
-commands["unesp"] = function() espEnabled = false disableESP() end
+
 commands["fly"] = function() flyEnabled = true startFly() end
 commands["unfly"] = function() flyEnabled = false stopFly() end
-commands["vfly"] = function() vehicleFlyEnabled = true startVehicleFly() end
-commands["unvfly"] = function() vehicleFlyEnabled = false stopVehicleFly() end
-commands["speed"] = function(args) local v = tonumber(args[1]) if v then speedValue = v end speedEnabled = true startSpeed() end
-commands["unspeed"] = function() speedEnabled = false stopSpeed() end
 commands["noclip"] = function() noclipEnabled = true startNoclip() end
 commands["unnoclip"] = function() noclipEnabled = false stopNoclip() end
+commands["speed"] = function(args) local v = tonumber(args[1]) if v then speedValue = v end speedEnabled = true startSpeed() end
+commands["unspeed"] = function() speedEnabled = false stopSpeed() end
 commands["god"] = function() godEnabled = true startGod() end
 commands["ungod"] = function() godEnabled = false stopGod() end
+commands["invisible"] = function() invisibleEnabled = true startInvisible() end
+commands["visible"] = function() invisibleEnabled = false stopInvisible() end
 commands["tp"] = function(args)
 	if not args[1] then addLog("[CMD] Usage: ;tp <player>", COLORS.error) return end
 	local target = findPlayer(args[1])
 	if target then teleportToPlayer(target) else addLog("[CMD] Player not found: " .. args[1], COLORS.error) end
 end
-commands["invisible"] = function() invisibleEnabled = true startInvisible() end
-commands["visible"] = function() invisibleEnabled = false stopInvisible() end
+commands["fling"] = function() if walkFlingEnabled then walkFlingEnabled = false stopWalkFling() end flingEnabled = true startFling() end
+commands["unfling"] = function() flingEnabled = false stopFling() end
+commands["walkfling"] = function() if flingEnabled then flingEnabled = false stopFling() end walkFlingEnabled = true startWalkFling() end
+commands["unwalkfling"] = function() walkFlingEnabled = false stopWalkFling() end
+commands["infjump"] = function() infJumpEnabled = true startInfJump() end
+commands["uninfjump"] = function() infJumpEnabled = false stopInfJump() end
+commands["killaura"] = function() killAuraEnabled = true startKillAura() end
+commands["unkillaura"] = function() killAuraEnabled = false stopKillAura() end
+commands["spin"] = function() spinEnabled = true startSpin() end
+commands["unspin"] = function() spinEnabled = false stopSpin() end
+commands["seizure"] = function() seizureEnabled = true startSeizure() end
+commands["unseizure"] = function() seizureEnabled = false stopSeizure() end
+commands["emote1"] = function() playJerkEmote() end
+commands["dance"] = function() playEmote(507771019, 1, 10) addLog("[EMOTE] Dance!", COLORS.success) end
+commands["dab"] = function() playEmote(183412246, 1, 3) addLog("[EMOTE] Dab!", COLORS.success) end
+commands["crouch"] = function() playEmote(182724289, 1, nil) addLog("[EMOTE] Crouch", COLORS.success) end
+commands["stopemote"] = function() stopEmote() addLog("[EMOTE] Stopped", COLORS.error) end
+commands["esp"] = function() espEnabled = true enableESP() end
+commands["unesp"] = function() espEnabled = false disableESP() end
+commands["carnoclip"] = function() carNoclipEnabled = true startCarNoclip() end
+commands["uncarnoclip"] = function() carNoclipEnabled = false stopCarNoclip() end
+commands["rainbowcar"] = function() rainbowCarEnabled = true startRainbowCar() end
+commands["unrainbowcar"] = function() rainbowCarEnabled = false stopRainbowCar() end
+commands["rainbowhouse"] = function() rainbowHouseEnabled = true startRainbowHouse() end
+commands["unrainbowhouse"] = function() rainbowHouseEnabled = false stopRainbowHouse() end
+commands["pos"] = function()
+	pcall(function()
+		local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+		if root then
+			local cf = root.CFrame
+			local pos = string.format("CFrame.new(%.1f, %.1f, %.1f)", cf.X, cf.Y, cf.Z)
+			addLog("[POS] " .. pos, COLORS.accent)
+			print("[BROOKHAVEN POS] " .. pos)
+		end
+	end)
+end
+commands["goto"] = function(args)
+	if not args[1] then addLog("[CMD] Usage: ;goto <location name>", COLORS.error) return end
+	local search = table.concat(args, " "):lower()
+	for _, loc in ipairs(TELEPORT_LOCATIONS) do
+		if loc[1]:lower():find(search) then
+			teleportTo(loc[2])
+			addLog("[TP] Teleported to " .. loc[1], COLORS.success)
+			return
+		end
+	end
+	addLog("[CMD] Location not found: " .. search, COLORS.error)
+end
+commands["giant"] = function() setCharacterScale(3) addLog("[SIZE] Giant!", COLORS.success) end
+commands["tiny"] = function() setCharacterScale(0.5) addLog("[SIZE] Tiny!", COLORS.success) end
+commands["normal"] = function() setCharacterScale(1) addLog("[SIZE] Normal!", COLORS.success) end
 commands["jp"] = function(args)
 	local v = tonumber(args[1])
 	if v then jumpPowerValue = v setJumpPower(v) addLog("[CMD] Jump Power: " .. v, COLORS.success)
@@ -2581,52 +2038,25 @@ commands["gravity"] = function(args)
 	if v then gravityValue = v setGravity(v) addLog("[CMD] Gravity: " .. v, COLORS.success)
 	else addLog("[CMD] Usage: ;gravity <value>", COLORS.error) end
 end
-commands["fling"] = function() if walkFlingEnabled then walkFlingEnabled = false stopWalkFling() end flingEnabled = true startFling() end
-commands["unfling"] = function() flingEnabled = false stopFling() end
-commands["walkfling"] = function() if flingEnabled then flingEnabled = false stopFling() end walkFlingEnabled = true startWalkFling() end
-commands["unwalkfling"] = function() walkFlingEnabled = false stopWalkFling() end
-commands["carfling"] = function() if flingEnabled then flingEnabled = false stopFling() end if walkFlingEnabled then walkFlingEnabled = false stopWalkFling() end carFlingEnabled = true startCarFling() end
-commands["uncarfling"] = function() carFlingEnabled = false stopCarFling() end
-commands["carnoclip"] = function() carNoclipEnabled = true startCarNoclip() end
-commands["uncarnoclip"] = function() carNoclipEnabled = false stopCarNoclip() end
-commands["infjump"] = function() infJumpEnabled = true startInfJump() end
-commands["uninfjump"] = function() infJumpEnabled = false stopInfJump() end
-commands["killaura"] = function() killAuraEnabled = true startKillAura() end
-commands["unkillaura"] = function() killAuraEnabled = false stopKillAura() end
-commands["rejoin"] = function() rejoinServer() end
-commands["serverhop"] = function() serverHop() end
-commands["spectate"] = function(args)
-	if not args[1] then addLog("[CMD] Usage: ;spectate <player>", COLORS.error) return end
-	local target = findPlayer(args[1])
-	if target then spectatePlayer(target) else addLog("[CMD] Player not found: " .. args[1], COLORS.error) end
-end
-commands["unspectate"] = function() unspectate() end
-commands["spin"] = function() spinEnabled = true startSpin() end
-commands["unspin"] = function() spinEnabled = false stopSpin() end
-commands["seizure"] = function() seizureEnabled = true startSeizure() end
-commands["unseizure"] = function() seizureEnabled = false stopSeizure() end
-commands["emote1"] = function() playJerkEmote() end
-commands["dance"] = function() playEmote(507771019, 1, 10) addLog("[EMOTE] Dance!", COLORS.success) end
-commands["dab"] = function() playEmote(183412246, 1, 3) addLog("[EMOTE] Dab!", COLORS.success) end
-commands["crouch"] = function() playEmote(182724289, 1, nil) addLog("[EMOTE] Crouch", COLORS.success) end
-commands["stopemote"] = function() stopEmote() addLog("[EMOTE] Stopped", COLORS.error) end
 commands["cmds"] = function()
-	addLog("--- Commands ---", COLORS.accent)
-	addLog(";esp / ;unesp    ;fly / ;unfly", COLORS.textSecondary)
+	addLog("--- Brookhaven RP Commands ---", COLORS.accent)
+	addLog(";fly / ;unfly    ;noclip / ;unnoclip", COLORS.textSecondary)
 	addLog(";speed [val] / ;unspeed", COLORS.textSecondary)
-	addLog(";noclip / ;unnoclip    ;god / ;ungod", COLORS.textSecondary)
-	addLog(";tp <player>    ;invisible / ;visible", COLORS.textSecondary)
-	addLog(";jp <val>    ;gravity <val>", COLORS.textSecondary)
+	addLog(";god / ;ungod    ;invisible / ;visible", COLORS.textSecondary)
+	addLog(";tp <player>    ;goto <location>", COLORS.textSecondary)
 	addLog(";fling / ;unfling (spin fling)", COLORS.textSecondary)
-	addLog(";walkfling / ;unwalkfling (dinos anim)", COLORS.textSecondary)
-	addLog(";carfling / ;uncarfling (vehicle fling)", COLORS.textSecondary)
-	addLog(";carnoclip / ;uncarnoclip (vehicle noclip)", COLORS.textSecondary)
+	addLog(";walkfling / ;unwalkfling", COLORS.textSecondary)
 	addLog(";infjump / ;uninfjump", COLORS.textSecondary)
 	addLog(";killaura / ;unkillaura", COLORS.textSecondary)
-	addLog(";spectate <player> / ;unspectate", COLORS.textSecondary)
 	addLog(";spin / ;unspin    ;seizure / ;unseizure", COLORS.textSecondary)
+	addLog(";esp / ;unesp", COLORS.textSecondary)
+	addLog(";carnoclip / ;uncarnoclip", COLORS.textSecondary)
+	addLog(";rainbowcar / ;unrainbowcar", COLORS.textSecondary)
+	addLog(";rainbowhouse / ;unrainbowhouse", COLORS.textSecondary)
 	addLog(";emote1  ;dance  ;dab  ;crouch  ;stopemote", COLORS.textSecondary)
-	addLog(";rejoin    ;serverhop    ;cmds", COLORS.textSecondary)
+	addLog(";giant  ;tiny  ;normal (size)", COLORS.textSecondary)
+	addLog(";jp <val>  ;gravity <val>  ;pos", COLORS.textSecondary)
+	addLog(";cmds (this list)", COLORS.textSecondary)
 end
 
 local function processCommand(input)
@@ -2681,8 +2111,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ===================== STARTUP =====================
-addLog("Synapse X - The Revival v2.1", COLORS.accent)
-addLog("Executor + Admin loaded", COLORS.success)
-addLog("Type ;cmds in chat for commands", COLORS.textSecondary)
-addLog("Press Right Shift to toggle window", COLORS.textSecondary)
-print("[Synapse X] The Revival v2.1 loaded")
+addLog("Brookhaven RP Hub v1.0", COLORS.accent)
+addLog("Type ;cmds for command list", COLORS.textSecondary)
+addLog("Use Right Shift to toggle GUI", COLORS.textSecondary)
+print("[Brookhaven RP Hub] v1.0 loaded")
