@@ -1512,9 +1512,8 @@ local LETTER_PIXELS = {
 
 local wordBlockSize = 3 -- studs per pixel (Normal blocks are 3x3x3)
 
--- Extract BuildBlock Red event from tool.Activated upvalues
--- From BuildController decompile: tool.Activated handler has:
---   upvalue [5] = Red client event (has .Fire method)
+-- Extract BuildBlock Red event
+-- From BuildController decompile: tool.Activated handler upvalue [5] = Red client event
 -- Fire format: evt:Fire(cframe, blockTemplate, colorData, scaleMode)
 local buildBlockEvent = nil
 local buildBlockRef = nil
@@ -1522,13 +1521,46 @@ local buildBlockRef = nil
 local function getBuildBlockEvent()
 	if buildBlockEvent then return buildBlockEvent end
 
+	-- Get block template reference
 	pcall(function()
-		if not getconnections or not getupvalues then return end
+		buildBlockRef = game:GetService("ReplicatedStorage").Assets.Blocks.Block
+	end)
 
-		-- Get block template reference
+	-- Helper: check if value looks like a Red client event (table with Fire method)
+	local function isFireable(v)
+		if typeof(v) ~= "table" then return false end
+		local ok, f = pcall(function() return v.Fire end)
+		return ok and f ~= nil
+	end
+
+	-- Helper: search upvalues recursively for a Fire-able table
+	local function searchUpvals(func, depth)
+		if depth <= 0 then return nil end
+		local result = nil
 		pcall(function()
-			buildBlockRef = game:GetService("ReplicatedStorage").Assets.Blocks.Block
+			local upvals = getupvalues(func)
+			for i, v in pairs(upvals) do
+				if isFireable(v) then
+					-- Skip the EditSign event if we already cached it
+					if v ~= editSignEvent then
+						result = v
+						return
+					end
+				end
+				if typeof(v) == "function" and not result then
+					result = searchUpvals(v, depth - 1)
+				end
+			end
 		end)
+		return result
+	end
+
+	-- Strategy 1: Search tool.Activated connections
+	pcall(function()
+		if not getconnections or not getupvalues then
+			print("[SX Elected] getconnections/getupvalues not available")
+			return
+		end
 
 		local char = LocalPlayer.Character
 		local backpack = LocalPlayer:FindFirstChild("Backpack")
@@ -1544,32 +1576,99 @@ local function getBuildBlockEvent()
 			end
 		end
 
-		-- Search tool.Activated handlers for Red event in upvalues
+		print("[SX Elected] Strategy 1: Found " .. #tools .. " tools")
 		for _, tool in ipairs(tools) do
-			pcall(function()
-				local conns = getconnections(tool.Activated)
-				for _, conn in ipairs(conns) do
-					pcall(function()
-						local func = conn.Function
-						if not func then return end
-						local upvals = getupvalues(func)
-						for i, v in pairs(upvals) do
-							if typeof(v) == "table" and v.Fire then
-								buildBlockEvent = v
-								print("[SX Elected] Found BuildBlock event from " .. tool.Name .. " upvalue " .. tostring(i))
-								break
+			print("[SX Elected]   Tool: " .. tool.Name .. " in " .. tostring(tool.Parent))
+			for _, signal in ipairs({tool.Activated, tool.Equipped}) do
+				pcall(function()
+					local conns = getconnections(signal)
+					print("[SX Elected]   Signal connections: " .. #conns)
+					for ci, conn in ipairs(conns) do
+						pcall(function()
+							local func = conn.Function
+							if not func then
+								print("[SX Elected]     Conn " .. ci .. ": nil Function")
+								return
 							end
-						end
-					end)
-					if buildBlockEvent then return end
-				end
-			end)
+							local upvals = getupvalues(func)
+							local cnt = 0
+							for _ in pairs(upvals) do cnt = cnt + 1 end
+							print("[SX Elected]     Conn " .. ci .. ": " .. cnt .. " upvalues")
+							for i, v in pairs(upvals) do
+								if isFireable(v) and v ~= editSignEvent then
+									buildBlockEvent = v
+									print("[SX Elected] FOUND BuildBlock from " .. tool.Name .. " upvalue " .. tostring(i))
+									break
+								end
+							end
+						end)
+						if buildBlockEvent then return end
+					end
+				end)
+				if buildBlockEvent then break end
+			end
 			if buildBlockEvent then break end
 		end
 	end)
 
+	-- Strategy 2: Search getgc() for Red event tables with Fire method
 	if not buildBlockEvent then
-		print("[SX Elected] BuildBlock event NOT found - equip a build tool first")
+		pcall(function()
+			if not getgc then
+				print("[SX Elected] Strategy 2: getgc not available")
+				return
+			end
+			print("[SX Elected] Strategy 2: Scanning getgc...")
+			local candidates = {}
+			for _, v in pairs(getgc(true)) do
+				pcall(function()
+					if isFireable(v) and v ~= editSignEvent then
+						table.insert(candidates, v)
+					end
+				end)
+			end
+			print("[SX Elected]   Found " .. #candidates .. " Fire-able tables in gc")
+			if #candidates > 0 then
+				buildBlockEvent = candidates[1]
+				print("[SX Elected]   Using gc candidate")
+			end
+		end)
+	end
+
+	-- Strategy 3: Search InputBegan + Heartbeat connections (deeper search)
+	if not buildBlockEvent then
+		pcall(function()
+			if not getconnections or not getupvalues then return end
+			print("[SX Elected] Strategy 3: Searching InputBegan/Heartbeat connections...")
+			local signals = {}
+			pcall(function() table.insert(signals, game:GetService("UserInputService").InputBegan) end)
+			pcall(function() table.insert(signals, game:GetService("RunService").Heartbeat) end)
+
+			for _, sig in ipairs(signals) do
+				pcall(function()
+					local conns = getconnections(sig)
+					for _, conn in ipairs(conns) do
+						pcall(function()
+							local func = conn.Function
+							if func then
+								local evt = searchUpvals(func, 3)
+								if evt then
+									buildBlockEvent = evt
+									print("[SX Elected] FOUND event from broad search")
+								end
+							end
+						end)
+						if buildBlockEvent then return end
+					end
+				end)
+				if buildBlockEvent then break end
+			end
+		end)
+	end
+
+	if not buildBlockEvent then
+		print("[SX Elected] ALL strategies failed - BuildBlock event NOT found")
+		print("[SX Elected] Check F9 console for debug output above")
 	end
 	return buildBlockEvent
 end
@@ -1614,7 +1713,7 @@ local function buildWord(text, blockColor)
 
 	local evt = getBuildBlockEvent()
 	if not evt then
-		notify("Error", "BuildBlock event not found. Equip a build tool first!")
+		notify("Error", "BuildBlock event not found. Check F9 console for details.")
 		return
 	end
 
