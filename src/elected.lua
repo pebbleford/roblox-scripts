@@ -624,34 +624,41 @@ local function findSignClickDetector(sign)
 	return nil
 end
 
--- Extract the EditSign Red client event from BlockController's FocusLost handler
--- The handler's upvalues contain the client event object that knows the correct Red identifier
-local editSignEvent = nil -- cached after first extraction
+-- EditSign via direct Red protocol (same as BuildBlock approach)
+-- Identifiers stored as attributes on ReliableRedEvent
+local editSignEvent = nil
 
 local function getEditSignEvent(stb)
 	if editSignEvent then return editSignEvent end
 
+	local redEvent = ReplicatedStorage:FindFirstChild("ReliableRedEvent")
+	if not redEvent then return nil end
+
+	local editSignId = redEvent:GetAttribute("EditSign")
+	if editSignId then
+		editSignEvent = {
+			Id = editSignId,
+			Fire = function(self, ...)
+				redEvent:FireServer({[self.Id] = {table.pack(...)}}, {})
+			end
+		}
+		print("[SX Elected] EditSign event ready (direct fire, Id=" .. tostring(editSignId) .. ")")
+		return editSignEvent
+	end
+
+	-- Fallback: original getconnections approach
 	pcall(function()
 		if not getconnections or not getupvalues then return end
 		local conns = getconnections(stb.FocusLost)
 		if #conns == 0 then return end
 		local func = conns[1].Function
 		if not func then return end
-
 		local upvals = getupvalues(func)
-		print("[SX Elected] FocusLost handler upvalues:")
 		for i, v in pairs(upvals) do
-			print("  [" .. tostring(i) .. "] = " .. typeof(v) .. ": " .. tostring(v))
-			-- The Red client event has a :Fire() method
-			if typeof(v) == "table" then
-				for k, sv in pairs(v) do
-					print("    ." .. tostring(k) .. " = " .. typeof(sv) .. ": " .. tostring(sv))
-				end
-				-- Check if this table has a Fire method (Red client event)
-				if v.Fire then
-					editSignEvent = v
-					print("[SX Elected] Found EditSign client event!")
-				end
+			if typeof(v) == "table" and v.Fire then
+				editSignEvent = v
+				print("[SX Elected] EditSign event from FocusLost upvalues")
+				break
 			end
 		end
 	end)
@@ -1512,10 +1519,10 @@ local LETTER_PIXELS = {
 
 local wordBlockSize = 3 -- studs per pixel (Normal blocks are 3x3x3)
 
--- Extract BuildBlock Red event
--- From Red decompile: events are tables with {Id = "x", Fire/FireServer = func}
--- Id comes from Identifier.Shared(name):Await(), stored as StringValues in game
--- Fire format: evt:Fire(cframe, blockTemplate, colorData, scaleMode)
+-- BuildBlock via direct Red protocol
+-- From Red decompile: identifiers stored as ATTRIBUTES on ReliableRedEvent
+-- Fire format: ReliableRedEvent:FireServer({[id] = {table.pack(args)}}, {})
+-- BuildBlock args: (cframe, blockTemplate, colorData, scaleMode)
 local buildBlockEvent = nil
 local buildBlockRef = nil
 
@@ -1527,227 +1534,39 @@ local function getBuildBlockEvent()
 		buildBlockRef = game:GetService("ReplicatedStorage").Assets.Blocks.Block
 	end)
 
-	print("[SX Elected] === BuildBlock Search ===")
-
-	-- Strategy 1: Try require(Network) directly
-	pcall(function()
-		local Network = require(game:GetService("ReplicatedStorage").Shared.Network)
-		buildBlockEvent = Network.Event("BuildBlock"):Client()
-		print("[SX Elected] S1 OK: require(Network)")
-	end)
-	if buildBlockEvent then return buildBlockEvent end
-
-	-- Strategy 2: Find BuildBlock's Red identifier, then construct event
-	-- Red stores identifiers as StringValues somewhere in ReplicatedStorage
-	-- From SharedEvent: events are {Id = identifier, Fire/FireServer = func}
-	-- If we find the Id, we can clone editSignEvent or fire directly
-	pcall(function()
-		print("[SX Elected] S2: Searching for Red identifier storage...")
-		local buildBlockId = nil
-		local allIdentifiers = {}
-
-		-- Search ALL descendants for StringValues (Red identifier storage)
-		for _, desc in ipairs(ReplicatedStorage:GetDescendants()) do
-			pcall(function()
-				if desc:IsA("StringValue") then
-					allIdentifiers[desc.Name] = {value = desc.Value, path = desc:GetFullName()}
-					if desc.Name == "BuildBlock" then
-						buildBlockId = desc.Value
-					end
-				end
-			end)
-		end
-
-		-- Print all found StringValues for debugging
-		local svCount = 0
-		for name, info in pairs(allIdentifiers) do
-			svCount = svCount + 1
-			print("[SX Elected]   SV: " .. info.path .. " = '" .. info.value .. "'")
-		end
-		print("[SX Elected] S2: " .. svCount .. " StringValues found")
-
-		if buildBlockId then
-			print("[SX Elected] S2: BuildBlock Id = '" .. buildBlockId .. "'")
-
-			-- Try to clone editSignEvent with the new Id
-			if editSignEvent then
-				print("[SX Elected] S2: Cloning editSignEvent...")
-				print("[SX Elected]   editSign.Id = " .. tostring(editSignEvent.Id))
-				buildBlockEvent = {}
-				for k, v in pairs(editSignEvent) do
-					buildBlockEvent[k] = v
-				end
-				buildBlockEvent.Id = buildBlockId
-				pcall(function()
-					local mt = getmetatable(editSignEvent)
-					if mt then setmetatable(buildBlockEvent, mt) end
-				end)
-				print("[SX Elected] S2 OK: Cloned with Id=" .. buildBlockId)
-			else
-				-- Proactively extract editSignEvent from a sign
-				print("[SX Elected] S2: editSignEvent not cached, trying to extract...")
-				pcall(function()
-					if not getconnections or not getupvalues then
-						print("[SX Elected] S2: getconnections not available for extraction")
-						return
-					end
-					local signs = findSigns(false)
-					if #signs > 0 then
-						local stb = findSignTextBox(signs[1])
-						if stb then
-							getEditSignEvent(stb)
-							if editSignEvent then
-								buildBlockEvent = {}
-								for k, v in pairs(editSignEvent) do
-									buildBlockEvent[k] = v
-								end
-								buildBlockEvent.Id = buildBlockId
-								pcall(function()
-									local mt = getmetatable(editSignEvent)
-									if mt then setmetatable(buildBlockEvent, mt) end
-								end)
-								print("[SX Elected] S2 OK: Extracted + cloned")
-							end
-						end
-					end
-				end)
-			end
-
-			-- Fallback: construct direct ReliableRedEvent fire wrapper
-			if not buildBlockEvent then
-				print("[SX Elected] S2: Creating direct fire wrapper")
-				buildBlockEvent = {
-					Id = buildBlockId,
-					Fire = function(self, ...)
-						-- Red format: ReliableRedEvent:FireServer({[id] = table.pack(...)})
-						ReplicatedStorage.ReliableRedEvent:FireServer({[self.Id] = table.pack(...)})
-					end
-				}
-				print("[SX Elected] S2 OK: Direct fire wrapper (Id=" .. buildBlockId .. ")")
-			end
-		else
-			print("[SX Elected] S2: No 'BuildBlock' StringValue found")
-		end
-	end)
-	if buildBlockEvent then return buildBlockEvent end
-
-	-- Strategy 3: getscriptclosure on BuildController
-	pcall(function()
-		if not getscriptclosure then
-			print("[SX Elected] S3: getscriptclosure not available")
-			return
-		end
-		local bc = game:GetService("ReplicatedFirst").Controllers.BuildingController.BuildController
-		local closure = getscriptclosure(bc)
-		if not closure then return end
-		print("[SX Elected] S3: Got closure")
-		if getupvalues then
-			local ups = getupvalues(closure)
-			for i, v in pairs(ups) do
-				if typeof(v) == "table" then
-					local ok, f = pcall(function() return v.Fire end)
-					if ok and f then
-						buildBlockEvent = v
-						print("[SX Elected] S3 OK: upvalue " .. tostring(i))
-						break
-					end
-					if v.StartMode then
-						pcall(function()
-							local smUps = getupvalues(v.StartMode)
-							for j, sv in pairs(smUps) do
-								if typeof(sv) == "table" then
-									local ok2, f2 = pcall(function() return sv.Fire end)
-									if ok2 and f2 then
-										buildBlockEvent = sv
-										print("[SX Elected] S3 OK: StartMode upval " .. tostring(j))
-										break
-									end
-								end
-							end
-						end)
-					end
-				end
-				if buildBlockEvent then break end
-			end
-		end
-	end)
-	if buildBlockEvent then return buildBlockEvent end
-
-	-- Strategy 4: Tool connections
-	pcall(function()
-		if not getconnections or not getupvalues then
-			print("[SX Elected] S4: getconnections not available")
-			return
-		end
-		local char = LocalPlayer.Character
-		local backpack = LocalPlayer:FindFirstChild("Backpack")
-		local tools = {}
-		if char then
-			for _, t in ipairs(char:GetChildren()) do
-				if t:IsA("Tool") then table.insert(tools, t) end
-			end
-		end
-		if backpack then
-			for _, t in ipairs(backpack:GetChildren()) do
-				if t:IsA("Tool") then table.insert(tools, t) end
-			end
-		end
-		print("[SX Elected] S4: " .. #tools .. " tools")
-		for _, tool in ipairs(tools) do
-			for _, signal in ipairs({tool.Activated, tool.Equipped}) do
-				pcall(function()
-					local conns = getconnections(signal)
-					for _, conn in ipairs(conns) do
-						pcall(function()
-							local func = conn.Function
-							if not func then return end
-							local upvals = getupvalues(func)
-							for i, v in pairs(upvals) do
-								if typeof(v) == "table" then
-									local ok, f = pcall(function() return v.Fire end)
-									if ok and f and v ~= editSignEvent then
-										buildBlockEvent = v
-										print("[SX Elected] S4 OK: " .. tool.Name)
-										break
-									end
-								end
-							end
-						end)
-						if buildBlockEvent then return end
-					end
-				end)
-				if buildBlockEvent then break end
-			end
-			if buildBlockEvent then break end
-		end
-	end)
-	if buildBlockEvent then return buildBlockEvent end
-
-	-- Strategy 5: Decompile ALL Red package modules for analysis
-	pcall(function()
-		if not decompile then return end
-		print("[SX Elected] S5: Decompiling all Red modules...")
-		local red = ReplicatedStorage:FindFirstChild("Packages")
-		red = red and red:FindFirstChild("Red")
-		if not red then return end
-		for _, child in ipairs(red:GetDescendants()) do
-			if child:IsA("ModuleScript") then
-				pcall(function()
-					local src = decompile(child)
-					if src then
-						local fname = "SXRed_" .. child.Name .. ".txt"
-						pcall(function() writefile(fname, src) end)
-						print("[SX Elected]   " .. child.Name .. " -> " .. fname .. " (" .. #src .. " chars)")
-					end
-				end)
-			end
-		end
-	end)
-
-	if not buildBlockEvent then
-		print("[SX Elected] ALL strategies failed")
-		print("[SX Elected] Send any SXRed_*.txt files that were created")
+	local redEvent = ReplicatedStorage:FindFirstChild("ReliableRedEvent")
+	if not redEvent then
+		print("[SX Elected] ReliableRedEvent not found")
+		return nil
 	end
+
+	-- Red stores identifiers as attributes on ReliableRedEvent
+	-- e.g. ReliableRedEvent:GetAttribute("BuildBlock") returns the packed id string
+	local buildBlockId = redEvent:GetAttribute("BuildBlock")
+
+	if not buildBlockId then
+		print("[SX Elected] BuildBlock attribute not found on ReliableRedEvent")
+		print("[SX Elected] Available attributes:")
+		pcall(function()
+			for name, value in pairs(redEvent:GetAttributes()) do
+				print("[SX Elected]   " .. name .. " = " .. tostring(value))
+			end
+		end)
+		return nil
+	end
+
+	print("[SX Elected] BuildBlock Id found: " .. tostring(buildBlockId))
+
+	-- Create direct-fire event wrapper
+	-- Red Client batches: {[id] = {table.pack(args...)}} sent via FireServer
+	buildBlockEvent = {
+		Id = buildBlockId,
+		Fire = function(self, ...)
+			redEvent:FireServer({[self.Id] = {table.pack(...)}}, {})
+		end
+	}
+
+	print("[SX Elected] BuildBlock event ready (direct fire)")
 	return buildBlockEvent
 end
 
