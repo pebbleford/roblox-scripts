@@ -6,7 +6,7 @@ if not keyOk or not keySystem or not keySystem.validate() then return end
 -- ================================================================
 -- Synapse X The Revival - RIVALS Hub
 -- Dedicated admin for RIVALS FPS
--- v1.1
+-- v1.2
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -51,6 +51,8 @@ local aimbotKey = Enum.UserInputType.MouseButton2  -- Right click to aim
 local aimbotFOV = 200
 local aimbotSmoothing = 5
 local aimbotAimPart = "Head"  -- "Head", "HumanoidRootPart", "Torso"
+local aimbotMaxDist = 300
+local aimbotWallCheck = true
 local teamCheck = true
 
 -- ESP
@@ -270,7 +272,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 40, 1, 0)
 versionLabel.Position = UDim2.new(0, 130, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v1.1"
+versionLabel.Text = "v1.2"
 versionLabel.TextColor3 = COLORS.accent
 versionLabel.Font = Enum.Font.Gotham
 versionLabel.TextSize = 10
@@ -699,6 +701,59 @@ local function addLog(msg, color)
 end
 
 -- ===================== AIMBOT: GET CLOSEST PLAYER IN FOV =====================
+local function isPlayerInMatch(player)
+	-- Filter out lobby/spectating players
+	local character = player.Character
+	if not character then return false end
+	if not character.Parent then return false end
+
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid or humanoid.Health <= 0 then return false end
+
+	-- Skip players with ForceField (spawn protection / lobby)
+	if character:FindFirstChildOfClass("ForceField") then return false end
+
+	-- Skip if character is parented to something other than workspace (lobby area)
+	if character.Parent ~= workspace then return false end
+
+	-- Distance check from our character
+	local myChar = LocalPlayer.Character
+	if not myChar then return false end
+	local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+	local theirRoot = character:FindFirstChild("HumanoidRootPart")
+	if not myRoot or not theirRoot then return false end
+
+	local dist = (myRoot.Position - theirRoot.Position).Magnitude
+	if dist > aimbotMaxDist then return false end
+
+	return true
+end
+
+local function isTargetVisible(targetPart)
+	if not aimbotWallCheck then return true end
+	local cam = workspace.CurrentCamera
+	local origin = cam.CFrame.Position
+	local direction = (targetPart.Position - origin)
+
+	-- Raycast from camera to target, ignoring our own character
+	local rayParams = RaycastParams.new()
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+	local myChar = LocalPlayer.Character
+	local ignoreList = {}
+	if myChar then table.insert(ignoreList, myChar) end
+	rayParams.FilterDescendantsInstances = ignoreList
+
+	local result = workspace:Raycast(origin, direction, rayParams)
+	if not result then return true end -- nothing hit = clear line of sight
+
+	-- Check if what we hit belongs to the target's character
+	local hitPart = result.Instance
+	local targetChar = targetPart.Parent
+	if hitPart and hitPart:IsDescendantOf(targetChar) then return true end
+
+	return false
+end
+
 local function getClosestPlayerInFOV()
 	local cam = workspace.CurrentCamera
 	local closest = nil
@@ -713,16 +768,16 @@ local function getClosestPlayerInFOV()
 				skipTeam = true
 			end
 
-			if not skipTeam then
+			if not skipTeam and isPlayerInMatch(player) then
 				local character = player.Character
-				local humanoid = character:FindFirstChildOfClass("Humanoid")
-				if humanoid and humanoid.Health > 0 then
-					local targetPart = character:FindFirstChild(aimbotAimPart) or character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart")
-					if targetPart then
-						local screenPos, onScreen = cam:WorldToViewportPoint(targetPart.Position)
-						if onScreen then
-							local screenDist = (Vector2.new(screenPos.X, screenPos.Y) - screenCenter).Magnitude
-							if screenDist < closestDist then
+				local targetPart = character:FindFirstChild(aimbotAimPart) or character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart")
+				if targetPart then
+					local screenPos, onScreen = cam:WorldToViewportPoint(targetPart.Position)
+					if onScreen then
+						local screenDist = (Vector2.new(screenPos.X, screenPos.Y) - screenCenter).Magnitude
+						if screenDist < closestDist then
+							-- Wall check — only target visible players
+							if isTargetVisible(targetPart) then
 								closest = targetPart
 								closestDist = screenDist
 							end
@@ -1603,7 +1658,7 @@ do
 	local tab = tabFrames["Main"]
 
 	createSectionLabel(tab, "Info", 1)
-	createInfoLabel(tab, "RIVALS Hub v1.1", 2)
+	createInfoLabel(tab, "RIVALS Hub v1.2", 2)
 	createInfoLabel(tab, "SX The Revival", 3)
 
 	local spacer = Instance.new("Frame")
@@ -1675,20 +1730,31 @@ do
 			addLog("[TEAM CHECK] OFF - Targeting everyone", COLORS.error)
 		end
 	end).setVisualState(true) -- Default on
+	createSlider(tab, "Max Distance", 50, 1000, aimbotMaxDist, 6, function(val)
+		aimbotMaxDist = val
+	end)
+	createToggle(tab, "Wall Check", 7, function(on)
+		aimbotWallCheck = on
+		if on then
+			addLog("[WALL CHECK] ON - Only visible targets", COLORS.success)
+		else
+			addLog("[WALL CHECK] OFF - Aim through walls", COLORS.error)
+		end
+	end).setVisualState(true) -- Default on
 
 	local spacer = Instance.new("Frame")
 	spacer.Size = UDim2.new(1, 0, 0, 4)
 	spacer.BackgroundTransparency = 1
-	spacer.LayoutOrder = 6
+	spacer.LayoutOrder = 8
 	spacer.Parent = tab
 
-	createSectionLabel(tab, "Automation", 7)
+	createSectionLabel(tab, "Automation", 9)
 
-	createToggle(tab, "Silent Aim", 8, function(on)
+	createToggle(tab, "Silent Aim", 10, function(on)
 		silentAimEnabled = on
 		if on then startSilentAim() else stopSilentAim() end
 	end)
-	createToggle(tab, "TriggerBot", 9, function(on)
+	createToggle(tab, "TriggerBot", 11, function(on)
 		triggerBotEnabled = on
 		if on then startTriggerBot() else stopTriggerBot() end
 	end)
@@ -1696,12 +1762,12 @@ do
 	local spacer2 = Instance.new("Frame")
 	spacer2.Size = UDim2.new(1, 0, 0, 4)
 	spacer2.BackgroundTransparency = 1
-	spacer2.LayoutOrder = 10
+	spacer2.LayoutOrder = 12
 	spacer2.Parent = tab
 
-	createSectionLabel(tab, "Visual", 11)
+	createSectionLabel(tab, "Visual", 13)
 
-	createToggle(tab, "FOV Circle", 12, function(on)
+	createToggle(tab, "FOV Circle", 14, function(on)
 		fovCircleEnabled = on
 		if on then createFOVCircle() else destroyFOVCircle() end
 	end)
@@ -2150,7 +2216,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ===================== STARTUP =====================
-addLog("RIVALS Hub v1.1", COLORS.accent)
+addLog("RIVALS Hub v1.2", COLORS.accent)
 addLog("Type ;cmds for command list", COLORS.textSecondary)
 addLog("Use Right Shift to toggle GUI", COLORS.textSecondary)
-print("[RIVALS Hub] v1.1 loaded")
+print("[RIVALS Hub] v1.2 loaded")
