@@ -17,7 +17,6 @@ local KEY_SYSTEM = {}
 -- CONFIG
 -- ============================================================
 local VALID_KEYS = {
-    ["sxr-midnight-4f82k"] = true,
 }
 local AUTH_SALT = "SXR_2024_PEBBLEFORD_REVIVAL"
 local AUTH_FILE = "SynapseXAuth.json"
