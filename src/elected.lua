@@ -1529,7 +1529,6 @@ local buildBlockRef = nil
 local function getBuildBlockEvent()
 	if buildBlockEvent then return buildBlockEvent end
 
-	-- Get block template reference
 	pcall(function()
 		buildBlockRef = game:GetService("ReplicatedStorage").Assets.Blocks.Block
 	end)
@@ -1541,24 +1540,22 @@ local function getBuildBlockEvent()
 	end
 
 	-- Red stores identifiers as attributes on ReliableRedEvent
-	-- e.g. ReliableRedEvent:GetAttribute("BuildBlock") returns the packed id string
 	local buildBlockId = redEvent:GetAttribute("BuildBlock")
 
 	if not buildBlockId then
 		print("[SX Elected] BuildBlock attribute not found on ReliableRedEvent")
-		print("[SX Elected] Available attributes:")
+		print("[SX Elected] All attributes on ReliableRedEvent:")
 		pcall(function()
 			for name, value in pairs(redEvent:GetAttributes()) do
-				print("[SX Elected]   " .. name .. " = " .. tostring(value))
+				print("[SX Elected]   '" .. name .. "' = '" .. tostring(value) .. "' (type=" .. typeof(value) .. ", len=" .. #tostring(value) .. ")")
 			end
 		end)
 		return nil
 	end
 
-	print("[SX Elected] BuildBlock Id found: " .. tostring(buildBlockId))
+	print("[SX Elected] BuildBlock Id: '" .. tostring(buildBlockId) .. "' (len=" .. #buildBlockId .. ")")
+	print("[SX Elected] Block ref: " .. tostring(buildBlockRef))
 
-	-- Create direct-fire event wrapper
-	-- Red Client batches: {[id] = {table.pack(args...)}} sent via FireServer
 	buildBlockEvent = {
 		Id = buildBlockId,
 		Fire = function(self, ...)
@@ -1566,8 +1563,80 @@ local function getBuildBlockEvent()
 		end
 	}
 
-	print("[SX Elected] BuildBlock event ready (direct fire)")
+	print("[SX Elected] BuildBlock event ready")
 	return buildBlockEvent
+end
+
+-- Test fire a single block in front of player
+local function testBuildBlock()
+	local hrp = getRoot()
+	if not hrp then notify("Error", "No character") return end
+
+	local evt = getBuildBlockEvent()
+	if not evt then
+		notify("Error", "BuildBlock not found - check F9")
+		return
+	end
+
+	local blockRef = buildBlockRef
+	if not blockRef then
+		pcall(function()
+			blockRef = game:GetService("ReplicatedStorage").Assets.Blocks.Block
+		end)
+	end
+	if not blockRef then
+		notify("Error", "Block template not found")
+		return
+	end
+
+	-- Place one block 10 studs in front, grid-snapped
+	local pos = hrp.Position + hrp.CFrame.LookVector * 10 + Vector3.new(0, 3, 0)
+	pos = Vector3.new(
+		math.floor(pos.X / 3 + 0.5) * 3,
+		math.floor(pos.Y / 3 + 0.5) * 3,
+		math.floor(pos.Z / 3 + 0.5) * 3
+	)
+	local cf = CFrame.new(pos)
+
+	print("[SX Elected] === TEST BUILD ===")
+	print("[SX Elected] CFrame: " .. tostring(cf))
+	print("[SX Elected] Block: " .. tostring(blockRef) .. " (" .. blockRef.ClassName .. ")")
+	print("[SX Elected] Id: '" .. tostring(evt.Id) .. "'")
+
+	-- Try multiple fire formats to find which one works
+	local redEvent = ReplicatedStorage.ReliableRedEvent
+
+	-- Format A: Our wrapper (batched format with table.pack)
+	local okA, errA = pcall(function()
+		evt:Fire(cf, blockRef, nil, "Normal")
+	end)
+	print("[SX Elected] Format A (batched+pack): " .. (okA and "OK" or "ERR: " .. tostring(errA)))
+
+	task.wait(0.2)
+
+	-- Format B: Single packed args without outer array
+	local okB, errB = pcall(function()
+		redEvent:FireServer({[evt.Id] = table.pack(cf, blockRef, nil, "Normal")}, {})
+	end)
+	print("[SX Elected] Format B (pack no array): " .. (okB and "OK" or "ERR: " .. tostring(errB)))
+
+	task.wait(0.2)
+
+	-- Format C: Simple array (no table.pack)
+	local okC, errC = pcall(function()
+		redEvent:FireServer({[evt.Id] = {{cf, blockRef, nil, "Normal"}}}, {})
+	end)
+	print("[SX Elected] Format C (plain array): " .. (okC and "OK" or "ERR: " .. tostring(errC)))
+
+	task.wait(0.2)
+
+	-- Format D: No second arg
+	local okD, errD = pcall(function()
+		redEvent:FireServer({[evt.Id] = {table.pack(cf, blockRef, nil, "Normal")}})
+	end)
+	print("[SX Elected] Format D (no call arg): " .. (okD and "OK" or "ERR: " .. tostring(errD)))
+
+	notify("Test", "4 formats tried - check F9 and look for a block in front of you")
 end
 
 -- Dump BuildController decompile to find exact Fire arguments
@@ -2296,7 +2365,8 @@ do
 		end
 	end)
 	createButton(tab, "Dump BuildController (F9)", o(), dumpBuildController)
-	createInfoLabel(tab, "Equip build tool + select block type first. Fires BuildBlock event directly.", o())
+	createButton(tab, "TEST: Place 1 Block (F9)", o(), testBuildBlock)
+	createInfoLabel(tab, "Test fires 4 different formats. No build tool needed.", o())
 
 	createSpacer(tab, o())
 
