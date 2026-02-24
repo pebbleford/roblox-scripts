@@ -1513,10 +1513,11 @@ local LETTER_PIXELS = {
 local wordBlockSize = 3 -- studs per pixel (Normal blocks are 3x3x3)
 
 -- Extract BuildBlock Red event
--- From BuildController decompile: tool.Activated handler upvalue [5] = Red client event
 -- Fire format: evt:Fire(cframe, blockTemplate, colorData, scaleMode)
 local buildBlockEvent = nil
 local buildBlockRef = nil
+-- Direct-fire mode: if we find the Red identifier, fire ReliableRedEvent directly
+local buildBlockDirectId = nil
 
 local function getBuildBlockEvent()
 	if buildBlockEvent then return buildBlockEvent end
@@ -1526,149 +1527,222 @@ local function getBuildBlockEvent()
 		buildBlockRef = game:GetService("ReplicatedStorage").Assets.Blocks.Block
 	end)
 
-	-- Helper: check if value looks like a Red client event (table with Fire method)
-	local function isFireable(v)
-		if typeof(v) ~= "table" then return false end
-		local ok, f = pcall(function() return v.Fire end)
-		return ok and f ~= nil
-	end
+	print("[SX Elected] === BuildBlock Event Search ===")
 
-	-- Helper: search upvalues recursively for a Fire-able table
-	local function searchUpvals(func, depth)
-		if depth <= 0 then return nil end
-		local result = nil
-		pcall(function()
-			local upvals = getupvalues(func)
-			for i, v in pairs(upvals) do
-				if isFireable(v) then
-					-- Skip the EditSign event if we already cached it
-					if v ~= editSignEvent then
-						result = v
-						return
-					end
-				end
-				if typeof(v) == "function" and not result then
-					result = searchUpvals(v, depth - 1)
-				end
-			end
-		end)
-		return result
-	end
-
-	-- Strategy 1: Search tool.Activated connections
+	-- Strategy 1: Try require(Network) directly
 	pcall(function()
-		if not getconnections or not getupvalues then
-			print("[SX Elected] getconnections/getupvalues not available")
+		local Network = require(game:GetService("ReplicatedStorage").Shared.Network)
+		buildBlockEvent = Network.Event("BuildBlock"):Client()
+		print("[SX Elected] S1 OK: require(Network)")
+	end)
+	if buildBlockEvent then return buildBlockEvent end
+
+	-- Strategy 2: Try getscriptclosure on BuildController
+	pcall(function()
+		if not getscriptclosure then
+			print("[SX Elected] S2: getscriptclosure not available")
 			return
 		end
-
-		local char = LocalPlayer.Character
-		local backpack = LocalPlayer:FindFirstChild("Backpack")
-		local tools = {}
-		if char then
-			for _, t in ipairs(char:GetChildren()) do
-				if t:IsA("Tool") then table.insert(tools, t) end
-			end
+		local bc = game:GetService("ReplicatedFirst").Controllers.BuildingController.BuildController
+		local closure = getscriptclosure(bc)
+		if not closure then
+			print("[SX Elected] S2: closure is nil")
+			return
 		end
-		if backpack then
-			for _, t in ipairs(backpack:GetChildren()) do
-				if t:IsA("Tool") then table.insert(tools, t) end
-			end
-		end
-
-		print("[SX Elected] Strategy 1: Found " .. #tools .. " tools")
-		for _, tool in ipairs(tools) do
-			print("[SX Elected]   Tool: " .. tool.Name .. " in " .. tostring(tool.Parent))
-			for _, signal in ipairs({tool.Activated, tool.Equipped}) do
-				pcall(function()
-					local conns = getconnections(signal)
-					print("[SX Elected]   Signal connections: " .. #conns)
-					for ci, conn in ipairs(conns) do
+		print("[SX Elected] S2: Got script closure, checking upvalues...")
+		if getupvalues then
+			local ups = getupvalues(closure)
+			local cnt = 0
+			for _ in pairs(ups) do cnt = cnt + 1 end
+			print("[SX Elected] S2: closure has " .. cnt .. " upvalues")
+			for i, v in pairs(ups) do
+				if typeof(v) == "table" then
+					local ok, f = pcall(function() return v.Fire end)
+					if ok and f then
+						buildBlockEvent = v
+						print("[SX Elected] S2 OK: closure upvalue " .. tostring(i))
+						break
+					end
+					-- Also check if it's a module table with StartMode
+					if v.StartMode then
+						print("[SX Elected] S2: Found module table, checking StartMode upvalues...")
 						pcall(function()
-							local func = conn.Function
-							if not func then
-								print("[SX Elected]     Conn " .. ci .. ": nil Function")
-								return
-							end
-							local upvals = getupvalues(func)
-							local cnt = 0
-							for _ in pairs(upvals) do cnt = cnt + 1 end
-							print("[SX Elected]     Conn " .. ci .. ": " .. cnt .. " upvalues")
-							for i, v in pairs(upvals) do
-								if isFireable(v) and v ~= editSignEvent then
-									buildBlockEvent = v
-									print("[SX Elected] FOUND BuildBlock from " .. tool.Name .. " upvalue " .. tostring(i))
-									break
+							local smUps = getupvalues(v.StartMode)
+							for j, sv in pairs(smUps) do
+								if typeof(sv) == "table" then
+									local ok2, f2 = pcall(function() return sv.Fire end)
+									if ok2 and f2 then
+										buildBlockEvent = sv
+										print("[SX Elected] S2 OK: StartMode upvalue " .. tostring(j))
+										break
+									end
 								end
 							end
 						end)
-						if buildBlockEvent then return end
 					end
-				end)
+				end
 				if buildBlockEvent then break end
 			end
-			if buildBlockEvent then break end
 		end
 	end)
+	if buildBlockEvent then return buildBlockEvent end
 
-	-- Strategy 2: Search getgc() for Red event tables with Fire method
+	-- Strategy 3: Inspect editSignEvent to learn Red event structure
+	-- Then search for BuildBlock event with same structure
+	if not buildBlockEvent and editSignEvent then
+		pcall(function()
+			print("[SX Elected] S3: Inspecting editSignEvent structure...")
+			print("[SX Elected]   typeof: " .. typeof(editSignEvent))
+			for k, v in pairs(editSignEvent) do
+				print("[SX Elected]   [" .. tostring(k) .. "] = " .. typeof(v) .. ": " .. tostring(v))
+			end
+			local mt = getmetatable(editSignEvent)
+			if mt then
+				print("[SX Elected]   Has metatable:")
+				pcall(function()
+					for k, v in pairs(mt) do
+						print("[SX Elected]     mt[" .. tostring(k) .. "] = " .. typeof(v))
+					end
+				end)
+			end
+		end)
+	end
+
+	-- Strategy 4: Search tool connections (original approach)
+	if not buildBlockEvent then
+		pcall(function()
+			if not getconnections or not getupvalues then
+				print("[SX Elected] S4: getconnections/getupvalues not available")
+				return
+			end
+			local char = LocalPlayer.Character
+			local backpack = LocalPlayer:FindFirstChild("Backpack")
+			local tools = {}
+			if char then
+				for _, t in ipairs(char:GetChildren()) do
+					if t:IsA("Tool") then table.insert(tools, t) end
+				end
+			end
+			if backpack then
+				for _, t in ipairs(backpack:GetChildren()) do
+					if t:IsA("Tool") then table.insert(tools, t) end
+				end
+			end
+			print("[SX Elected] S4: " .. #tools .. " tools found")
+			for _, tool in ipairs(tools) do
+				print("[SX Elected]   Tool: " .. tool.Name)
+				for _, signal in ipairs({tool.Activated, tool.Equipped}) do
+					pcall(function()
+						local conns = getconnections(signal)
+						print("[SX Elected]   Connections: " .. #conns)
+						for ci, conn in ipairs(conns) do
+							pcall(function()
+								local func = conn.Function
+								if not func then return end
+								local upvals = getupvalues(func)
+								for i, v in pairs(upvals) do
+									if typeof(v) == "table" then
+										local ok, f = pcall(function() return v.Fire end)
+										if ok and f and v ~= editSignEvent then
+											buildBlockEvent = v
+											print("[SX Elected] S4 OK: " .. tool.Name .. " upval " .. tostring(i))
+											break
+										end
+									end
+								end
+							end)
+							if buildBlockEvent then return end
+						end
+					end)
+					if buildBlockEvent then break end
+				end
+				if buildBlockEvent then break end
+			end
+		end)
+	end
+	if buildBlockEvent then return buildBlockEvent end
+
+	-- Strategy 5: getgc scan
 	if not buildBlockEvent then
 		pcall(function()
 			if not getgc then
-				print("[SX Elected] Strategy 2: getgc not available")
+				print("[SX Elected] S5: getgc not available")
 				return
 			end
-			print("[SX Elected] Strategy 2: Scanning getgc...")
-			local candidates = {}
+			print("[SX Elected] S5: Scanning getgc...")
+			local count = 0
 			for _, v in pairs(getgc(true)) do
 				pcall(function()
-					if isFireable(v) and v ~= editSignEvent then
-						table.insert(candidates, v)
+					if typeof(v) == "table" and v ~= editSignEvent then
+						local ok, f = pcall(function() return v.Fire end)
+						if ok and f then
+							count = count + 1
+							if count <= 3 then
+								print("[SX Elected]   gc candidate " .. count .. ":")
+								pcall(function()
+									for k2, v2 in pairs(v) do
+										print("[SX Elected]     [" .. tostring(k2) .. "] = " .. typeof(v2))
+									end
+								end)
+							end
+							if not buildBlockEvent then
+								buildBlockEvent = v
+							end
+						end
 					end
 				end)
 			end
-			print("[SX Elected]   Found " .. #candidates .. " Fire-able tables in gc")
-			if #candidates > 0 then
-				buildBlockEvent = candidates[1]
-				print("[SX Elected]   Using gc candidate")
-			end
+			print("[SX Elected] S5: " .. count .. " Fire-able tables in gc")
 		end)
 	end
+	if buildBlockEvent then return buildBlockEvent end
 
-	-- Strategy 3: Search InputBegan + Heartbeat connections (deeper search)
+	-- Strategy 6: Decompile Network module to find Red identifier mapping
 	if not buildBlockEvent then
 		pcall(function()
-			if not getconnections or not getupvalues then return end
-			print("[SX Elected] Strategy 3: Searching InputBegan/Heartbeat connections...")
-			local signals = {}
-			pcall(function() table.insert(signals, game:GetService("UserInputService").InputBegan) end)
-			pcall(function() table.insert(signals, game:GetService("RunService").Heartbeat) end)
-
-			for _, sig in ipairs(signals) do
-				pcall(function()
-					local conns = getconnections(sig)
-					for _, conn in ipairs(conns) do
+			if not decompile then
+				print("[SX Elected] S6: decompile not available")
+				return
+			end
+			print("[SX Elected] S6: Decompiling Network + Red...")
+			-- Decompile Network module
+			local netMod = game:GetService("ReplicatedStorage"):FindFirstChild("Shared")
+			netMod = netMod and netMod:FindFirstChild("Network")
+			if netMod then
+				local src = decompile(netMod)
+				if src then
+					pcall(function() writefile("SXNetwork.txt", src) end)
+					print("[SX Elected]   Network: " .. #src .. " chars -> SXNetwork.txt")
+					for line in src:gmatch("[^\n]+") do
+						local ll = line:lower()
+						if ll:find("buildblock") or ll:find("editsign") or ll:find("identifier") then
+							print("[SX Net] " .. line:sub(1, 200))
+						end
+					end
+				end
+			end
+			-- Also decompile Red package if it exists
+			local redPkg = game:GetService("ReplicatedStorage"):FindFirstChild("Packages")
+			if redPkg then
+				for _, child in ipairs(redPkg:GetDescendants()) do
+					if child:IsA("ModuleScript") and child.Name:lower():find("red") then
 						pcall(function()
-							local func = conn.Function
-							if func then
-								local evt = searchUpvals(func, 3)
-								if evt then
-									buildBlockEvent = evt
-									print("[SX Elected] FOUND event from broad search")
-								end
+							local src2 = decompile(child)
+							if src2 then
+								local fname = "SXRed_" .. child.Name .. ".txt"
+								pcall(function() writefile(fname, src2) end)
+								print("[SX Elected]   " .. child:GetFullName() .. " -> " .. fname)
 							end
 						end)
-						if buildBlockEvent then return end
 					end
-				end)
-				if buildBlockEvent then break end
+				end
 			end
 		end)
 	end
 
 	if not buildBlockEvent then
-		print("[SX Elected] ALL strategies failed - BuildBlock event NOT found")
-		print("[SX Elected] Check F9 console for debug output above")
+		print("[SX Elected] ALL strategies failed")
+		print("[SX Elected] Check SXNetwork.txt / SXRed_*.txt files if created")
 	end
 	return buildBlockEvent
 end
