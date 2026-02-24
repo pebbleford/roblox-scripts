@@ -1512,47 +1512,33 @@ local LETTER_PIXELS = {
 
 local wordBlockSize = 4 -- studs per pixel
 
--- Extract BuildBlock Red event from the BuildController
--- BuildController is in ReplicatedFirst.Controllers.BuildingController.BuildController
+-- Extract BuildBlock Red event from game code
+-- Same technique as EditSign: find a connection with the event in its upvalues
 local buildBlockEvent = nil
+
+local function searchUpvaluesForFire(func, depth)
+	if depth <= 0 then return nil end
+	local found = nil
+	pcall(function()
+		if not getupvalues then return end
+		local upvals = getupvalues(func)
+		for i, v in pairs(upvals) do
+			if typeof(v) == "table" and v.Fire and not found then
+				found = v
+			end
+			-- Search nested functions too
+			if typeof(v) == "function" and not found then
+				found = searchUpvaluesForFire(v, depth - 1)
+			end
+		end
+	end)
+	return found
+end
 
 local function getBuildBlockEvent()
 	if buildBlockEvent then return buildBlockEvent end
 
-	-- The BuildController module has the BuildBlock event
-	-- Try to decompile it and find the event, or extract from tool connections
-	pcall(function()
-		if not decompile or not getupvalues then return end
-
-		-- Find the BuildController module
-		local bc = game:GetService("ReplicatedFirst")
-		bc = bc and bc:FindFirstChild("Controllers")
-		bc = bc and bc:FindFirstChild("BuildingController")
-		bc = bc and bc:FindFirstChild("BuildController")
-		if not bc then
-			print("[SX Elected] BuildController module not found")
-			return
-		end
-
-		-- Decompile it to understand the format
-		local src = decompile(bc)
-		if src then
-			print("[SX Elected] BuildController decompiled, searching for BuildBlock event...")
-			-- Print lines with BuildBlock or Fire
-			local lineNum = 0
-			for line in src:gmatch("[^\n]+") do
-				lineNum = lineNum + 1
-				if lineNum <= 80 then
-					local ll = line:lower()
-					if ll:find("buildblock") or ll:find("fire") or ll:find("event") or ll:find("network") then
-						print("[SX Elected] BC:" .. lineNum .. " " .. line:sub(1, 150))
-					end
-				end
-			end
-		end
-	end)
-
-	-- Try to find BuildBlock event from any tool's Activated connection
+	-- Search tool connections (Activated, Equipped) for the BuildBlock event
 	pcall(function()
 		if not getconnections or not getupvalues then return end
 		local char = LocalPlayer.Character
@@ -1569,29 +1555,113 @@ local function getBuildBlockEvent()
 			end
 		end
 
+		-- Check Activated and Equipped signals, search 3 levels deep
 		for _, tool in ipairs(tools) do
-			pcall(function()
-				local conns = getconnections(tool.Activated)
-				for _, conn in ipairs(conns) do
-					pcall(function()
-						local func = conn.Function
-						if not func then return end
-						local upvals = getupvalues(func)
-						for i, v in pairs(upvals) do
-							if typeof(v) == "table" and v.Fire then
-								buildBlockEvent = v
-								print("[SX Elected] Found BuildBlock event from tool: " .. tool.Name)
-								return
+			for _, signal in ipairs({tool.Activated, tool.Equipped}) do
+				pcall(function()
+					local conns = getconnections(signal)
+					for _, conn in ipairs(conns) do
+						pcall(function()
+							local func = conn.Function
+							if func then
+								local evt = searchUpvaluesForFire(func, 3)
+								if evt then
+									buildBlockEvent = evt
+									print("[SX Elected] Found BuildBlock event from " .. tool.Name)
+								end
 							end
-						end
-					end)
-				end
-			end)
+						end)
+						if buildBlockEvent then return end
+					end
+				end)
+				if buildBlockEvent then break end
+			end
 			if buildBlockEvent then break end
 		end
 	end)
 
+	-- Also search UserInputService.InputBegan connections
+	if not buildBlockEvent then
+		pcall(function()
+			if not getconnections or not getupvalues then return end
+			local UIS = game:GetService("UserInputService")
+			local conns = getconnections(UIS.InputBegan)
+			print("[SX Elected] Searching " .. #conns .. " InputBegan connections for BuildBlock...")
+			for ci, conn in ipairs(conns) do
+				pcall(function()
+					local func = conn.Function
+					if func then
+						local evt = searchUpvaluesForFire(func, 2)
+						if evt then
+							buildBlockEvent = evt
+							print("[SX Elected] Found event from InputBegan conn #" .. ci)
+						end
+					end
+				end)
+				if buildBlockEvent then break end
+			end
+		end)
+	end
+
+	-- Search getreg if available
+	if not buildBlockEvent then
+		pcall(function()
+			if not getreg then return end
+			for _, v in pairs(getreg()) do
+				pcall(function()
+					if typeof(v) == "table" and v.Fire then
+						-- Could be any Red event, we'll take the first one we find
+						-- and hope it's BuildBlock
+						-- Skip if it's the EditSign event
+						if v ~= editSignEvent then
+							buildBlockEvent = v
+							print("[SX Elected] Found event from getreg")
+						end
+					end
+				end)
+				if buildBlockEvent then break end
+			end
+		end)
+	end
+
+	if not buildBlockEvent then
+		print("[SX Elected] BuildBlock event NOT found")
+	end
+
 	return buildBlockEvent
+end
+
+-- Dump BuildController decompile to find exact Fire arguments
+local function dumpBuildController()
+	print("[SX Elected] === DUMP BUILD CONTROLLER ===")
+	local log = {}
+	pcall(function()
+		if not decompile then print("[SX Elected] decompile not available") return end
+		local bc = game:GetService("ReplicatedFirst")
+		bc = bc and bc:FindFirstChild("Controllers")
+		bc = bc and bc:FindFirstChild("BuildingController")
+		bc = bc and bc:FindFirstChild("BuildController")
+		if not bc then print("[SX Elected] BuildController not found") return end
+		local src = decompile(bc)
+		if src then
+			for line in src:gmatch("[^\n]+") do
+				table.insert(log, line)
+			end
+			print("[SX Elected] BuildController: " .. #log .. " lines")
+			-- Print lines with Fire, Build, Block, CFrame, Position
+			for i, line in ipairs(log) do
+				local ll = line:lower()
+				if ll:find(":fire") or ll:find("buildblock") or ll:find("cframe") and ll:find("fire") then
+					print("[SX BC:" .. i .. "] " .. line:sub(1, 200))
+				end
+			end
+		end
+		pcall(function()
+			writefile("SXBuildController.txt", table.concat(log, "\n"))
+			print("[SX Elected] Saved full decompile to SXBuildController.txt")
+			notify("Build", "Saved to SXBuildController.txt")
+		end)
+	end)
 end
 
 local function buildWord(text, blockColor)
@@ -1599,19 +1669,17 @@ local function buildWord(text, blockColor)
 	local char = LocalPlayer.Character
 	if not hrp or not char then notify("Error", "No character") return end
 
-	-- Must have building tool equipped with a block selected in BuildFrame
-	local tool = findBuildingTool()
-	if not tool then
-		notify("Error", "Equip a building tool and select a block type first!")
+	-- Try to extract the BuildBlock event
+	local evt = getBuildBlockEvent()
+
+	if not evt then
+		notify("Error", "Could not extract BuildBlock event. Try 'Dump BuildController' and send the file.")
 		return
 	end
-	equipTool(tool)
-	task.wait(0.3)
 
 	text = text:upper()
-	-- Build on the ground in front of player
-	local startPos = hrp.Position + hrp.CFrame.LookVector * 20
-	-- Snap to grid - round to nearest wordBlockSize
+	-- Build in front of player, grid-snapped
+	local startPos = hrp.Position + hrp.CFrame.LookVector * 15 + Vector3.new(0, 5, 0)
 	startPos = Vector3.new(
 		math.floor(startPos.X / wordBlockSize + 0.5) * wordBlockSize,
 		math.floor(startPos.Y / wordBlockSize + 0.5) * wordBlockSize,
@@ -1620,18 +1688,11 @@ local function buildWord(text, blockColor)
 	local rightDir = hrp.CFrame.RightVector
 	local upDir = Vector3.new(0, 1, 0)
 
-	-- Save and take over camera
-	local savedCamCF = camera.CFrame
-	local savedCamType = camera.CameraType
-	camera.CameraType = Enum.CameraType.Scriptable
-
 	local blocksPlaced = 0
 	local charOffset = 0
-	local vpSize = camera.ViewportSize
-	local cx = vpSize.X / 2
-	local cy = vpSize.Y / 2
 
-	notify("Building", "Building: " .. text .. " (don't move mouse!)")
+	notify("Building", "Building: " .. text)
+	print("[SX Elected] Building word at: " .. tostring(startPos))
 
 	task.spawn(function()
 		for ci = 1, #text do
@@ -1643,24 +1704,16 @@ local function buildWord(text, blockColor)
 						if pixels[row]:sub(col, col) == "1" then
 							local x = (charOffset + col - 1) * wordBlockSize
 							local y = (5 - row) * wordBlockSize
-							local targetPos = startPos + rightDir * x + upDir * y
+							local pos = startPos + rightDir * x + upDir * y
+							local cf = CFrame.new(pos)
 
-							-- Aim camera directly at target from a fixed offset
-							local camPos = targetPos + hrp.CFrame.LookVector * -10 + Vector3.new(0, 2, 0)
-							camera.CFrame = CFrame.lookAt(camPos, targetPos)
-
-							-- Wait for camera to settle
-							task.wait(0.1)
-
-							-- Click screen center - BuildController raycasts from camera
-							pcall(function()
-								VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
-								task.wait(0.05)
-								VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
-							end)
+							-- Fire BuildBlock with various arg formats
+							pcall(function() evt:Fire(cf) end)
+							pcall(function() evt:Fire(cf, 0) end)
+							pcall(function() evt:Fire(pos, 0) end)
 
 							blocksPlaced = blocksPlaced + 1
-							task.wait(0.2)
+							task.wait(0.1)
 						end
 					end
 				end
@@ -1669,10 +1722,6 @@ local function buildWord(text, blockColor)
 				charOffset = charOffset + 3
 			end
 		end
-
-		-- Restore camera
-		camera.CameraType = savedCamType
-		camera.CFrame = savedCamCF
 		notify("Built", blocksPlaced .. " blocks placed for: " .. text)
 	end)
 end
@@ -2284,7 +2333,8 @@ do
 			notify("Error", "Enter text first!")
 		end
 	end)
-	createInfoLabel(tab, "TPs to each pixel position and clicks - face your build direction", o())
+	createButton(tab, "Dump BuildController (F9)", o(), dumpBuildController)
+	createInfoLabel(tab, "Equip build tool + select block type first. Fires BuildBlock event directly.", o())
 
 	createSpacer(tab, o())
 
