@@ -16,7 +16,10 @@ local KEY_SYSTEM = {}
 -- ============================================================
 -- CONFIG
 -- ============================================================
-local VALID_KEY = "synapsextherevivalontop"
+local VALID_KEYS = {
+    ["synapsextherevivalontop"] = true,
+    ["sxr-midnight-4f82k"] = true,
+}
 local AUTH_SALT = "SXR_2024_PEBBLEFORD_REVIVAL"
 local AUTH_FILE = "SynapseXAuth.json"
 local WHITELIST_URL = "https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/whitelist.txt?v=" .. tostring(tick())
@@ -91,7 +94,7 @@ end
 -- AUTH TOKEN
 -- ============================================================
 local function generateAuthToken(hwid)
-    return simpleHash(hwid .. AUTH_SALT .. VALID_KEY)
+    return simpleHash(hwid .. AUTH_SALT .. "synapsextherevivalontop")
 end
 
 -- ============================================================
@@ -409,7 +412,7 @@ local function showKeyGUI(hwid)
 
         task.wait(0.3) -- Brief delay for feel
 
-        if enteredKey:lower() == VALID_KEY then
+        if VALID_KEYS[enteredKey:lower()] then
             -- Key is correct! Save auth
             local saved = saveLocalAuth(hwid)
             if saved then
