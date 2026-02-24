@@ -57,11 +57,13 @@ local seizureEnabled = false
 local vehicleFlyEnabled = false
 local carNoclipEnabled = false
 local carFlingEnabled = false
+local carSpeedEnabled = false
 local emoteActive = false
 
 local flingPower = 99999
 local walkFlingPower = 10000
 local carFlingPower = 50000
+local carSpeedValue = 200
 local flySpeed = 80
 local speedValue = 100
 local jumpPowerValue = 50
@@ -92,6 +94,9 @@ local carNoclipConnection = nil
 local carFlingConnection = nil
 local carFlingBAV = nil
 local carFlingOrigProps = {}
+local carSpeedConnection = nil
+local carSpeedOrigMaxSpeed = nil
+local carSpeedOrigTorque = nil
 local emoteTracks = {}
 local emoteConnection = nil
 local selectedPlayer = nil
@@ -248,7 +253,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 40, 1, 0)
 versionLabel.Position = UDim2.new(0, 200, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v2.1"
+versionLabel.Text = "v2.2"
 versionLabel.TextColor3 = COLORS.accent
 versionLabel.Font = Enum.Font.Gotham
 versionLabel.TextSize = 10
@@ -1338,6 +1343,70 @@ local function stopCarNoclip()
 	addLog("[CAR NOCLIP] OFF", COLORS.error)
 end
 
+-- ===================== CAR SPEED BOOST =====================
+local function startCarSpeed()
+	local char = LocalPlayer.Character
+	if not char then addLog("[CAR SPEED] No character!", COLORS.error) return end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum or not hum.SeatPart then
+		addLog("[CAR SPEED] Sit in a vehicle first!", COLORS.error)
+		return
+	end
+	local seat = hum.SeatPart
+
+	-- Save originals
+	if seat:IsA("VehicleSeat") then
+		carSpeedOrigMaxSpeed = seat.MaxSpeed
+		carSpeedOrigTorque = seat.Torque
+		seat.MaxSpeed = carSpeedValue
+		seat.Torque = seat.Torque * (carSpeedValue / (carSpeedOrigMaxSpeed > 0 and carSpeedOrigMaxSpeed or 50))
+	end
+
+	-- Heartbeat: keep applying speed + add thrust via AssemblyLinearVelocity for non-VehicleSeat seats
+	carSpeedConnection = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			local c = LocalPlayer.Character
+			if not c then return end
+			local h = c:FindFirstChildOfClass("Humanoid")
+			if not h or not h.SeatPart then return end
+			local s = h.SeatPart
+
+			if s:IsA("VehicleSeat") then
+				-- Keep MaxSpeed updated if slider changes
+				s.MaxSpeed = carSpeedValue
+			else
+				-- For regular Seats (planes, boats, etc), apply velocity boost
+				local vehicle = s.Parent
+				if vehicle then
+					local primary = (vehicle:IsA("Model") and vehicle.PrimaryPart) or s
+					local look = primary.CFrame.LookVector
+					local currentSpeed = primary.AssemblyLinearVelocity:Dot(look)
+					if currentSpeed < carSpeedValue then
+						primary.AssemblyLinearVelocity = primary.AssemblyLinearVelocity + look * 2
+					end
+				end
+			end
+		end)
+	end)
+	addLog("[CAR SPEED] ON - Speed: " .. carSpeedValue, COLORS.success)
+end
+
+local function stopCarSpeed()
+	if carSpeedConnection then carSpeedConnection:Disconnect() carSpeedConnection = nil end
+	pcall(function()
+		local char = LocalPlayer.Character
+		if not char then return end
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		if hum and hum.SeatPart and hum.SeatPart:IsA("VehicleSeat") then
+			if carSpeedOrigMaxSpeed then hum.SeatPart.MaxSpeed = carSpeedOrigMaxSpeed end
+			if carSpeedOrigTorque then hum.SeatPart.Torque = carSpeedOrigTorque end
+		end
+	end)
+	carSpeedOrigMaxSpeed = nil
+	carSpeedOrigTorque = nil
+	addLog("[CAR SPEED] OFF", COLORS.error)
+end
+
 -- ===================== SPIN FLING LOGIC (Infinite Yield Style) =====================
 -- High density + BodyAngularVelocity on ALL axes + noclip + velocity perturbation
 
@@ -2048,7 +2117,7 @@ do
 	local tab = tabFrames["Main"]
 
 	createSectionLabel(tab, "Welcome", 1)
-	createInfoLabel(tab, "Synapse X - The Revival v2.1", 2)
+	createInfoLabel(tab, "Synapse X - The Revival v2.2", 2)
 	createInfoLabel(tab, "Player: " .. LocalPlayer.DisplayName .. " (@" .. LocalPlayer.Name .. ")", 3)
 
 	local spacer = Instance.new("Frame")
@@ -2412,19 +2481,26 @@ do
 		vehicleFlyEnabled = on
 		if on then startVehicleFly() else stopVehicleFly() end
 	end)
+	createToggle(tab, "Car Speed Boost (Sit First)", 5, function(on)
+		carSpeedEnabled = on
+		if on then startCarSpeed() else stopCarSpeed() end
+	end)
+	createSlider(tab, "Car Speed", 50, 1000, carSpeedValue, 6, function(val)
+		carSpeedValue = val
+	end)
 
 	local spacer = Instance.new("Frame")
 	spacer.Size = UDim2.new(1, 0, 0, 4)
 	spacer.BackgroundTransparency = 1
-	spacer.LayoutOrder = 5
+	spacer.LayoutOrder = 7
 	spacer.Parent = tab
 
-	createSectionLabel(tab, "Movement", 6)
-	createToggle(tab, "Speed Boost", 7, function(on)
+	createSectionLabel(tab, "Movement", 8)
+	createToggle(tab, "Speed Boost", 9, function(on)
 		speedEnabled = on
 		if on then startSpeed() else stopSpeed() end
 	end)
-	createSlider(tab, "Walk Speed", 16, 500, speedValue, 8, function(val)
+	createSlider(tab, "Walk Speed", 16, 500, speedValue, 10, function(val)
 		speedValue = val
 		if speedEnabled then
 			pcall(function()
@@ -2436,11 +2512,11 @@ do
 			end)
 		end
 	end)
-	createToggle(tab, "Noclip", 9, function(on)
+	createToggle(tab, "Noclip", 11, function(on)
 		noclipEnabled = on
 		if on then startNoclip() else stopNoclip() end
 	end)
-	createToggle(tab, "Car Noclip (Sit First)", 10, function(on)
+	createToggle(tab, "Car Noclip (Sit First)", 12, function(on)
 		carNoclipEnabled = on
 		if on then startCarNoclip() else stopCarNoclip() end
 	end)
@@ -2448,24 +2524,24 @@ do
 	local spacer2 = Instance.new("Frame")
 	spacer2.Size = UDim2.new(1, 0, 0, 4)
 	spacer2.BackgroundTransparency = 1
-	spacer2.LayoutOrder = 11
+	spacer2.LayoutOrder = 13
 	spacer2.Parent = tab
 
-	createSectionLabel(tab, "Jumping", 13)
-	createToggle(tab, "Infinite Jump", 14, function(on)
+	createSectionLabel(tab, "Jumping", 15)
+	createToggle(tab, "Infinite Jump", 16, function(on)
 		infJumpEnabled = on
 		if on then startInfJump() else stopInfJump() end
 	end)
-	createSlider(tab, "Jump Power", 10, 500, jumpPowerValue, 15, function(val) jumpPowerValue = val setJumpPower(val) end)
+	createSlider(tab, "Jump Power", 10, 500, jumpPowerValue, 17, function(val) jumpPowerValue = val setJumpPower(val) end)
 
 	local spacer3 = Instance.new("Frame")
 	spacer3.Size = UDim2.new(1, 0, 0, 4)
 	spacer3.BackgroundTransparency = 1
-	spacer3.LayoutOrder = 16
+	spacer3.LayoutOrder = 18
 	spacer3.Parent = tab
 
-	createSectionLabel(tab, "World", 17)
-	createSlider(tab, "Gravity", 0, 1000, math.floor(gravityValue), 18, function(val) gravityValue = val setGravity(val) end)
+	createSectionLabel(tab, "World", 19)
+	createSlider(tab, "Gravity", 0, 1000, math.floor(gravityValue), 20, function(val) gravityValue = val setGravity(val) end)
 end
 
 -- ===================== BUILD FUN TAB =====================
@@ -2589,6 +2665,8 @@ commands["carfling"] = function() if flingEnabled then flingEnabled = false stop
 commands["uncarfling"] = function() carFlingEnabled = false stopCarFling() end
 commands["carnoclip"] = function() carNoclipEnabled = true startCarNoclip() end
 commands["uncarnoclip"] = function() carNoclipEnabled = false stopCarNoclip() end
+commands["carspeed"] = function(args) local v = tonumber(args[1]) if v then carSpeedValue = v end carSpeedEnabled = true startCarSpeed() end
+commands["uncarspeed"] = function() carSpeedEnabled = false stopCarSpeed() end
 commands["infjump"] = function() infJumpEnabled = true startInfJump() end
 commands["uninfjump"] = function() infJumpEnabled = false stopInfJump() end
 commands["killaura"] = function() killAuraEnabled = true startKillAura() end
@@ -2621,6 +2699,7 @@ commands["cmds"] = function()
 	addLog(";walkfling / ;unwalkfling (dinos anim)", COLORS.textSecondary)
 	addLog(";carfling / ;uncarfling (vehicle fling)", COLORS.textSecondary)
 	addLog(";carnoclip / ;uncarnoclip (vehicle noclip)", COLORS.textSecondary)
+	addLog(";carspeed [val] / ;uncarspeed (vehicle speed)", COLORS.textSecondary)
 	addLog(";infjump / ;uninfjump", COLORS.textSecondary)
 	addLog(";killaura / ;unkillaura", COLORS.textSecondary)
 	addLog(";spectate <player> / ;unspectate", COLORS.textSecondary)
@@ -2681,8 +2760,8 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ===================== STARTUP =====================
-addLog("Synapse X - The Revival v2.1", COLORS.accent)
+addLog("Synapse X - The Revival v2.2", COLORS.accent)
 addLog("Executor + Admin loaded", COLORS.success)
 addLog("Type ;cmds in chat for commands", COLORS.textSecondary)
 addLog("Press Right Shift to toggle window", COLORS.textSecondary)
-print("[Synapse X] The Revival v2.1 loaded")
+print("[Synapse X] The Revival v2.2 loaded")
