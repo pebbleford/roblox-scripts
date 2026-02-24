@@ -55,9 +55,12 @@ local invisibleEnabled = false
 local spinEnabled = false
 local seizureEnabled = false
 local vehicleFlyEnabled = false
+local carNoclipEnabled = false
+local carFlingEnabled = false
 
 local flingPower = 99999
 local walkFlingPower = 10000
+local carFlingPower = 50000
 local flySpeed = 80
 local speedValue = 100
 local jumpPowerValue = 50
@@ -84,6 +87,10 @@ local seizureConnection = nil
 local vehicleFlyConnection = nil
 local vehicleFlyBV = nil
 local vehicleFlyBG = nil
+local carNoclipConnection = nil
+local carFlingConnection = nil
+local carFlingBAV = nil
+local carFlingOrigProps = {}
 local selectedPlayer = nil
 local windowVisible = true
 local activeTab = "Execute"
@@ -1273,6 +1280,61 @@ local function stopNoclip()
 	addLog("[NOCLIP] OFF", COLORS.error)
 end
 
+-- ===================== GET VEHICLE HELPER =====================
+local function getVehicle()
+	local char = LocalPlayer.Character
+	if not char then return nil, nil end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum or not hum.SeatPart then return nil, nil end
+	local seat = hum.SeatPart
+	local vehicle = seat.Parent
+	if vehicle and vehicle:IsA("Model") then
+		return vehicle, vehicle.PrimaryPart or seat
+	end
+	return nil, seat
+end
+
+-- ===================== CAR NOCLIP LOGIC =====================
+local function startCarNoclip()
+	carNoclipConnection = RunService.Stepped:Connect(function()
+		pcall(function()
+			local vehicle, vPart = getVehicle()
+			if not vehicle then return end
+			local character = LocalPlayer.Character
+			-- Vehicle parts
+			for _, part in ipairs(vehicle:GetDescendants()) do
+				if part:IsA("BasePart") then part.CanCollide = false end
+			end
+			-- Character parts
+			if character then
+				for _, part in ipairs(character:GetDescendants()) do
+					if part:IsA("BasePart") then part.CanCollide = false end
+				end
+			end
+		end)
+	end)
+	addLog("[CAR NOCLIP] ON - Drive through walls!", COLORS.success)
+end
+
+local function stopCarNoclip()
+	if carNoclipConnection then carNoclipConnection:Disconnect() carNoclipConnection = nil end
+	pcall(function()
+		local vehicle, vPart = getVehicle()
+		if vehicle then
+			for _, part in ipairs(vehicle:GetDescendants()) do
+				if part:IsA("BasePart") then part.CanCollide = true end
+			end
+		end
+		local character = LocalPlayer.Character
+		if character then
+			for _, part in ipairs(character:GetDescendants()) do
+				if part:IsA("BasePart") then part.CanCollide = true end
+			end
+		end
+	end)
+	addLog("[CAR NOCLIP] OFF", COLORS.error)
+end
+
 -- ===================== SPIN FLING LOGIC (Infinite Yield Style) =====================
 -- High density + BodyAngularVelocity + noclip + massless + pulse spin
 
@@ -1362,6 +1424,109 @@ local function stopFling()
 	savedPhysProps = {}
 
 	addLog("[SPIN FLING] OFF", COLORS.error)
+end
+
+-- ===================== CAR FLING LOGIC =====================
+local function startCarFling()
+	local ok, err = pcall(function()
+		local vehicle, vPart = getVehicle()
+		if not vPart then
+			addLog("[CAR FLING] Sit in a vehicle first!", COLORS.error)
+			return
+		end
+
+		-- Save original physics and set density to 100 (super heavy)
+		carFlingOrigProps = {}
+		for _, part in ipairs(vehicle:GetDescendants()) do
+			if part:IsA("BasePart") then
+				carFlingOrigProps[part] = part.CustomPhysicalProperties
+				part.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
+			end
+		end
+
+		-- Also make character super heavy
+		local character = LocalPlayer.Character
+		if character then
+			for _, part in ipairs(character:GetDescendants()) do
+				if part:IsA("BasePart") then
+					carFlingOrigProps[part] = part.CustomPhysicalProperties
+					part.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
+				end
+			end
+		end
+
+		-- Auto-enable car noclip so vehicle doesn't get stuck
+		if not carNoclipEnabled then
+			carNoclipEnabled = true
+			startCarNoclip()
+		end
+		wait(0.1)
+
+		-- BodyAngularVelocity on vehicle - spin on Y axis
+		carFlingBAV = Instance.new("BodyAngularVelocity")
+		carFlingBAV.AngularVelocity = Vector3.new(0, carFlingPower, 0)
+		carFlingBAV.MaxTorque = Vector3.new(0, math.huge, 0)
+		carFlingBAV.P = math.huge
+		carFlingBAV.Parent = vPart
+
+		-- Set vehicle parts massless + zero velocity
+		for _, part in ipairs(vehicle:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.Massless = true
+				part.Velocity = Vector3.new(0, 0, 0)
+			end
+		end
+
+		-- Pulse spin on/off for repeated impulse spikes
+		spawn(function()
+			while carFlingEnabled do
+				if carFlingBAV and carFlingBAV.Parent then
+					carFlingBAV.AngularVelocity = Vector3.new(0, carFlingPower, 0)
+				end
+				wait(0.2)
+				if carFlingBAV and carFlingBAV.Parent then
+					carFlingBAV.AngularVelocity = Vector3.new(0, 0, 0)
+				end
+				wait(0.1)
+			end
+		end)
+
+		addLog("[CAR FLING] ON - Drive into players!", COLORS.success)
+	end)
+	if not ok then
+		warn("[CAR FLING ERROR] " .. tostring(err))
+		addLog("[CAR FLING] Error: " .. tostring(err), COLORS.error)
+	end
+end
+
+local function stopCarFling()
+	-- Remove BodyAngularVelocity
+	if carFlingBAV then pcall(function() carFlingBAV:Destroy() end) carFlingBAV = nil end
+
+	-- Restore physics properties
+	pcall(function()
+		for part, props in pairs(carFlingOrigProps) do
+			if part and part.Parent then
+				if props then
+					part.CustomPhysicalProperties = props
+				else
+					part.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
+				end
+				part.Massless = false
+				part.Velocity = Vector3.new(0, 0, 0)
+				part.RotVelocity = Vector3.new(0, 0, 0)
+			end
+		end
+	end)
+	carFlingOrigProps = {}
+
+	-- Disable car noclip if it was auto-enabled
+	if carNoclipEnabled then
+		carNoclipEnabled = false
+		stopCarNoclip()
+	end
+
+	addLog("[CAR FLING] OFF", COLORS.error)
 end
 
 -- ===================== WALK FLING LOGIC (Dinos Anim Style) =====================
@@ -1614,19 +1779,6 @@ local function stopSeizure()
 end
 
 -- ===================== VEHICLE FLY =====================
-local function getVehicle()
-	local char = LocalPlayer.Character
-	if not char then return nil, nil end
-	local hum = char:FindFirstChildOfClass("Humanoid")
-	if not hum or not hum.SeatPart then return nil, nil end
-	local seat = hum.SeatPart
-	local vehicle = seat.Parent
-	if vehicle and vehicle:IsA("Model") then
-		return vehicle, vehicle.PrimaryPart or seat
-	end
-	return nil, seat
-end
-
 local function startVehicleFly()
 	local vehicle, part = getVehicle()
 	if not part then
@@ -2164,28 +2316,32 @@ do
 		noclipEnabled = on
 		if on then startNoclip() else stopNoclip() end
 	end)
+	createToggle(tab, "Car Noclip (Sit First)", 10, function(on)
+		carNoclipEnabled = on
+		if on then startCarNoclip() else stopCarNoclip() end
+	end)
 
 	local spacer2 = Instance.new("Frame")
 	spacer2.Size = UDim2.new(1, 0, 0, 4)
 	spacer2.BackgroundTransparency = 1
-	spacer2.LayoutOrder = 10
+	spacer2.LayoutOrder = 11
 	spacer2.Parent = tab
 
-	createSectionLabel(tab, "Jumping", 11)
-	createToggle(tab, "Infinite Jump", 12, function(on)
+	createSectionLabel(tab, "Jumping", 13)
+	createToggle(tab, "Infinite Jump", 14, function(on)
 		infJumpEnabled = on
 		if on then startInfJump() else stopInfJump() end
 	end)
-	createSlider(tab, "Jump Power", 10, 500, jumpPowerValue, 13, function(val) jumpPowerValue = val setJumpPower(val) end)
+	createSlider(tab, "Jump Power", 10, 500, jumpPowerValue, 15, function(val) jumpPowerValue = val setJumpPower(val) end)
 
 	local spacer3 = Instance.new("Frame")
 	spacer3.Size = UDim2.new(1, 0, 0, 4)
 	spacer3.BackgroundTransparency = 1
-	spacer3.LayoutOrder = 14
+	spacer3.LayoutOrder = 16
 	spacer3.Parent = tab
 
-	createSectionLabel(tab, "World", 15)
-	createSlider(tab, "Gravity", 0, 1000, math.floor(gravityValue), 16, function(val) gravityValue = val setGravity(val) end)
+	createSectionLabel(tab, "World", 17)
+	createSlider(tab, "Gravity", 0, 1000, math.floor(gravityValue), 18, function(val) gravityValue = val setGravity(val) end)
 end
 
 -- ===================== BUILD FUN TAB =====================
@@ -2209,23 +2365,32 @@ do
 		else stopWalkFling() end
 	end)
 	createSlider(tab, "Walk Fling Power", 1000, 50000, walkFlingPower, 5, function(val) walkFlingPower = val end)
+	createToggle(tab, "Car Fling (Sit First)", 6, function(on)
+		carFlingEnabled = on
+		if on then
+			if flingEnabled then flingEnabled = false stopFling() end
+			if walkFlingEnabled then walkFlingEnabled = false stopWalkFling() end
+			startCarFling()
+		else stopCarFling() end
+	end)
+	createSlider(tab, "Car Fling Power", 1000, 99999, carFlingPower, 7, function(val) carFlingPower = val end)
 
 	local spacer = Instance.new("Frame")
 	spacer.Size = UDim2.new(1, 0, 0, 4)
 	spacer.BackgroundTransparency = 1
-	spacer.LayoutOrder = 6
+	spacer.LayoutOrder = 8
 	spacer.Parent = tab
 
-	createSectionLabel(tab, "Visual Effects", 7)
-	createToggle(tab, "Invisible", 8, function(on)
+	createSectionLabel(tab, "Visual Effects", 9)
+	createToggle(tab, "Invisible", 10, function(on)
 		invisibleEnabled = on
 		if on then startInvisible() else stopInvisible() end
 	end)
-	createToggle(tab, "Spin", 9, function(on)
+	createToggle(tab, "Spin", 11, function(on)
 		spinEnabled = on
 		if on then startSpin() else stopSpin() end
 	end)
-	createToggle(tab, "Seizure", 10, function(on)
+	createToggle(tab, "Seizure", 12, function(on)
 		seizureEnabled = on
 		if on then startSeizure() else stopSeizure() end
 	end)
@@ -2269,6 +2434,10 @@ commands["fling"] = function() if walkFlingEnabled then walkFlingEnabled = false
 commands["unfling"] = function() flingEnabled = false stopFling() end
 commands["walkfling"] = function() if flingEnabled then flingEnabled = false stopFling() end walkFlingEnabled = true startWalkFling() end
 commands["unwalkfling"] = function() walkFlingEnabled = false stopWalkFling() end
+commands["carfling"] = function() if flingEnabled then flingEnabled = false stopFling() end if walkFlingEnabled then walkFlingEnabled = false stopWalkFling() end carFlingEnabled = true startCarFling() end
+commands["uncarfling"] = function() carFlingEnabled = false stopCarFling() end
+commands["carnoclip"] = function() carNoclipEnabled = true startCarNoclip() end
+commands["uncarnoclip"] = function() carNoclipEnabled = false stopCarNoclip() end
 commands["infjump"] = function() infJumpEnabled = true startInfJump() end
 commands["uninfjump"] = function() infJumpEnabled = false stopInfJump() end
 commands["killaura"] = function() killAuraEnabled = true startKillAura() end
@@ -2294,6 +2463,8 @@ commands["cmds"] = function()
 	addLog(";jp <val>    ;gravity <val>", COLORS.textSecondary)
 	addLog(";fling / ;unfling (spin fling)", COLORS.textSecondary)
 	addLog(";walkfling / ;unwalkfling (dinos anim)", COLORS.textSecondary)
+	addLog(";carfling / ;uncarfling (vehicle fling)", COLORS.textSecondary)
+	addLog(";carnoclip / ;uncarnoclip (vehicle noclip)", COLORS.textSecondary)
 	addLog(";infjump / ;uninfjump", COLORS.textSecondary)
 	addLog(";killaura / ;unkillaura", COLORS.textSecondary)
 	addLog(";spectate <player> / ;unspectate", COLORS.textSecondary)
