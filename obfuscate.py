@@ -26,6 +26,7 @@ SCRIPTS = [
     "elected.lua",
     "keysystem.lua",
     "brookhaven.lua",
+    "sharkbite.lua",
 ]
 
 def random_var(length=8):
