@@ -1,12 +1,12 @@
 --[[
     Synapse X The Revival - Key System
-    HWID-locked key validation with local auth caching
+    HWID-locked key validation with blacklist + auto-whitelist webhook
 
     Auth Flow:
-    1. Get HWID (multi-executor fallback)
-    2. Check GitHub whitelist -> auto-pass if found
-    3. Check local auth file -> auto-pass if HWID hash matches
-    4. Show key GUI -> correct key binds to HWID -> save locally
+    0. Check GitHub blacklist -> DENY if found (overrides everything)
+    1. Check GitHub whitelist -> auto-pass if found
+    2. Check local auth file -> auto-pass if HWID hash matches
+    3. Show key GUI -> correct key saves locally + sends HWID to Discord webhook
 
     Returns: { validate = fn, getHWID = fn }
 ]]
@@ -21,6 +21,8 @@ local VALID_KEYS = {
 local AUTH_SALT = "SXR_2024_PEBBLEFORD_REVIVAL"
 local AUTH_FILE = "SynapseXAuth.json"
 local WHITELIST_URL = "https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/whitelist.txt?v=" .. tostring(tick())
+local BLACKLIST_URL = "https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/blacklist.txt?v=" .. tostring(tick())
+local WEBHOOK_URL = "PASTE_YOUR_DISCORD_WEBHOOK_URL_HERE"
 
 -- ============================================================
 -- SERVICES
@@ -153,6 +155,67 @@ local function checkWhitelist(hwid)
         return false
     end)
     return ok and result == true
+end
+
+-- ============================================================
+-- GITHUB BLACKLIST CHECK
+-- ============================================================
+local function checkBlacklist(hwid)
+    local ok, result = pcall(function()
+        local raw = game:HttpGet(BLACKLIST_URL)
+        if not raw or #raw < 3 then return false end
+
+        local hwidHash = simpleHash(hwid)
+
+        for line in raw:gmatch("[^\r\n]+") do
+            local trimmed = line:match("^%s*(.-)%s*$")
+            if trimmed and #trimmed > 0 and trimmed:sub(1, 1) ~= "#" then
+                if trimmed == hwidHash then
+                    return true
+                end
+            end
+        end
+        return false
+    end)
+    return ok and result == true
+end
+
+-- ============================================================
+-- DISCORD WEBHOOK (auto-whitelist notification)
+-- ============================================================
+local function sendWhitelistWebhook(hwid, action)
+    pcall(function()
+        if WEBHOOK_URL == "PASTE_YOUR_DISCORD_WEBHOOK_URL_HERE" then return end
+
+        local hwidHash = simpleHash(hwid)
+        local playerName = LocalPlayer.DisplayName .. " (@" .. LocalPlayer.Name .. ")"
+        local userId = tostring(LocalPlayer.UserId)
+
+        local payload = HttpService:JSONEncode({
+            embeds = {{
+                title = "Key System - " .. action,
+                color = action == "BLACKLISTED" and 16711680 or (action == "Key Activated" and 65280 or 3447003),
+                fields = {
+                    {name = "Player", value = playerName, inline = true},
+                    {name = "UserId", value = userId, inline = true},
+                    {name = "HWID Hash", value = "`" .. hwidHash .. "`", inline = false},
+                    {name = "Add to whitelist.txt", value = "```\n" .. hwidHash .. "\n```", inline = false},
+                    {name = "Game", value = tostring(game.PlaceId), inline = true},
+                },
+                timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+            }}
+        })
+
+        local httpRequest = (syn and syn.request) or (http and http.request) or request or http_request
+        if httpRequest then
+            httpRequest({
+                Url = WEBHOOK_URL,
+                Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = payload
+            })
+        end
+    end)
 end
 
 -- ============================================================
@@ -418,6 +481,8 @@ local function showKeyGUI(hwid)
             else
                 setStatus("Key valid! (Could not save locally)", Color3.fromRGB(100, 255, 100))
             end
+            -- Send webhook so HWID hash gets auto-logged for whitelisting
+            sendWhitelistWebhook(hwid, "Key Activated")
             authenticated = true
             task.wait(1)
             pcall(function() screenGui:Destroy() end)
@@ -467,6 +532,20 @@ end
 -- ============================================================
 function KEY_SYSTEM.validate()
     local hwid = getHWID()
+
+    -- Step 0: Check blacklist FIRST - blocked users can NEVER get in
+    local blacklisted = checkBlacklist(hwid)
+    if blacklisted then
+        sendWhitelistWebhook(hwid, "BLACKLISTED")
+        pcall(function()
+            game:GetService("StarterGui"):SetCore("SendNotification", {
+                Title = "Synapse X The Revival",
+                Text = "Access denied. You are blacklisted.",
+                Duration = 5
+            })
+        end)
+        return false
+    end
 
     -- Step 1: Check GitHub whitelist
     local whitelisted = checkWhitelist(hwid)
