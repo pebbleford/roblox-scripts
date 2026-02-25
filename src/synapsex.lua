@@ -1900,14 +1900,20 @@ local function startInvisible()
 		if not character then return end
 		local hrp = character:FindFirstChild("HumanoidRootPart")
 		if not hrp then return end
+		local hum = character:FindFirstChildOfClass("Humanoid")
+		if not hum then return end
 
-		-- FE Invisible: disconnect character from player so server stops
-		-- replicating your position to other clients
+		-- If already sitting, get up first
+		if hum.SeatPart then
+			hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+			_wait(0.3)
+		end
+
 		local savedCF = hrp.CFrame
 		local savedChar = character
 
-		-- Create temp seat for the sit-unsit trick
-		local seat = Instance.new("Seat")
+		-- FE Invisible: VehicleSeat + character nil trick
+		local seat = Instance.new("VehicleSeat")
 		seat.Size = Vector3.new(1, 1, 1)
 		seat.Transparency = 1
 		seat.CanCollide = false
@@ -1915,26 +1921,34 @@ local function startInvisible()
 		seat.CFrame = savedCF
 		seat.Parent = workspace
 
-		local hum = character:FindFirstChildOfClass("Humanoid")
-		if hum then
+		seat:Sit(hum)
+		_wait(0.35)
+
+		-- Verify humanoid actually sat down
+		if not hum.SeatPart then
+			-- Retry once
 			seat:Sit(hum)
-			_wait(0.2)
-			-- Disconnect character from player
-			LocalPlayer.Character = nil
-			_wait(0.1)
-			-- Unsit and destroy seat
-			if hum then hum.Sit = false end
-			seat:Destroy()
-			_wait(0.1)
-			-- Reassign character so we keep local control
-			LocalPlayer.Character = savedChar
-			-- Restore position
-			if hrp and hrp.Parent then hrp.CFrame = savedCF end
-		else
-			seat:Destroy()
+			_wait(0.35)
 		end
 
-		-- Also apply client-side transparency so WE can't see ourselves
+		-- Disconnect character from player (server stops replicating)
+		LocalPlayer.Character = nil
+		_wait(0.2)
+
+		-- Get out of seat properly
+		hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+		_wait(0.15)
+		seat:Destroy()
+		_wait(0.15)
+
+		-- Reassign character (local control restored, server still disconnected)
+		LocalPlayer.Character = savedChar
+		_wait(0.1)
+
+		-- Restore position
+		if hrp and hrp.Parent then hrp.CFrame = savedCF end
+
+		-- Apply client-side transparency so we can't see ourselves
 		savedTransparencies = {}
 		for _, part in ipairs(character:GetDescendants()) do
 			if part:IsA("BasePart") then
