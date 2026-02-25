@@ -2216,16 +2216,7 @@ local function startWalkFling()
 		local root = character:FindFirstChild("HumanoidRootPart")
 		if not root then return end
 
-		-- Set density to 100
-		walkFlingProps = {}
-		for _, part in ipairs(character:GetDescendants()) do
-			if part:IsA("BasePart") then
-				walkFlingProps[part] = part.CustomPhysicalProperties
-				part.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
-			end
-		end
-
-		-- Heartbeat: velocity spikes using AssemblyLinearVelocity
+		-- Heartbeat: re-apply density every frame + velocity spikes when moving
 		walkFlingConnection = RunService.Heartbeat:Connect(function()
 			pcall(function()
 				local char = LocalPlayer.Character
@@ -2234,9 +2225,17 @@ local function startWalkFling()
 				if not rt then return end
 				local hum = char:FindFirstChildOfClass("Humanoid")
 				if not hum then return end
+
+				-- Re-apply heavy density every frame (server may reset it)
+				for _, part in ipairs(char:GetDescendants()) do
+					if part:IsA("BasePart") then
+						part.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
+					end
+				end
+
 				local moveDir = hum.MoveDirection
 				if moveDir.Magnitude > 0.1 then
-					rt.AssemblyLinearVelocity = moveDir.Unit * walkFlingPower + Vector3.new(0, 0, 0)
+					rt.AssemblyLinearVelocity = moveDir.Unit * walkFlingPower
 				end
 			end)
 		end)
@@ -2254,16 +2253,8 @@ local function stopWalkFling()
 	if character then
 		for _, part in ipairs(character:GetDescendants()) do
 			if part:IsA("BasePart") then
-				if walkFlingProps[part] then
-					part.CustomPhysicalProperties = walkFlingProps[part]
-				else
-					part.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
-				end
-			end
-		end
-		for _, part in ipairs(character:GetDescendants()) do
-			if part:IsA("BasePart") then
-				part.Velocity = Vector3.new(0, 0, 0)
+				part.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
+				part.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
 			end
 		end
 	end
@@ -2355,60 +2346,41 @@ local function startFling()
 		local root = character:FindFirstChild("HumanoidRootPart")
 		if not root then return end
 
-		-- Set density to 100 (super heavy = others get launched on contact)
-		savedPhysProps = {}
-		for _, part in ipairs(character:GetDescendants()) do
-			if part:IsA("BasePart") then
-				savedPhysProps[part] = part.CustomPhysicalProperties
-				part.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
-			end
-		end
-
 		-- Enable noclip so we can move freely while spinning
 		if not noclipEnabled then noclipEnabled = true startNoclip() end
 		_wait(0.1)
 
-		-- BodyAngularVelocity - spin on ALL axes for chaotic collision
-		spinBAV = Instance.new("BodyAngularVelocity")
-		spinBAV.AngularVelocity = Vector3.new(flingPower, flingPower, flingPower)
-		spinBAV.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-		spinBAV.P = math.huge
-		spinBAV.Parent = root
-
-		-- Disable collision on character parts
-		for _, part in ipairs(character:GetDescendants()) do
-			if part:IsA("BasePart") then
-				part.CanCollide = false
-			end
-		end
-
-		-- Heartbeat: random velocity perturbation to keep physics active
+		-- Heartbeat: continuously re-apply density + spin + velocity each frame
+		-- Using Assembly properties instead of BodyMovers (servers can't remove these)
 		flingConnection = RunService.Heartbeat:Connect(function()
 			pcall(function()
 				local char = LocalPlayer.Character
 				if not char then return end
 				local rt = char:FindFirstChild("HumanoidRootPart")
 				if not rt then return end
-				rt.Velocity = rt.Velocity + Vector3.new(
-					math.random(-50, 50),
+
+				-- Re-apply heavy density every frame (server may reset it)
+				for _, part in ipairs(char:GetDescendants()) do
+					if part:IsA("BasePart") then
+						part.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
+						part.CanCollide = false
+					end
+				end
+
+				-- Chaotic spin using AssemblyAngularVelocity (modern, can't be removed)
+				rt.AssemblyAngularVelocity = Vector3.new(
+					math.random(-1, 1) * flingPower,
+					math.random(-1, 1) * flingPower,
+					math.random(-1, 1) * flingPower
+				)
+
+				-- Random velocity perturbation to create collisions
+				rt.AssemblyLinearVelocity = rt.AssemblyLinearVelocity + Vector3.new(
+					math.random(-80, 80),
 					0,
-					math.random(-50, 50)
+					math.random(-80, 80)
 				)
 			end)
-		end)
-
-		-- Pulse spin on/off for repeated impulse spikes
-		flingConnection2 = _spawn(function()
-			while flingEnabled do
-				if spinBAV and spinBAV.Parent then
-					spinBAV.AngularVelocity = Vector3.new(flingPower, flingPower, flingPower)
-				end
-				_wait(0.15)
-				if spinBAV and spinBAV.Parent then
-					spinBAV.AngularVelocity = Vector3.new(0, 0, 0)
-				end
-				_wait(0.05)
-			end
 		end)
 
 		addLog("[SPIN FLING] ON - Walk into players!", COLORS.success)
@@ -2419,33 +2391,18 @@ local function startFling()
 end
 
 local function stopFling()
-	-- Disconnect heartbeat
 	if flingConnection then flingConnection:Disconnect() flingConnection = nil end
 
-	-- Remove BodyAngularVelocity
-	if spinBAV then pcall(function() spinBAV:Destroy() end) spinBAV = nil end
-
-	-- Restore physics properties
 	local character = LocalPlayer.Character
 	if character then
 		for _, part in ipairs(character:GetDescendants()) do
 			if part:IsA("BasePart") then
-				if savedPhysProps[part] then
-					part.CustomPhysicalProperties = savedPhysProps[part]
-				else
-					part.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
-				end
-			end
-		end
-		-- Break velocity
-		for _, part in ipairs(character:GetDescendants()) do
-			if part:IsA("BasePart") then
-				part.Velocity = Vector3.new(0, 0, 0)
-				part.RotVelocity = Vector3.new(0, 0, 0)
+				part.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
+				part.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+				part.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
 			end
 		end
 	end
-	savedPhysProps = {}
 
 	addLog("[SPIN FLING] OFF", COLORS.error)
 end
