@@ -50,165 +50,135 @@ local ROLE_COLORS = {
 	Unknown = Color3.fromRGB(180, 180, 180),
 }
 
--- ===================== STATE =====================
--- Role Detection
-local myRole = "Unknown"
-local murdererPlayer = nil
-local sheriffPlayer = nil
-local roleCheckConnection = nil
-local roleCheckEnabled = false
-local lastRoleScan = 0
+-- ===================== STATE (grouped to reduce local count) =====================
+local roleState = {
+	myRole = "Unknown",
+	murdererPlayer = nil,
+	sheriffPlayer = nil,
+	roleCheckConnection = nil,
+	roleCheckEnabled = false,
+	lastRoleScan = 0,
+}
 
--- Combat
-local murdererEspEnabled = false
-local murdererAlertEnabled = false
-local autoShootMurdererEnabled = false
-local aimSmoothing = 2
-local alertConnection = nil
-local alertActive = false
-local autoShootConnection = nil
+local combatState = {
+	murdererEspEnabled = false,
+	murdererAlertEnabled = false,
+	autoShootMurdererEnabled = false,
+	aimSmoothing = 2,
+	alertConnection = nil,
+	alertActive = false,
+	autoShootConnection = nil,
+	murdererEspHighlight = nil,
+	alertFrame = nil,
+}
 
--- ESP
-local espEnabled = false
-local showNamesEnabled = true
-local showDistanceEnabled = true
-local showRoleEnabled = true
-local gunEspEnabled = false
-local coinEspEnabled = false
-local fullbrightEnabled = false
-local playerEspHighlights = {}
-local playerEspNametags = {}
-local espConnections = {}
-local gunEspHighlights = {}
-local coinEspHighlights = {}
-local gunEspConnection = nil
-local coinEspConnection = nil
-local REFRESH_INTERVAL = 5
+local espState = {
+	espEnabled = false,
+	showNamesEnabled = true,
+	showDistanceEnabled = true,
+	showRoleEnabled = true,
+	gunEspEnabled = false,
+	coinEspEnabled = false,
+	fullbrightEnabled = false,
+	playerEspHighlights = {},
+	playerEspNametags = {},
+	espConnections = {},
+	gunEspHighlights = {},
+	coinEspHighlights = {},
+	gunEspConnection = nil,
+	coinEspConnection = nil,
+	REFRESH_INTERVAL = 5,
+}
 
--- Farming
-local autoCoinFarmEnabled = false
-local farmSpeed = 0.5
-local coinFarmThread = nil
-local coinsFarmed = 0
-local antiAfkEnabled = false
-local antiAfkConnection = nil
+local farmState = {
+	autoCoinFarmEnabled = false,
+	farmSpeed = 0.5,
+	coinFarmThread = nil,
+	coinsFarmed = 0,
+	antiAfkEnabled = false,
+	antiAfkConnection = nil,
+}
 
--- Player
-local flyEnabled = false
-local speedEnabled = false
-local noclipEnabled = false
-local infJumpEnabled = false
-local godEnabled = false
-local invisibleEnabled = false
-local flySpeed = 80
-local speedValue = 100
-local jumpPowerValue = 50
-local cameraFOV = 70
-local flyConnection = nil
-local bodyGyro = nil
-local bodyVelocity = nil
-local noclipConnection = nil
-local infJumpConnection = nil
-local godConnection = nil
+local moveState = {
+	flyEnabled = false,
+	speedEnabled = false,
+	noclipEnabled = false,
+	infJumpEnabled = false,
+	godEnabled = false,
+	invisibleEnabled = false,
+	flySpeed = 80,
+	speedValue = 100,
+	jumpPowerValue = 50,
+	cameraFOV = 70,
+	flyConnection = nil,
+	bodyGyro = nil,
+	bodyVelocity = nil,
+	noclipConnection = nil,
+	infJumpConnection = nil,
+	godConnection = nil,
+	bunnyHopEnabled = false,
+	bunnyHopConnection = nil,
+	gravityValue = 196,
+}
 
--- Fun
-local flingEnabled = false
-local spinEnabled = false
-local seizureEnabled = false
-local flingPower = 99999
-local flingConnection = nil
-local flingConnection2 = nil
-local spinBAV = nil
-local spinConnection = nil
-local seizureConnection = nil
-local savedPhysProps = {}
-local emoteActive = false
-local emoteTracks = {}
-local emoteConnection = nil
+local flingState = {
+	flingEnabled = false,
+	spinEnabled = false,
+	seizureEnabled = false,
+	flingPower = 99999,
+	flingConnection = nil,
+	flingConnection2 = nil,
+	spinBAV = nil,
+	spinConnection = nil,
+	seizureConnection = nil,
+	savedPhysProps = {},
+	emoteActive = false,
+	emoteTracks = {},
+	emoteConnection = nil,
+	walkFlingEnabled = false,
+	walkFlingPower = 10000,
+	walkFlingProps = {},
+	walkFlingConnection = nil,
+}
 
--- Auto Grab Gun
-local autoGrabGunEnabled = false
-local autoGrabConnection = nil
+local miscState = {
+	autoGrabGunEnabled = false,
+	autoGrabConnection = nil,
+	killAllEnabled = false,
+	killAllConnection = nil,
+	xrayEnabled = false,
+	xrayOrigTransparencies = {},
+	trapdoorEspEnabled = false,
+	trapdoorEspHighlights = {},
+	bringCoinsEnabled = false,
+	bringCoinsConnection = nil,
+	autoCollectEnabled = false,
+	autoCollectConnection = nil,
+	selectedPlayer = nil,
+	antiVoidEnabled = false,
+	antiVoidConnection = nil,
+	lastSafePos = nil,
+	headlessEnabled = false,
+	headlessSaved = {},
+	rainbowEnabled = false,
+	rainbowConnection = nil,
+	savedTransparencies = {},
+}
 
--- Kill All (Murderer)
-local killAllEnabled = false
-local killAllConnection = nil
-
--- Bring Gun
--- (action function, no state toggle needed)
-
--- X-Ray
-local xrayEnabled = false
-local xrayOrigTransparencies = {}
-
--- Trapdoor ESP
-local trapdoorEspEnabled = false
-local trapdoorEspHighlights = {}
-
--- Bring Coins
-local bringCoinsEnabled = false
-local bringCoinsConnection = nil
-
--- Auto Collect All
-local autoCollectEnabled = false
-local autoCollectConnection = nil
-
--- Bunny Hop
-local bunnyHopEnabled = false
-local bunnyHopConnection = nil
-
--- Player Target
-local selectedPlayer = nil
-
--- Gravity
-local gravityValue = 196
-
--- Anti-Void
-local antiVoidEnabled = false
-local antiVoidConnection = nil
-local lastSafePos = nil
-
--- Walk Fling
-local walkFlingEnabled = false
-local walkFlingPower = 10000
-local walkFlingProps = {}
-local walkFlingConnection = nil
-
--- Headless
-local headlessEnabled = false
-local headlessSaved = {}
-
--- Rainbow Character
-local rainbowEnabled = false
-local rainbowConnection = nil
-
--- Fullbright saved values
-local origAmbient = nil
-local origBrightness = nil
-local origFogEnd = nil
-local origGlobalShadows = nil
-
--- Invisible saved values
-local savedTransparencies = {}
-
--- Murderer ESP highlights
-local murdererEspHighlight = nil
-
--- Alert visual frame
-local alertFrame = nil
-
--- GUI State
-local windowVisible = true
-local activeTab = "Main"
-local logLines = {}
-local MAX_LOG_LINES = 50
-
-local origWalkSpeed = 16
-local origJumpPower = 50
-
--- Dynamic labels
-local roleLabel = nil
-local coinCountLabel = nil
+local uiState = {
+	windowVisible = true,
+	activeTab = "Main",
+	logLines = {},
+	MAX_LOG_LINES = 50,
+	origWalkSpeed = 16,
+	origJumpPower = 50,
+	roleLabel = nil,
+	coinCountLabel = nil,
+	origAmbient = nil,
+	origBrightness = nil,
+	origFogEnd = nil,
+	origGlobalShadows = nil,
+}
 
 -- ===================== SCREEN GUI =====================
 -- Kill old instance if re-executing
@@ -302,9 +272,9 @@ local function scanRoles()
 	sheriffPlayer = nil
 	for _, player in ipairs(Players:GetPlayers()) do
 		local role = getPlayerRole(player)
-		if role == "Murderer" then murdererPlayer = player end
-		if role == "Sheriff" then sheriffPlayer = player end
-		if player == LocalPlayer then myRole = role end
+		if role == "Murderer" then roleState.murdererPlayer = player end
+		if role == "Sheriff" then roleState.sheriffPlayer = player end
+		if player == LocalPlayer then roleState.myRole = role end
 	end
 end
 
@@ -834,15 +804,15 @@ end
 local logFrame
 
 local function addLog(msg, color)
-	table.insert(logLines, {text = msg, color = color or COLORS.textSecondary})
-	if #logLines > MAX_LOG_LINES then
-		table.remove(logLines, 1)
+	table.insert(uiState.logLines, {text = msg, color = color or COLORS.textSecondary})
+	if #uiState.logLines > uiState.MAX_LOG_LINES then
+		table.remove(uiState.logLines, 1)
 	end
 	if logFrame then
 		for _, child in ipairs(logFrame:GetChildren()) do
 			if child:IsA("TextLabel") then child:Destroy() end
 		end
-		for i, line in ipairs(logLines) do
+		for i, line in ipairs(uiState.logLines) do
 			local l = Instance.new("TextLabel")
 			l.Size = UDim2.new(1, 0, 0, 14)
 			l.BackgroundTransparency = 1
@@ -855,8 +825,8 @@ local function addLog(msg, color)
 			l.LayoutOrder = i
 			l.Parent = logFrame
 		end
-		logFrame.CanvasSize = UDim2.new(0, 0, 0, #logLines * 16)
-		logFrame.CanvasPosition = Vector2.new(0, math.max(0, #logLines * 16 - logFrame.AbsoluteSize.Y))
+		logFrame.CanvasSize = UDim2.new(0, 0, 0, #uiState.logLines * 16)
+		logFrame.CanvasPosition = Vector2.new(0, math.max(0, #uiState.logLines * 16 - logFrame.AbsoluteSize.Y))
 	end
 end
 
@@ -866,21 +836,21 @@ local function startRoleCheck()
 	roleCheckConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local now = tick()
-			if now - lastRoleScan < 0.5 then return end
+			if now - roleState.lastRoleScan < 0.5 then return end
 			lastRoleScan = now
 
 			scanRoles()
 
 			-- Update role label dynamically
-			if roleLabel then
-				local roleText = "Role: " .. myRole
-				if murdererPlayer then
-					roleText = roleText .. " | Murderer: " .. murdererPlayer.DisplayName
+			if uiState.roleLabel then
+				local roleText = "Role: " .. roleState.myRole
+				if roleState.murdererPlayer then
+					roleText = roleText .. " | Murderer: " .. roleState.murdererPlayer.DisplayName
 				end
-				if sheriffPlayer then
-					roleText = roleText .. " | Sheriff: " .. sheriffPlayer.DisplayName
+				if roleState.sheriffPlayer then
+					roleText = roleText .. " | Sheriff: " .. roleState.sheriffPlayer.DisplayName
 				end
-				roleLabel.Text = roleText
+				uiState.roleLabel.Text = roleText
 			end
 		end)
 	end)
@@ -889,7 +859,7 @@ end
 
 local function stopRoleCheck()
 	roleCheckEnabled = false
-	if roleCheckConnection then roleCheckConnection:Disconnect() roleCheckConnection = nil end
+	if roleState.roleCheckConnection then roleState.roleCheckConnection:Disconnect() roleState.roleCheckConnection = nil end
 	myRole = "Unknown"
 	murdererPlayer = nil
 	sheriffPlayer = nil
@@ -903,42 +873,42 @@ local function enableMurdererEsp()
 end
 
 local function disableMurdererEsp()
-	if murdererEspHighlight then pcall(function() murdererEspHighlight:Destroy() end) murdererEspHighlight = nil end
+	if combatState.murdererEspHighlight then pcall(function() combatState.murdererEspHighlight:Destroy() end) combatState.murdererEspHighlight = nil end
 	addLog("[MURDERER ESP] OFF", COLORS.error)
 end
 
 local function updateMurdererEsp()
 	-- Remove stale highlight
-	if murdererEspHighlight then
+	if combatState.murdererEspHighlight then
 		local alive = false
-		pcall(function() if murdererEspHighlight and murdererEspHighlight.Adornee and murdererEspHighlight.Adornee.Parent then alive = true end end)
+		pcall(function() if combatState.murdererEspHighlight and combatState.murdererEspHighlight.Adornee and combatState.murdererEspHighlight.Adornee.Parent then alive = true end end)
 		if not alive then
-			pcall(function() murdererEspHighlight:Destroy() end)
+			pcall(function() combatState.murdererEspHighlight:Destroy() end)
 			murdererEspHighlight = nil
 		end
 	end
 
-	if not murdererEspEnabled then
-		if murdererEspHighlight then pcall(function() murdererEspHighlight:Destroy() end) murdererEspHighlight = nil end
+	if not combatState.murdererEspEnabled then
+		if combatState.murdererEspHighlight then pcall(function() combatState.murdererEspHighlight:Destroy() end) combatState.murdererEspHighlight = nil end
 		return
 	end
 
-	if murdererPlayer and murdererPlayer.Character and murdererPlayer.Character.Parent then
-		if not murdererEspHighlight or not murdererEspHighlight.Parent then
+	if roleState.murdererPlayer and roleState.murdererPlayer.Character and roleState.murdererPlayer.Character.Parent then
+		if not combatState.murdererEspHighlight or not combatState.murdererEspHighlight.Parent then
 			pcall(function()
 				murdererEspHighlight = Instance.new("Highlight")
-				murdererEspHighlight.Name = "MurdererESP"
-				murdererEspHighlight.FillColor = Color3.fromRGB(255, 0, 0)
-				murdererEspHighlight.OutlineColor = Color3.fromRGB(255, 50, 50)
-				murdererEspHighlight.FillTransparency = 0.3
-				murdererEspHighlight.OutlineTransparency = 0
-				murdererEspHighlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-				murdererEspHighlight.Adornee = murdererPlayer.Character
-				murdererEspHighlight.Parent = murdererPlayer.Character
+				combatState.murdererEspHighlight.Name = "MurdererESP"
+				combatState.murdererEspHighlight.FillColor = Color3.fromRGB(255, 0, 0)
+				combatState.murdererEspHighlight.OutlineColor = Color3.fromRGB(255, 50, 50)
+				combatState.murdererEspHighlight.FillTransparency = 0.3
+				combatState.murdererEspHighlight.OutlineTransparency = 0
+				combatState.murdererEspHighlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+				combatState.murdererEspHighlight.Adornee = roleState.murdererPlayer.Character
+				combatState.murdererEspHighlight.Parent = roleState.murdererPlayer.Character
 			end)
 		end
 	else
-		if murdererEspHighlight then pcall(function() murdererEspHighlight:Destroy() end) murdererEspHighlight = nil end
+		if combatState.murdererEspHighlight then pcall(function() combatState.murdererEspHighlight:Destroy() end) combatState.murdererEspHighlight = nil end
 	end
 end
 
@@ -946,29 +916,29 @@ end
 local function startMurdererAlert()
 	alertConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
-			if not murdererPlayer then return end
+			if not roleState.murdererPlayer then return end
 			local myChar = LocalPlayer.Character
-			local theirChar = murdererPlayer.Character
+			local theirChar = roleState.murdererPlayer.Character
 			if not myChar or not theirChar then return end
 			local myRoot = myChar:FindFirstChild("HumanoidRootPart")
 			local theirRoot = theirChar:FindFirstChild("HumanoidRootPart")
 			if not myRoot or not theirRoot then return end
 			local dist = (myRoot.Position - theirRoot.Position).Magnitude
-			if dist < 30 and not alertActive then
+			if dist < 30 and not combatState.alertActive then
 				alertActive = true
 				addLog("[ALERT] MURDERER NEARBY! (" .. math.floor(dist) .. "m)", COLORS.error)
 				-- Flash screen border red
 				_spawn(function()
 					for flashIdx = 1, 3 do
 						pcall(function()
-							if alertFrame then alertFrame:Destroy() alertFrame = nil end
+							if combatState.alertFrame then combatState.alertFrame:Destroy() combatState.alertFrame = nil end
 							alertFrame = Instance.new("Frame")
-							alertFrame.Name = "AlertFlash"
-							alertFrame.Size = UDim2.new(1, 0, 1, 0)
-							alertFrame.Position = UDim2.new(0, 0, 0, 0)
-							alertFrame.BackgroundTransparency = 1
-							alertFrame.Parent = screenGui
-							alertFrame.ZIndex = 100
+							combatState.alertFrame.Name = "AlertFlash"
+							combatState.alertFrame.Size = UDim2.new(1, 0, 1, 0)
+							combatState.alertFrame.Position = UDim2.new(0, 0, 0, 0)
+							combatState.alertFrame.BackgroundTransparency = 1
+							combatState.alertFrame.Parent = screenGui
+							combatState.alertFrame.ZIndex = 100
 
 							-- Top border
 							local topBorder = Instance.new("Frame")
@@ -977,7 +947,7 @@ local function startMurdererAlert()
 							topBorder.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
 							topBorder.BackgroundTransparency = 0.2
 							topBorder.BorderSizePixel = 0
-							topBorder.Parent = alertFrame
+							topBorder.Parent = combatState.alertFrame
 
 							-- Bottom border
 							local bottomBorder = Instance.new("Frame")
@@ -986,7 +956,7 @@ local function startMurdererAlert()
 							bottomBorder.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
 							bottomBorder.BackgroundTransparency = 0.2
 							bottomBorder.BorderSizePixel = 0
-							bottomBorder.Parent = alertFrame
+							bottomBorder.Parent = combatState.alertFrame
 
 							-- Left border
 							local leftBorder = Instance.new("Frame")
@@ -995,7 +965,7 @@ local function startMurdererAlert()
 							leftBorder.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
 							leftBorder.BackgroundTransparency = 0.2
 							leftBorder.BorderSizePixel = 0
-							leftBorder.Parent = alertFrame
+							leftBorder.Parent = combatState.alertFrame
 
 							-- Right border
 							local rightBorder = Instance.new("Frame")
@@ -1004,11 +974,11 @@ local function startMurdererAlert()
 							rightBorder.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
 							rightBorder.BackgroundTransparency = 0.2
 							rightBorder.BorderSizePixel = 0
-							rightBorder.Parent = alertFrame
+							rightBorder.Parent = combatState.alertFrame
 						end)
 						_wait(0.2)
 						pcall(function()
-							if alertFrame then alertFrame:Destroy() alertFrame = nil end
+							if combatState.alertFrame then combatState.alertFrame:Destroy() combatState.alertFrame = nil end
 						end)
 						_wait(0.1)
 					end
@@ -1023,8 +993,8 @@ local function startMurdererAlert()
 end
 
 local function stopMurdererAlert()
-	if alertConnection then alertConnection:Disconnect() alertConnection = nil end
-	if alertFrame then pcall(function() alertFrame:Destroy() end) alertFrame = nil end
+	if combatState.alertConnection then combatState.alertConnection:Disconnect() combatState.alertConnection = nil end
+	if combatState.alertFrame then pcall(function() combatState.alertFrame:Destroy() end) combatState.alertFrame = nil end
 	alertActive = false
 	addLog("[ALERT] OFF", COLORS.error)
 end
@@ -1034,9 +1004,9 @@ local function startAutoShootMurderer()
 	autoShootConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			-- Only works when local player is sheriff
-			if myRole ~= "Sheriff" then return end
-			if not murdererPlayer then return end
-			local theirChar = murdererPlayer.Character
+			if roleState.myRole ~= "Sheriff" then return end
+			if not roleState.murdererPlayer then return end
+			local theirChar = roleState.murdererPlayer.Character
 			if not theirChar then return end
 			local theirHead = theirChar:FindFirstChild("Head") or theirChar:FindFirstChild("HumanoidRootPart")
 			if not theirHead then return end
@@ -1069,8 +1039,8 @@ local function startAutoShootMurderer()
 			local delta = Vector2.new(screenPos.X - screenCenter.X, screenPos.Y - screenCenter.Y)
 
 			local sensitivity = 1.5
-			local moveX = (delta.X / aimSmoothing) * sensitivity
-			local moveY = (delta.Y / aimSmoothing) * sensitivity
+			local moveX = (delta.X / combatState.aimSmoothing) * sensitivity
+			local moveY = (delta.Y / combatState.aimSmoothing) * sensitivity
 
 			-- Minimum movement threshold
 			if math.abs(moveX) < 1 and math.abs(delta.X) > 1 then
@@ -1087,7 +1057,7 @@ local function startAutoShootMurderer()
 				-- Fallback: direct CFrame set
 				local currentCF = cam.CFrame
 				local targetCF = CFrame.new(cam.CFrame.Position, theirHead.Position)
-				cam.CFrame = currentCF:Lerp(targetCF, 1 / aimSmoothing)
+				cam.CFrame = currentCF:Lerp(targetCF, 1 / combatState.aimSmoothing)
 			end
 
 			-- Auto fire when close to crosshair
@@ -1111,7 +1081,7 @@ local function startAutoShootMurderer()
 end
 
 local function stopAutoShootMurderer()
-	if autoShootConnection then autoShootConnection:Disconnect() autoShootConnection = nil end
+	if combatState.autoShootConnection then combatState.autoShootConnection:Disconnect() combatState.autoShootConnection = nil end
 	addLog("[AUTO SHOOT] OFF", COLORS.error)
 end
 
@@ -1161,7 +1131,7 @@ end
 -- ===================== AUTO GRAB GUN =====================
 local function startAutoGrabGun()
 	autoGrabConnection = workspace.ChildAdded:Connect(function(child)
-		if not autoGrabGunEnabled then return end
+		if not miscState.autoGrabGunEnabled then return end
 		_wait(0.3)
 		pcall(function()
 			if child:IsA("Tool") and (child.Name == "Gun" or child.Name == "Revolver" or child.Name:lower():find("gun")) then
@@ -1187,7 +1157,7 @@ local function startAutoGrabGun()
 	local gunDrop = workspace:FindFirstChild("GunDrop")
 	if gunDrop then
 		local gdConn = gunDrop.ChildAdded:Connect(function(child)
-			if not autoGrabGunEnabled then return end
+			if not miscState.autoGrabGunEnabled then return end
 			_wait(0.3)
 			pcall(function()
 				local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
@@ -1214,20 +1184,20 @@ local function startAutoGrabGun()
 				end
 			end)
 		end)
-		table.insert(espConnections, gdConn)
+		table.insert(espState.espConnections, gdConn)
 	end
 	addLog("[AUTO GRAB] ON - Watching for gun drops", COLORS.success)
 end
 
 local function stopAutoGrabGun()
-	if autoGrabConnection then autoGrabConnection:Disconnect() autoGrabConnection = nil end
+	if miscState.autoGrabConnection then miscState.autoGrabConnection:Disconnect() miscState.autoGrabConnection = nil end
 	addLog("[AUTO GRAB] OFF", COLORS.error)
 end
 
 -- ===================== PLAYER ESP (Role-Based Colors) =====================
 local function addPlayerHighlight(player)
 	if player == LocalPlayer then return end
-	if playerEspHighlights[player] then return end
+	if espState.playerEspHighlights[player] then return end
 	local character = player.Character
 	if not character or not character.Parent then return end
 	pcall(function()
@@ -1243,13 +1213,13 @@ local function addPlayerHighlight(player)
 		highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 		highlight.Adornee = character
 		highlight.Parent = character
-		playerEspHighlights[player] = highlight
+		espState.playerEspHighlights[player] = highlight
 	end)
 end
 
 local function addPlayerNametag(player)
 	if player == LocalPlayer then return end
-	if playerEspNametags[player] then return end
+	if espState.playerEspNametags[player] then return end
 	local character = player.Character
 	if not character or not character.Parent then return end
 	local head = character:FindFirstChild("Head")
@@ -1269,7 +1239,7 @@ local function addPlayerNametag(player)
 		local yOffset = 0
 
 		-- Name label
-		if showNamesEnabled then
+		if espState.showNamesEnabled then
 			local nameLabel = Instance.new("TextLabel")
 			nameLabel.Size = UDim2.new(1, 0, 0, 18)
 			nameLabel.Position = UDim2.new(0, 0, 0, yOffset)
@@ -1285,7 +1255,7 @@ local function addPlayerNametag(player)
 		end
 
 		-- Role label
-		if showRoleEnabled then
+		if espState.showRoleEnabled then
 			local roleLabelTag = Instance.new("TextLabel")
 			roleLabelTag.Size = UDim2.new(1, 0, 0, 14)
 			roleLabelTag.Position = UDim2.new(0, 0, 0, yOffset)
@@ -1301,7 +1271,7 @@ local function addPlayerNametag(player)
 		end
 
 		-- Distance label
-		if showDistanceEnabled then
+		if espState.showDistanceEnabled then
 			local distLabel = Instance.new("TextLabel")
 			distLabel.Name = "DistLabel"
 			distLabel.Size = UDim2.new(1, 0, 0, 14)
@@ -1326,33 +1296,33 @@ local function addPlayerNametag(player)
 					end
 				end)
 			end)
-			table.insert(espConnections, distConn)
+			table.insert(espState.espConnections, distConn)
 		end
 
-		playerEspNametags[player] = bb
+		espState.playerEspNametags[player] = bb
 	end)
 end
 
 local function removePlayerHighlight(player)
-	local hl = playerEspHighlights[player]
+	local hl = espState.playerEspHighlights[player]
 	if hl then pcall(function() hl:Destroy() end) end
-	playerEspHighlights[player] = nil
+	espState.playerEspHighlights[player] = nil
 end
 
 local function removePlayerNametag(player)
-	local tag = playerEspNametags[player]
+	local tag = espState.playerEspNametags[player]
 	if tag then pcall(function() tag:Destroy() end) end
-	playerEspNametags[player] = nil
+	espState.playerEspNametags[player] = nil
 end
 
 local function cleanupStalePlayerEsp()
 	local staleHL, staleNT = {}, {}
-	for player, hl in pairs(playerEspHighlights) do
+	for player, hl in pairs(espState.playerEspHighlights) do
 		local alive = false
 		pcall(function() if hl and hl.Adornee and hl.Adornee.Parent then alive = true end end)
 		if not alive then table.insert(staleHL, player) end
 	end
-	for player, tag in pairs(playerEspNametags) do
+	for player, tag in pairs(espState.playerEspNametags) do
 		local alive = false
 		pcall(function() if tag and tag.Parent then alive = true end end)
 		if not alive then table.insert(staleNT, player) end
@@ -1385,26 +1355,26 @@ end
 local function hookPlayerForEsp(player)
 	if player == LocalPlayer then return end
 	local conn = player.CharacterAdded:Connect(function()
-		if not espEnabled then return end
+		if not espState.espEnabled then return end
 		_wait(1)
-		if espEnabled then addPlayerHighlight(player) addPlayerNametag(player) end
+		if espState.espEnabled then addPlayerHighlight(player) addPlayerNametag(player) end
 	end)
-	table.insert(espConnections, conn)
+	table.insert(espState.espConnections, conn)
 end
 
 local function enablePlayerEsp()
 	for _, player in ipairs(Players:GetPlayers()) do hookPlayerForEsp(player) end
 	local addedConn = Players.PlayerAdded:Connect(function(player)
-		if not espEnabled then return end
+		if not espState.espEnabled then return end
 		hookPlayerForEsp(player)
 	end)
-	table.insert(espConnections, addedConn)
+	table.insert(espState.espConnections, addedConn)
 	local count, skipped = playerEspScanAll()
 	addLog("[ESP] ON - " .. count .. " highlighted, " .. skipped .. " pending", COLORS.success)
 	_spawn(function()
-		while espEnabled do
-			_wait(REFRESH_INTERVAL)
-			if not espEnabled then break end
+		while espState.espEnabled do
+			_wait(espState.REFRESH_INTERVAL)
+			if not espState.espEnabled then break end
 			playerEspScanAll()
 			-- Also update murderer ESP while we're at it
 			updateMurdererEsp()
@@ -1414,25 +1384,25 @@ end
 
 local function disablePlayerEsp()
 	local allP = {}
-	for player in pairs(playerEspHighlights) do table.insert(allP, player) end
+	for player in pairs(espState.playerEspHighlights) do table.insert(allP, player) end
 	for _, player in ipairs(allP) do removePlayerHighlight(player) end
 	local allN = {}
-	for player in pairs(playerEspNametags) do table.insert(allN, player) end
+	for player in pairs(espState.playerEspNametags) do table.insert(allN, player) end
 	for _, player in ipairs(allN) do removePlayerNametag(player) end
-	for _, conn in ipairs(espConnections) do pcall(function() conn:Disconnect() end) end
+	for _, conn in ipairs(espState.espConnections) do pcall(function() conn:Disconnect() end) end
 	espConnections = {}
 	addLog("[ESP] OFF", COLORS.error)
 end
 
 -- ===================== GUN ESP =====================
 local function clearGunEsp()
-	for _, hl in pairs(gunEspHighlights) do pcall(function() hl:Destroy() end) end
+	for _, hl in pairs(espState.gunEspHighlights) do pcall(function() hl:Destroy() end) end
 	gunEspHighlights = {}
 end
 
 local function refreshGunEsp()
 	clearGunEsp()
-	if not gunEspEnabled then return end
+	if not espState.gunEspEnabled then return end
 
 	pcall(function()
 		-- Search workspace for dropped guns
@@ -1447,7 +1417,7 @@ local function refreshGunEsp()
 				hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 				hl.Adornee = obj
 				hl.Parent = obj
-				table.insert(gunEspHighlights, hl)
+				table.insert(espState.gunEspHighlights, hl)
 			end
 		end
 
@@ -1465,7 +1435,7 @@ local function refreshGunEsp()
 					hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 					hl.Adornee = obj
 					hl.Parent = obj
-					table.insert(gunEspHighlights, hl)
+					table.insert(espState.gunEspHighlights, hl)
 				end
 			end
 		end
@@ -1476,7 +1446,7 @@ local function enableGunEsp()
 	refreshGunEsp()
 	-- Watch for new gun drops
 	gunEspConnection = workspace.ChildAdded:Connect(function(child)
-		if not gunEspEnabled then return end
+		if not espState.gunEspEnabled then return end
 		_wait(0.3)
 		pcall(function()
 			if child:IsA("Tool") and (child.Name == "Gun" or child.Name == "Revolver" or child.Name:lower():find("gun")) then
@@ -1489,15 +1459,15 @@ local function enableGunEsp()
 				hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 				hl.Adornee = child
 				hl.Parent = child
-				table.insert(gunEspHighlights, hl)
+				table.insert(espState.gunEspHighlights, hl)
 			end
 		end)
 	end)
 	-- Periodic refresh
 	_spawn(function()
-		while gunEspEnabled do
+		while espState.gunEspEnabled do
 			_wait(3)
-			if not gunEspEnabled then break end
+			if not espState.gunEspEnabled then break end
 			refreshGunEsp()
 		end
 	end)
@@ -1506,19 +1476,19 @@ end
 
 local function disableGunEsp()
 	clearGunEsp()
-	if gunEspConnection then gunEspConnection:Disconnect() gunEspConnection = nil end
+	if espState.gunEspConnection then espState.gunEspConnection:Disconnect() espState.gunEspConnection = nil end
 	addLog("[GUN ESP] OFF", COLORS.error)
 end
 
 -- ===================== COIN ESP =====================
 local function clearCoinEsp()
-	for _, hl in pairs(coinEspHighlights) do pcall(function() hl:Destroy() end) end
+	for _, hl in pairs(espState.coinEspHighlights) do pcall(function() hl:Destroy() end) end
 	coinEspHighlights = {}
 end
 
 local function refreshCoinEsp()
 	clearCoinEsp()
-	if not coinEspEnabled then return end
+	if not espState.coinEspEnabled then return end
 
 	pcall(function()
 		local coins = getCoins()
@@ -1532,7 +1502,7 @@ local function refreshCoinEsp()
 			hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 			hl.Adornee = coin
 			hl.Parent = coin
-			table.insert(coinEspHighlights, hl)
+			table.insert(espState.coinEspHighlights, hl)
 		end
 	end)
 end
@@ -1541,9 +1511,9 @@ local function enableCoinEsp()
 	refreshCoinEsp()
 	-- Periodic refresh
 	_spawn(function()
-		while coinEspEnabled do
+		while espState.coinEspEnabled do
 			_wait(5)
-			if not coinEspEnabled then break end
+			if not espState.coinEspEnabled then break end
 			refreshCoinEsp()
 		end
 	end)
@@ -1569,10 +1539,10 @@ local function startFullbright()
 end
 
 local function stopFullbright()
-	if origAmbient then Lighting.Ambient = origAmbient end
-	if origBrightness then Lighting.Brightness = origBrightness end
-	if origFogEnd then Lighting.FogEnd = origFogEnd end
-	if origGlobalShadows ~= nil then Lighting.GlobalShadows = origGlobalShadows end
+	if uiState.origAmbient then Lighting.Ambient = uiState.origAmbient end
+	if uiState.origBrightness then Lighting.Brightness = uiState.origBrightness end
+	if uiState.origFogEnd then Lighting.FogEnd = uiState.origFogEnd end
+	if uiState.origGlobalShadows ~= nil then Lighting.GlobalShadows = uiState.origGlobalShadows end
 	addLog("[FULLBRIGHT] OFF", COLORS.error)
 end
 
@@ -1580,7 +1550,7 @@ end
 local function startAutoCoinFarm()
 	coinsFarmed = 0
 	coinFarmThread = _spawn(function()
-		while autoCoinFarmEnabled do
+		while farmState.autoCoinFarmEnabled do
 			pcall(function()
 				local coins = getCoins()
 				if #coins == 0 then
@@ -1590,35 +1560,35 @@ local function startAutoCoinFarm()
 				end
 
 				for _, coin in ipairs(coins) do
-					if not autoCoinFarmEnabled then break end
+					if not farmState.autoCoinFarmEnabled then break end
 					pcall(function()
 						local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 						if root and coin and coin.Parent and coin.Transparency < 1 then
 							root.CFrame = coin.CFrame + Vector3.new(0, 2, 0)
-							coinsFarmed = coinsFarmed + 1
-							if coinCountLabel then
-								coinCountLabel.Text = "Coins Farmed: " .. coinsFarmed
+							coinsFarmed = farmState.coinsFarmed + 1
+							if uiState.coinCountLabel then
+								uiState.coinCountLabel.Text = "Coins Farmed: " .. farmState.coinsFarmed
 							end
 						end
 					end)
-					_wait(farmSpeed)
+					_wait(farmState.farmSpeed)
 				end
 			end)
 			_wait(1)
 		end
 	end)
-	addLog("[FARM] ON - Teleporting to coins (speed: " .. farmSpeed .. "s)", COLORS.success)
+	addLog("[FARM] ON - Teleporting to coins (speed: " .. farmState.farmSpeed .. "s)", COLORS.success)
 end
 
 local function stopAutoCoinFarm()
 	autoCoinFarmEnabled = false
-	addLog("[FARM] OFF - Farmed " .. coinsFarmed .. " coins", COLORS.error)
+	addLog("[FARM] OFF - Farmed " .. farmState.coinsFarmed .. " coins", COLORS.error)
 end
 
 -- ===================== ANTI-AFK =====================
 local function startAntiAfk()
 	antiAfkConnection = _spawn(function()
-		while antiAfkEnabled do
+		while farmState.antiAfkEnabled do
 			pcall(function()
 				local vu = game:GetService("VirtualUser")
 				vu:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
@@ -1649,15 +1619,15 @@ local function startFly()
 	local hrp = character:FindFirstChild("HumanoidRootPart")
 	if not hrp then return end
 	bodyGyro = Instance.new("BodyGyro")
-	bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-	bodyGyro.P = 9e4
-	bodyGyro.Parent = hrp
+	moveState.bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+	moveState.bodyGyro.P = 9e4
+	moveState.bodyGyro.Parent = hrp
 	bodyVelocity = Instance.new("BodyVelocity")
-	bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-	bodyVelocity.Velocity = Vector3.new(0, 0, 0)
-	bodyVelocity.Parent = hrp
+	moveState.bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+	moveState.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+	moveState.bodyVelocity.Parent = hrp
 	flyConnection = RunService.Heartbeat:Connect(function()
-		if not flyEnabled or not hrp or not hrp.Parent then return end
+		if not moveState.flyEnabled or not hrp or not hrp.Parent then return end
 		local cam = workspace.CurrentCamera
 		local dir = Vector3.new(0, 0, 0)
 		if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir = dir + cam.CFrame.LookVector end
@@ -1667,16 +1637,16 @@ local function startFly()
 		if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir = dir + Vector3.new(0, 1, 0) end
 		if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then dir = dir - Vector3.new(0, 1, 0) end
 		if dir.Magnitude > 0 then dir = dir.Unit end
-		bodyVelocity.Velocity = dir * flySpeed
-		bodyGyro.CFrame = cam.CFrame
+		moveState.bodyVelocity.Velocity = dir * moveState.flySpeed
+		moveState.bodyGyro.CFrame = cam.CFrame
 	end)
-	addLog("[FLY] ON - Speed: " .. flySpeed, COLORS.success)
+	addLog("[FLY] ON - Speed: " .. moveState.flySpeed, COLORS.success)
 end
 
 local function stopFly()
-	if flyConnection then flyConnection:Disconnect() flyConnection = nil end
-	if bodyGyro then pcall(function() bodyGyro:Destroy() end) bodyGyro = nil end
-	if bodyVelocity then pcall(function() bodyVelocity:Destroy() end) bodyVelocity = nil end
+	if moveState.flyConnection then moveState.flyConnection:Disconnect() moveState.flyConnection = nil end
+	if moveState.bodyGyro then pcall(function() moveState.bodyGyro:Destroy() end) moveState.bodyGyro = nil end
+	if moveState.bodyVelocity then pcall(function() moveState.bodyVelocity:Destroy() end) moveState.bodyVelocity = nil end
 	addLog("[FLY] OFF", COLORS.error)
 end
 
@@ -1695,7 +1665,7 @@ local function startNoclip()
 end
 
 local function stopNoclip()
-	if noclipConnection then noclipConnection:Disconnect() noclipConnection = nil end
+	if moveState.noclipConnection then moveState.noclipConnection:Disconnect() moveState.noclipConnection = nil end
 	pcall(function()
 		local character = LocalPlayer.Character
 		if not character then return end
@@ -1712,10 +1682,10 @@ local function startSpeed()
 		local character = LocalPlayer.Character
 		if character then
 			local humanoid = character:FindFirstChildOfClass("Humanoid")
-			if humanoid then origWalkSpeed = humanoid.WalkSpeed humanoid.WalkSpeed = speedValue end
+			if humanoid then uiState.origWalkSpeed = humanoid.WalkSpeed humanoid.WalkSpeed = moveState.speedValue end
 		end
 	end)
-	addLog("[SPEED] ON - WalkSpeed: " .. speedValue, COLORS.success)
+	addLog("[SPEED] ON - WalkSpeed: " .. moveState.speedValue, COLORS.success)
 end
 
 local function stopSpeed()
@@ -1723,7 +1693,7 @@ local function stopSpeed()
 		local character = LocalPlayer.Character
 		if character then
 			local humanoid = character:FindFirstChildOfClass("Humanoid")
-			if humanoid then humanoid.WalkSpeed = origWalkSpeed end
+			if humanoid then humanoid.WalkSpeed = uiState.origWalkSpeed end
 		end
 	end)
 	addLog("[SPEED] OFF", COLORS.error)
@@ -1753,7 +1723,7 @@ local function startGod()
 end
 
 local function stopGod()
-	if godConnection then godConnection:Disconnect() godConnection = nil end
+	if moveState.godConnection then moveState.godConnection:Disconnect() moveState.godConnection = nil end
 	pcall(function()
 		local character = LocalPlayer.Character
 		if character then
@@ -1779,7 +1749,7 @@ local function startInfJump()
 end
 
 local function stopInfJump()
-	if infJumpConnection then infJumpConnection:Disconnect() infJumpConnection = nil end
+	if moveState.infJumpConnection then moveState.infJumpConnection:Disconnect() moveState.infJumpConnection = nil end
 	addLog("[INF JUMP] OFF", COLORS.error)
 end
 
@@ -1831,17 +1801,17 @@ local function startInvisible()
 		savedTransparencies = {}
 		for _, part in ipairs(character:GetDescendants()) do
 			if part:IsA("BasePart") then
-				savedTransparencies[part] = part.Transparency
+				miscState.savedTransparencies[part] = part.Transparency
 				part.Transparency = 1
 			elseif part:IsA("Decal") or part:IsA("Texture") then
-				savedTransparencies[part] = part.Transparency
+				miscState.savedTransparencies[part] = part.Transparency
 				part.Transparency = 1
 			end
 		end
 		for _, acc in ipairs(character:GetChildren()) do
 			if acc:IsA("Accessory") then
 				local handle = acc:FindFirstChild("Handle")
-				if handle then savedTransparencies[handle] = handle.Transparency handle.Transparency = 1 end
+				if handle then miscState.savedTransparencies[handle] = handle.Transparency handle.Transparency = 1 end
 			end
 		end
 	end)
@@ -1850,7 +1820,7 @@ end
 
 local function stopInvisible()
 	pcall(function()
-		for part, transparency in pairs(savedTransparencies) do
+		for part, transparency in pairs(miscState.savedTransparencies) do
 			if part and part.Parent then part.Transparency = transparency end
 		end
 		savedTransparencies = {}
@@ -1902,7 +1872,7 @@ end
 local function startKillAll()
 	killAllConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
-			if myRole ~= "Murderer" then return end
+			if roleState.myRole ~= "Murderer" then return end
 			local myChar = LocalPlayer.Character
 			if not myChar then return end
 			local myRoot = myChar:FindFirstChild("HumanoidRootPart")
@@ -1934,7 +1904,7 @@ local function startKillAll()
 end
 
 local function stopKillAll()
-	if killAllConnection then killAllConnection:Disconnect() killAllConnection = nil end
+	if miscState.killAllConnection then miscState.killAllConnection:Disconnect() miscState.killAllConnection = nil end
 	addLog("[KILL ALL] OFF", COLORS.error)
 end
 
@@ -1987,7 +1957,7 @@ local function startXRay()
 					if p.Character and obj:IsDescendantOf(p.Character) then isPlayerChar = true break end
 				end
 				if not isPlayerChar and obj.Transparency < 0.7 then
-					xrayOrigTransparencies[obj] = obj.Transparency
+					miscState.xrayOrigTransparencies[obj] = obj.Transparency
 					obj.Transparency = 0.7
 				end
 			end
@@ -1998,7 +1968,7 @@ end
 
 local function stopXRay()
 	pcall(function()
-		for part, transparency in pairs(xrayOrigTransparencies) do
+		for part, transparency in pairs(miscState.xrayOrigTransparencies) do
 			if part and part.Parent then part.Transparency = transparency end
 		end
 		xrayOrigTransparencies = {}
@@ -2008,7 +1978,7 @@ end
 
 -- ===================== TRAPDOOR ESP =====================
 local function clearTrapdoorEsp()
-	for _, hl in pairs(trapdoorEspHighlights) do pcall(function() hl:Destroy() end) end
+	for _, hl in pairs(miscState.trapdoorEspHighlights) do pcall(function() hl:Destroy() end) end
 	trapdoorEspHighlights = {}
 end
 
@@ -2026,11 +1996,11 @@ local function startTrapdoorEsp()
 				hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 				hl.Adornee = obj
 				hl.Parent = obj
-				table.insert(trapdoorEspHighlights, hl)
+				table.insert(miscState.trapdoorEspHighlights, hl)
 			end
 		end
 	end)
-	addLog("[TRAPDOOR ESP] ON - Orange highlight on traps (" .. #trapdoorEspHighlights .. " found)", COLORS.success)
+	addLog("[TRAPDOOR ESP] ON - Orange highlight on traps (" .. #miscState.trapdoorEspHighlights .. " found)", COLORS.success)
 end
 
 local function stopTrapdoorEsp()
@@ -2064,20 +2034,20 @@ local function startBringCoins()
 end
 
 local function stopBringCoins()
-	if bringCoinsConnection then bringCoinsConnection:Disconnect() bringCoinsConnection = nil end
+	if miscState.bringCoinsConnection then miscState.bringCoinsConnection:Disconnect() miscState.bringCoinsConnection = nil end
 	addLog("[BRING COINS] OFF", COLORS.error)
 end
 
 -- ===================== AUTO COLLECT ALL =====================
 local function startAutoCollect()
 	autoCollectConnection = _spawn(function()
-		while autoCollectEnabled do
+		while miscState.autoCollectEnabled do
 			pcall(function()
 				local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 				if not root then return end
 				local coins = getCoins()
 				for _, coin in ipairs(coins) do
-					if not autoCollectEnabled then break end
+					if not miscState.autoCollectEnabled then break end
 					if coin and coin.Parent and coin.Transparency < 1 then
 						if firetouchinterest then
 							pcall(function()
@@ -2121,7 +2091,7 @@ local function startBunnyHop()
 end
 
 local function stopBunnyHop()
-	if bunnyHopConnection then bunnyHopConnection:Disconnect() bunnyHopConnection = nil end
+	if moveState.bunnyHopConnection then moveState.bunnyHopConnection:Disconnect() moveState.bunnyHopConnection = nil end
 	addLog("[BHOP] OFF", COLORS.error)
 end
 
@@ -2194,8 +2164,8 @@ local function startAntiVoid()
 			if not hrp then return end
 			if hrp.Position.Y > -50 then
 				lastSafePos = hrp.CFrame
-			elseif lastSafePos then
-				hrp.CFrame = lastSafePos
+			elseif miscState.lastSafePos then
+				hrp.CFrame = miscState.lastSafePos
 			end
 		end)
 	end)
@@ -2203,7 +2173,7 @@ local function startAntiVoid()
 end
 
 local function stopAntiVoid()
-	if antiVoidConnection then antiVoidConnection:Disconnect() antiVoidConnection = nil end
+	if miscState.antiVoidConnection then miscState.antiVoidConnection:Disconnect() miscState.antiVoidConnection = nil end
 	lastSafePos = nil
 	addLog("[ANTI-VOID] OFF", COLORS.error)
 end
@@ -2235,7 +2205,7 @@ local function startWalkFling()
 
 				local moveDir = hum.MoveDirection
 				if moveDir.Magnitude > 0.1 then
-					rt.AssemblyLinearVelocity = moveDir.Unit * walkFlingPower
+					rt.AssemblyLinearVelocity = moveDir.Unit * flingState.walkFlingPower
 				end
 			end)
 		end)
@@ -2248,7 +2218,7 @@ local function startWalkFling()
 end
 
 local function stopWalkFling()
-	if walkFlingConnection then walkFlingConnection:Disconnect() walkFlingConnection = nil end
+	if flingState.walkFlingConnection then flingState.walkFlingConnection:Disconnect() flingState.walkFlingConnection = nil end
 	local character = LocalPlayer.Character
 	if character then
 		for _, part in ipairs(character:GetDescendants()) do
@@ -2274,14 +2244,14 @@ local function startHeadless()
 		if head then
 			for _, child in ipairs(head:GetChildren()) do
 				if child:IsA("SpecialMesh") then
-					headlessSaved[child] = {Scale = child.Scale}
+					miscState.headlessSaved[child] = {Scale = child.Scale}
 					child.Scale = Vector3.new(0, 0, 0)
 				elseif child:IsA("Decal") then
-					headlessSaved[child] = {Transparency = child.Transparency}
+					miscState.headlessSaved[child] = {Transparency = child.Transparency}
 					child.Transparency = 1
 				end
 			end
-			headlessSaved[head] = {Transparency = head.Transparency}
+			miscState.headlessSaved[head] = {Transparency = head.Transparency}
 			head.Transparency = 1
 		end
 
@@ -2290,7 +2260,7 @@ local function startHeadless()
 			if acc:IsA("Accessory") then
 				local handle = acc:FindFirstChild("Handle")
 				if handle then
-					headlessSaved[handle] = {Transparency = handle.Transparency}
+					miscState.headlessSaved[handle] = {Transparency = handle.Transparency}
 					handle.Transparency = 1
 				end
 			end
@@ -2301,7 +2271,7 @@ end
 
 local function stopHeadless()
 	pcall(function()
-		for obj, props in pairs(headlessSaved) do
+		for obj, props in pairs(miscState.headlessSaved) do
 			if obj and obj.Parent then
 				for prop, val in pairs(props) do
 					pcall(function() obj[prop] = val end)
@@ -2334,7 +2304,7 @@ local function startRainbow()
 end
 
 local function stopRainbow()
-	if rainbowConnection then rainbowConnection:Disconnect() rainbowConnection = nil end
+	if miscState.rainbowConnection then miscState.rainbowConnection:Disconnect() miscState.rainbowConnection = nil end
 	addLog("[RAINBOW] OFF", COLORS.error)
 end
 
@@ -2347,7 +2317,7 @@ local function startFling()
 		if not root then return end
 
 		-- Enable noclip so we can move freely while spinning
-		if not noclipEnabled then noclipEnabled = true startNoclip() end
+		if not moveState.noclipEnabled then moveState.noclipEnabled = true startNoclip() end
 		_wait(0.1)
 
 		-- Heartbeat: continuously re-apply density + spin + velocity each frame
@@ -2369,9 +2339,9 @@ local function startFling()
 
 				-- Chaotic spin using AssemblyAngularVelocity (modern, can't be removed)
 				rt.AssemblyAngularVelocity = Vector3.new(
-					math.random(-1, 1) * flingPower,
-					math.random(-1, 1) * flingPower,
-					math.random(-1, 1) * flingPower
+					math.random(-1, 1) * flingState.flingPower,
+					math.random(-1, 1) * flingState.flingPower,
+					math.random(-1, 1) * flingState.flingPower
 				)
 
 				-- Random velocity perturbation to create collisions
@@ -2391,7 +2361,7 @@ local function startFling()
 end
 
 local function stopFling()
-	if flingConnection then flingConnection:Disconnect() flingConnection = nil end
+	if flingState.flingConnection then flingState.flingConnection:Disconnect() flingState.flingConnection = nil end
 
 	local character = LocalPlayer.Character
 	if character then
@@ -2421,7 +2391,7 @@ local function startSpin()
 end
 
 local function stopSpin()
-	if spinConnection then spinConnection:Disconnect() spinConnection = nil end
+	if flingState.spinConnection then flingState.spinConnection:Disconnect() flingState.spinConnection = nil end
 	addLog("[SPIN] OFF", COLORS.error)
 end
 
@@ -2442,15 +2412,15 @@ local function startSeizure()
 end
 
 local function stopSeizure()
-	if seizureConnection then seizureConnection:Disconnect() seizureConnection = nil end
+	if flingState.seizureConnection then flingState.seizureConnection:Disconnect() flingState.seizureConnection = nil end
 	addLog("[SEIZURE] OFF", COLORS.error)
 end
 
 -- ===================== EMOTE LOGIC =====================
 local function stopEmote()
 	emoteActive = false
-	if emoteConnection then emoteConnection:Disconnect() emoteConnection = nil end
-	for _, track in ipairs(emoteTracks) do
+	if flingState.emoteConnection then flingState.emoteConnection:Disconnect() flingState.emoteConnection = nil end
+	for _, track in ipairs(flingState.emoteTracks) do
 		pcall(function() track:Stop() end)
 	end
 	emoteTracks = {}
@@ -2468,11 +2438,11 @@ local function playEmote(animId, speed, duration)
 		local track = hum:LoadAnimation(anim)
 		track:Play()
 		if speed then track:AdjustSpeed(speed) end
-		table.insert(emoteTracks, track)
+		table.insert(flingState.emoteTracks, track)
 		emoteActive = true
 		if duration then
 			task.delay(duration, function()
-				if emoteActive then stopEmote() end
+				if flingState.emoteActive then stopEmote() end
 			end)
 		end
 	end)
@@ -2501,12 +2471,12 @@ local function playJerkEmote()
 			track2:Play()
 			track1:AdjustSpeed(2)
 			track2:AdjustSpeed(2)
-			table.insert(emoteTracks, track1)
-			table.insert(emoteTracks, track2)
+			table.insert(flingState.emoteTracks, track1)
+			table.insert(flingState.emoteTracks, track2)
 
 			-- Loop by replaying when tracks finish
 			emoteConnection = RunService.Heartbeat:Connect(function()
-				if not emoteActive then return end
+				if not flingState.emoteActive then return end
 				pcall(function()
 					if track1.IsPlaying == false then
 						track1:Play()
@@ -2525,10 +2495,10 @@ local function playJerkEmote()
 			local track = hum:LoadAnimation(anim)
 			track:Play()
 			track:AdjustSpeed(0.4)
-			table.insert(emoteTracks, track)
+			table.insert(flingState.emoteTracks, track)
 
 			emoteConnection = RunService.Heartbeat:Connect(function()
-				if not emoteActive then return end
+				if not flingState.emoteActive then return end
 				pcall(function()
 					if track.TimePosition > 0.72 then
 						track.TimePosition = 0.579
@@ -2641,7 +2611,7 @@ do
 	createToggle(tab, "Murderer ESP", 2, function(on)
 		murdererEspEnabled = on
 		if on then
-			if not roleCheckEnabled then startRoleCheck() end
+			if not roleState.roleCheckEnabled then startRoleCheck() end
 			enableMurdererEsp()
 		else
 			disableMurdererEsp()
@@ -2650,7 +2620,7 @@ do
 	createToggle(tab, "Murderer Alert", 3, function(on)
 		murdererAlertEnabled = on
 		if on then
-			if not roleCheckEnabled then startRoleCheck() end
+			if not roleState.roleCheckEnabled then startRoleCheck() end
 			startMurdererAlert()
 		else
 			stopMurdererAlert()
@@ -2668,13 +2638,13 @@ do
 	createToggle(tab, "Auto Shoot Murderer", 6, function(on)
 		autoShootMurdererEnabled = on
 		if on then
-			if not roleCheckEnabled then startRoleCheck() end
+			if not roleState.roleCheckEnabled then startRoleCheck() end
 			startAutoShootMurderer()
 		else
 			stopAutoShootMurderer()
 		end
 	end)
-	createSlider(tab, "Aim Smoothing", 1, 10, aimSmoothing, 7, function(val)
+	createSlider(tab, "Aim Smoothing", 1, 10, combatState.aimSmoothing, 7, function(val)
 		aimSmoothing = val
 	end)
 
@@ -2708,7 +2678,7 @@ do
 	createToggle(tab, "Kill All (Murderer)", 15, function(on)
 		killAllEnabled = on
 		if on then
-			if not roleCheckEnabled then startRoleCheck() end
+			if not roleState.roleCheckEnabled then startRoleCheck() end
 			startKillAll()
 		else
 			stopKillAll()
@@ -2770,7 +2740,7 @@ do
 	createToggle(tab, "ESP", 2, function(on)
 		espEnabled = on
 		if on then
-			if not roleCheckEnabled then startRoleCheck() end
+			if not roleState.roleCheckEnabled then startRoleCheck() end
 			enablePlayerEsp()
 		else
 			disablePlayerEsp()
@@ -2778,7 +2748,7 @@ do
 	end)
 	createToggle(tab, "Show Names", 3, function(on)
 		showNamesEnabled = on
-		if espEnabled then
+		if espState.espEnabled then
 			disablePlayerEsp()
 			_wait(0.2)
 			enablePlayerEsp()
@@ -2786,7 +2756,7 @@ do
 	end).setVisualState(true)
 	createToggle(tab, "Show Distance", 4, function(on)
 		showDistanceEnabled = on
-		if espEnabled then
+		if espState.espEnabled then
 			disablePlayerEsp()
 			_wait(0.2)
 			enablePlayerEsp()
@@ -2794,7 +2764,7 @@ do
 	end).setVisualState(true)
 	createToggle(tab, "Show Role", 5, function(on)
 		showRoleEnabled = on
-		if espEnabled then
+		if espState.espEnabled then
 			disablePlayerEsp()
 			_wait(0.2)
 			enablePlayerEsp()
@@ -2865,7 +2835,7 @@ do
 		autoCoinFarmEnabled = on
 		if on then startAutoCoinFarm() else stopAutoCoinFarm() end
 	end)
-	createSlider(tab, "Farm Speed (seconds)", 1, 20, math.floor(farmSpeed * 10), 3, function(val)
+	createSlider(tab, "Farm Speed (seconds)", 1, 20, math.floor(farmState.farmSpeed * 10), 3, function(val)
 		farmSpeed = val / 10
 	end)
 	coinCountLabel = createInfoLabel(tab, "Coins Farmed: 0", 4)
@@ -2916,14 +2886,14 @@ do
 		flyEnabled = on
 		if on then startFly() else stopFly() end
 	end)
-	createSlider(tab, "Fly Speed", 10, 500, flySpeed, 3, function(val) flySpeed = val end)
+	createSlider(tab, "Fly Speed", 10, 500, moveState.flySpeed, 3, function(val) moveState.flySpeed = val end)
 	createToggle(tab, "Speed Boost", 4, function(on)
 		speedEnabled = on
 		if on then startSpeed() else stopSpeed() end
 	end)
-	createSlider(tab, "Walk Speed", 16, 500, speedValue, 5, function(val)
+	createSlider(tab, "Walk Speed", 16, 500, moveState.speedValue, 5, function(val)
 		speedValue = val
-		if speedEnabled then
+		if moveState.speedEnabled then
 			pcall(function()
 				local character = LocalPlayer.Character
 				if character then
@@ -2941,7 +2911,7 @@ do
 		infJumpEnabled = on
 		if on then startInfJump() else stopInfJump() end
 	end)
-	createSlider(tab, "Jump Power", 10, 500, jumpPowerValue, 8, function(val)
+	createSlider(tab, "Jump Power", 10, 500, moveState.jumpPowerValue, 8, function(val)
 		jumpPowerValue = val
 		setJumpPower(val)
 	end)
@@ -2979,7 +2949,7 @@ do
 
 	createSectionLabel(tab, "Camera", 16)
 
-	createSlider(tab, "Camera FOV", 50, 120, cameraFOV, 17, function(val)
+	createSlider(tab, "Camera FOV", 50, 120, moveState.cameraFOV, 17, function(val)
 		cameraFOV = val
 		setCameraFOV(val)
 	end)
@@ -2992,7 +2962,7 @@ do
 
 	createSectionLabel(tab, "World", 19)
 
-	createSlider(tab, "Gravity", 0, 1000, gravityValue, 20, function(val)
+	createSlider(tab, "Gravity", 0, 1000, moveState.gravityValue, 20, function(val)
 		gravityValue = val
 		setGravity(val)
 	end)
@@ -3007,15 +2977,15 @@ do
 	local selectedPlayerLabel = createInfoLabel(tab, "Selected: None", 23)
 
 	createActionButton(tab, "Teleport to Player", 24, function()
-		if selectedPlayer then
-			tpToPlayer(selectedPlayer)
+		if miscState.selectedPlayer then
+			tpToPlayer(miscState.selectedPlayer)
 		else
 			addLog("[TP] No player selected!", COLORS.error)
 		end
 	end)
 	createActionButton(tab, "Spectate Player", 25, function()
-		if selectedPlayer then
-			spectatePlayer(selectedPlayer)
+		if miscState.selectedPlayer then
+			spectatePlayer(miscState.selectedPlayer)
 		else
 			addLog("[SPECTATE] No player selected!", COLORS.error)
 		end
@@ -3099,7 +3069,7 @@ do
 	-- Auto-refresh when players join/leave
 	Players.PlayerAdded:Connect(function() _wait(0.5) refreshPlayerList() end)
 	Players.PlayerRemoving:Connect(function(player)
-		if selectedPlayer == player then
+		if miscState.selectedPlayer == player then
 			selectedPlayer = nil
 			selectedPlayerLabel.Text = "Selected: None"
 		end
@@ -3117,16 +3087,16 @@ do
 	createSectionLabel(tab, "Fling", 1)
 
 	local spinFlingToggle = createToggle(tab, "Spin Fling", 2, function(on)
-		if on and walkFlingEnabled then
+		if on and flingState.walkFlingEnabled then
 			walkFlingEnabled = false
 			stopWalkFling()
 		end
 		flingEnabled = on
 		if on then startFling() else stopFling() end
 	end)
-	createSlider(tab, "Fling Power", 1000, 99999, flingPower, 3, function(val) flingPower = val end)
+	createSlider(tab, "Fling Power", 1000, 99999, flingState.flingPower, 3, function(val) flingState.flingPower = val end)
 	local walkFlingToggle = createToggle(tab, "Walk Fling", 4, function(on)
-		if on and flingEnabled then
+		if on and flingState.flingEnabled then
 			flingEnabled = false
 			stopFling()
 			spinFlingToggle.setVisualState(false)
@@ -3134,7 +3104,7 @@ do
 		walkFlingEnabled = on
 		if on then startWalkFling() else stopWalkFling() end
 	end)
-	createSlider(tab, "Walk Fling Power", 1000, 50000, walkFlingPower, 5, function(val) walkFlingPower = val end)
+	createSlider(tab, "Walk Fling Power", 1000, 50000, flingState.walkFlingPower, 5, function(val) flingState.walkFlingPower = val end)
 
 	local spacer = Instance.new("Frame")
 	spacer.Size = UDim2.new(1, 0, 0, 4)
@@ -3192,65 +3162,65 @@ end
 local commands = {}
 
 -- Combat
-commands["murderesp"] = function() murdererEspEnabled = true if not roleCheckEnabled then startRoleCheck() end enableMurdererEsp() end
-commands["unmurderesp"] = function() murdererEspEnabled = false disableMurdererEsp() end
-commands["alert"] = function() murdererAlertEnabled = true if not roleCheckEnabled then startRoleCheck() end startMurdererAlert() end
-commands["unalert"] = function() murdererAlertEnabled = false stopMurdererAlert() end
-commands["autoshoot"] = function() autoShootMurdererEnabled = true if not roleCheckEnabled then startRoleCheck() end startAutoShootMurderer() end
-commands["unautoshoot"] = function() autoShootMurdererEnabled = false stopAutoShootMurderer() end
+commands["murderesp"] = function() combatState.murdererEspEnabled = true if not roleState.roleCheckEnabled then startRoleCheck() end enableMurdererEsp() end
+commands["unmurderesp"] = function() combatState.murdererEspEnabled = false disableMurdererEsp() end
+commands["alert"] = function() combatState.murdererAlertEnabled = true if not roleState.roleCheckEnabled then startRoleCheck() end startMurdererAlert() end
+commands["unalert"] = function() combatState.murdererAlertEnabled = false stopMurdererAlert() end
+commands["autoshoot"] = function() combatState.autoShootMurdererEnabled = true if not roleState.roleCheckEnabled then startRoleCheck() end startAutoShootMurderer() end
+commands["unautoshoot"] = function() combatState.autoShootMurdererEnabled = false stopAutoShootMurderer() end
 commands["grabgun"] = function() grabDroppedGun() end
 commands["bringgun"] = function() bringGun() end
-commands["autograb"] = function() autoGrabGunEnabled = true startAutoGrabGun() end
-commands["unautograb"] = function() autoGrabGunEnabled = false stopAutoGrabGun() end
+commands["autograb"] = function() miscState.autoGrabGunEnabled = true startAutoGrabGun() end
+commands["unautograb"] = function() miscState.autoGrabGunEnabled = false stopAutoGrabGun() end
 commands["tpbehind"] = function(args)
 	local name = args[1]
 	if name then tpBehindPlayer(name) else addLog("[TP BEHIND] Usage: ;tpbehind <player>", COLORS.error) end
 end
-commands["killall"] = function() killAllEnabled = true if not roleCheckEnabled then startRoleCheck() end startKillAll() end
-commands["unkillall"] = function() killAllEnabled = false stopKillAll() end
+commands["killall"] = function() miscState.killAllEnabled = true if not roleState.roleCheckEnabled then startRoleCheck() end startKillAll() end
+commands["unkillall"] = function() miscState.killAllEnabled = false stopKillAll() end
 
 -- ESP
-commands["esp"] = function() espEnabled = true if not roleCheckEnabled then startRoleCheck() end enablePlayerEsp() end
-commands["unesp"] = function() espEnabled = false disablePlayerEsp() end
-commands["gunesp"] = function() gunEspEnabled = true enableGunEsp() end
-commands["ungunesp"] = function() gunEspEnabled = false disableGunEsp() end
-commands["coinesp"] = function() coinEspEnabled = true enableCoinEsp() end
-commands["uncoinesp"] = function() coinEspEnabled = false disableCoinEsp() end
-commands["fullbright"] = function() fullbrightEnabled = true startFullbright() end
-commands["unfullbright"] = function() fullbrightEnabled = false stopFullbright() end
-commands["xray"] = function() xrayEnabled = true startXRay() end
-commands["unxray"] = function() xrayEnabled = false stopXRay() end
-commands["trapdooresp"] = function() trapdoorEspEnabled = true startTrapdoorEsp() end
-commands["untrapdooresp"] = function() trapdoorEspEnabled = false stopTrapdoorEsp() end
+commands["esp"] = function() espState.espEnabled = true if not roleState.roleCheckEnabled then startRoleCheck() end enablePlayerEsp() end
+commands["unesp"] = function() espState.espEnabled = false disablePlayerEsp() end
+commands["gunesp"] = function() espState.gunEspEnabled = true enableGunEsp() end
+commands["ungunesp"] = function() espState.gunEspEnabled = false disableGunEsp() end
+commands["coinesp"] = function() espState.coinEspEnabled = true enableCoinEsp() end
+commands["uncoinesp"] = function() espState.coinEspEnabled = false disableCoinEsp() end
+commands["fullbright"] = function() espState.fullbrightEnabled = true startFullbright() end
+commands["unfullbright"] = function() espState.fullbrightEnabled = false stopFullbright() end
+commands["xray"] = function() miscState.xrayEnabled = true startXRay() end
+commands["unxray"] = function() miscState.xrayEnabled = false stopXRay() end
+commands["trapdooresp"] = function() miscState.trapdoorEspEnabled = true startTrapdoorEsp() end
+commands["untrapdooresp"] = function() miscState.trapdoorEspEnabled = false stopTrapdoorEsp() end
 
 -- Farming
-commands["coinfarm"] = function() autoCoinFarmEnabled = true startAutoCoinFarm() end
-commands["uncoinfarm"] = function() autoCoinFarmEnabled = false stopAutoCoinFarm() end
-commands["antiafk"] = function() antiAfkEnabled = true startAntiAfk() end
-commands["unantiafk"] = function() antiAfkEnabled = false stopAntiAfk() end
-commands["bringcoins"] = function() bringCoinsEnabled = true startBringCoins() end
-commands["unbringcoins"] = function() bringCoinsEnabled = false stopBringCoins() end
-commands["autocollect"] = function() autoCollectEnabled = true startAutoCollect() end
-commands["unautocollect"] = function() autoCollectEnabled = false stopAutoCollect() end
+commands["coinfarm"] = function() farmState.autoCoinFarmEnabled = true startAutoCoinFarm() end
+commands["uncoinfarm"] = function() farmState.autoCoinFarmEnabled = false stopAutoCoinFarm() end
+commands["antiafk"] = function() farmState.antiAfkEnabled = true startAntiAfk() end
+commands["unantiafk"] = function() farmState.antiAfkEnabled = false stopAntiAfk() end
+commands["bringcoins"] = function() miscState.bringCoinsEnabled = true startBringCoins() end
+commands["unbringcoins"] = function() miscState.bringCoinsEnabled = false stopBringCoins() end
+commands["autocollect"] = function() miscState.autoCollectEnabled = true startAutoCollect() end
+commands["unautocollect"] = function() miscState.autoCollectEnabled = false stopAutoCollect() end
 
 -- Player
-commands["fly"] = function() flyEnabled = true startFly() end
-commands["unfly"] = function() flyEnabled = false stopFly() end
-commands["noclip"] = function() noclipEnabled = true startNoclip() end
-commands["unnoclip"] = function() noclipEnabled = false stopNoclip() end
+commands["fly"] = function() moveState.flyEnabled = true startFly() end
+commands["unfly"] = function() moveState.flyEnabled = false stopFly() end
+commands["noclip"] = function() moveState.noclipEnabled = true startNoclip() end
+commands["unnoclip"] = function() moveState.noclipEnabled = false stopNoclip() end
 commands["speed"] = function(args)
 	local v = tonumber(args[1])
-	if v then speedValue = v end
+	if v then moveState.speedValue = v end
 	speedEnabled = true
 	startSpeed()
 end
-commands["unspeed"] = function() speedEnabled = false stopSpeed() end
-commands["infjump"] = function() infJumpEnabled = true startInfJump() end
-commands["uninfjump"] = function() infJumpEnabled = false stopInfJump() end
-commands["god"] = function() godEnabled = true startGod() end
-commands["ungod"] = function() godEnabled = false stopGod() end
-commands["invisible"] = function() invisibleEnabled = true startInvisible() end
-commands["uninvisible"] = function() invisibleEnabled = false stopInvisible() end
+commands["unspeed"] = function() moveState.speedEnabled = false stopSpeed() end
+commands["infjump"] = function() moveState.infJumpEnabled = true startInfJump() end
+commands["uninfjump"] = function() moveState.infJumpEnabled = false stopInfJump() end
+commands["god"] = function() moveState.godEnabled = true startGod() end
+commands["ungod"] = function() moveState.godEnabled = false stopGod() end
+commands["invisible"] = function() moveState.invisibleEnabled = true startInvisible() end
+commands["uninvisible"] = function() moveState.invisibleEnabled = false stopInvisible() end
 commands["fov"] = function(args)
 	local v = tonumber(args[1])
 	if v then
@@ -3261,8 +3231,8 @@ commands["fov"] = function(args)
 		addLog("[FOV] Usage: ;fov [50-120]", COLORS.error)
 	end
 end
-commands["bhop"] = function() bunnyHopEnabled = true startBunnyHop() end
-commands["unbhop"] = function() bunnyHopEnabled = false stopBunnyHop() end
+commands["bhop"] = function() moveState.bunnyHopEnabled = true startBunnyHop() end
+commands["unbhop"] = function() moveState.bunnyHopEnabled = false stopBunnyHop() end
 commands["tp"] = function(args)
 	local name = args[1]
 	if name then
@@ -3291,22 +3261,22 @@ commands["gravity"] = function(args)
 		addLog("[GRAVITY] Usage: ;gravity <0-1000>", COLORS.error)
 	end
 end
-commands["antivoid"] = function() antiVoidEnabled = true startAntiVoid() end
-commands["unantivoid"] = function() antiVoidEnabled = false stopAntiVoid() end
+commands["antivoid"] = function() miscState.antiVoidEnabled = true startAntiVoid() end
+commands["unantivoid"] = function() miscState.antiVoidEnabled = false stopAntiVoid() end
 
 -- Fun
-commands["fling"] = function() flingEnabled = true startFling() end
-commands["unfling"] = function() flingEnabled = false stopFling() end
-commands["walkfling"] = function() walkFlingEnabled = true startWalkFling() end
-commands["unwalkfling"] = function() walkFlingEnabled = false stopWalkFling() end
-commands["spin"] = function() spinEnabled = true startSpin() end
-commands["unspin"] = function() spinEnabled = false stopSpin() end
-commands["seizure"] = function() seizureEnabled = true startSeizure() end
-commands["unseizure"] = function() seizureEnabled = false stopSeizure() end
-commands["headless"] = function() headlessEnabled = true startHeadless() end
-commands["unheadless"] = function() headlessEnabled = false stopHeadless() end
-commands["rainbow"] = function() rainbowEnabled = true startRainbow() end
-commands["unrainbow"] = function() rainbowEnabled = false stopRainbow() end
+commands["fling"] = function() flingState.flingEnabled = true startFling() end
+commands["unfling"] = function() flingState.flingEnabled = false stopFling() end
+commands["walkfling"] = function() flingState.walkFlingEnabled = true startWalkFling() end
+commands["unwalkfling"] = function() flingState.walkFlingEnabled = false stopWalkFling() end
+commands["spin"] = function() flingState.spinEnabled = true startSpin() end
+commands["unspin"] = function() flingState.spinEnabled = false stopSpin() end
+commands["seizure"] = function() flingState.seizureEnabled = true startSeizure() end
+commands["unseizure"] = function() flingState.seizureEnabled = false stopSeizure() end
+commands["headless"] = function() miscState.headlessEnabled = true startHeadless() end
+commands["unheadless"] = function() miscState.headlessEnabled = false stopHeadless() end
+commands["rainbow"] = function() miscState.rainbowEnabled = true startRainbow() end
+commands["unrainbow"] = function() miscState.rainbowEnabled = false stopRainbow() end
 commands["emote1"] = function() playJerkEmote() end
 commands["dance"] = function() playEmote(507771019, 1, 10) addLog("[EMOTE] Dance!", COLORS.success) end
 commands["dab"] = function() playEmote(183412246, 1, 3) addLog("[EMOTE] Dab!", COLORS.success) end
@@ -3375,9 +3345,9 @@ end)
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
 	if input.KeyCode == Enum.KeyCode.RightShift then
-		windowVisible = not windowVisible
-		mainWindow.Visible = windowVisible
-		toggleBtn.Visible = not windowVisible
+		windowVisible = not uiState.windowVisible
+		mainWindow.Visible = uiState.windowVisible
+		toggleBtn.Visible = not uiState.windowVisible
 	end
 end)
 
@@ -3391,7 +3361,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 	_wait(0.5)
 
 	-- Re-enable fly
-	if flyEnabled then
+	if moveState.flyEnabled then
 		stopFly()
 		_wait(0.3)
 		if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
@@ -3400,7 +3370,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 	end
 
 	-- Re-enable fling
-	if flingEnabled then
+	if flingState.flingEnabled then
 		stopFling()
 		_wait(0.3)
 		startFling()
@@ -3409,178 +3379,178 @@ LocalPlayer.CharacterAdded:Connect(function()
 	savedPhysProps = {}
 
 	-- Re-enable speed
-	if speedEnabled then
+	if moveState.speedEnabled then
 		_wait(0.3)
 		startSpeed()
 	end
 
 	-- Re-enable noclip
-	if noclipEnabled then
+	if moveState.noclipEnabled then
 		_wait(0.2)
 		startNoclip()
 	end
 
 	-- Re-enable infinite jump
-	if infJumpEnabled then
+	if moveState.infJumpEnabled then
 		_wait(0.2)
 		startInfJump()
 	end
 
 	-- Re-enable jump power
-	if jumpPowerValue ~= 50 then
+	if moveState.jumpPowerValue ~= 50 then
 		_wait(0.3)
-		setJumpPower(jumpPowerValue)
+		setJumpPower(moveState.jumpPowerValue)
 	end
 
 	-- Re-enable god mode
-	if godEnabled then
+	if moveState.godEnabled then
 		_wait(0.3)
 		startGod()
 	end
 
 	-- Re-enable invisible
-	if invisibleEnabled then
+	if moveState.invisibleEnabled then
 		_wait(0.3)
 		startInvisible()
 	end
 
 	-- Re-enable fullbright
-	if fullbrightEnabled then
+	if espState.fullbrightEnabled then
 		_wait(0.2)
 		startFullbright()
 	end
 
 	-- Re-enable camera FOV
-	if cameraFOV ~= 70 then
+	if moveState.cameraFOV ~= 70 then
 		_wait(0.3)
-		setCameraFOV(cameraFOV)
+		setCameraFOV(moveState.cameraFOV)
 	end
 
 	-- Re-enable role check
-	if roleCheckEnabled then
+	if roleState.roleCheckEnabled then
 		stopRoleCheck()
 		_wait(0.3)
 		startRoleCheck()
 	end
 
 	-- Re-enable murderer alert
-	if murdererAlertEnabled then
+	if combatState.murdererAlertEnabled then
 		stopMurdererAlert()
 		_wait(0.3)
 		startMurdererAlert()
 	end
 
 	-- Re-enable auto shoot
-	if autoShootMurdererEnabled then
+	if combatState.autoShootMurdererEnabled then
 		stopAutoShootMurderer()
 		_wait(0.3)
 		startAutoShootMurderer()
 	end
 
 	-- Re-enable auto grab gun
-	if autoGrabGunEnabled then
+	if miscState.autoGrabGunEnabled then
 		stopAutoGrabGun()
 		_wait(0.3)
 		startAutoGrabGun()
 	end
 
 	-- Re-enable ESP
-	if espEnabled then
+	if espState.espEnabled then
 		disablePlayerEsp()
 		_wait(0.5)
 		enablePlayerEsp()
 	end
 
 	-- Re-enable gun ESP
-	if gunEspEnabled then
+	if espState.gunEspEnabled then
 		disableGunEsp()
 		_wait(0.3)
 		enableGunEsp()
 	end
 
 	-- Re-enable coin ESP
-	if coinEspEnabled then
+	if espState.coinEspEnabled then
 		disableCoinEsp()
 		_wait(0.3)
 		enableCoinEsp()
 	end
 
 	-- Re-enable murderer ESP
-	if murdererEspEnabled then
+	if combatState.murdererEspEnabled then
 		_wait(0.3)
 		updateMurdererEsp()
 	end
 
 	-- Re-enable auto coin farm
-	if autoCoinFarmEnabled then
+	if farmState.autoCoinFarmEnabled then
 		_wait(0.5)
 		startAutoCoinFarm()
 	end
 
 	-- Re-enable kill all
-	if killAllEnabled then
+	if miscState.killAllEnabled then
 		stopKillAll()
 		_wait(0.3)
 		startKillAll()
 	end
 
 	-- Re-enable bunny hop
-	if bunnyHopEnabled then
+	if moveState.bunnyHopEnabled then
 		stopBunnyHop()
 		_wait(0.2)
 		startBunnyHop()
 	end
 
 	-- Re-enable anti-void
-	if antiVoidEnabled then
+	if miscState.antiVoidEnabled then
 		stopAntiVoid()
 		_wait(0.2)
 		startAntiVoid()
 	end
 
 	-- Re-enable walk fling
-	if walkFlingEnabled then
+	if flingState.walkFlingEnabled then
 		stopWalkFling()
 		_wait(0.3)
 		startWalkFling()
 	end
 
 	-- Re-enable headless
-	if headlessEnabled then
+	if miscState.headlessEnabled then
 		_wait(0.5)
 		startHeadless()
 	end
 
 	-- Re-enable rainbow
-	if rainbowEnabled then
+	if miscState.rainbowEnabled then
 		stopRainbow()
 		_wait(0.2)
 		startRainbow()
 	end
 
 	-- Re-enable bring coins
-	if bringCoinsEnabled then
+	if miscState.bringCoinsEnabled then
 		stopBringCoins()
 		_wait(0.3)
 		startBringCoins()
 	end
 
 	-- Re-enable auto collect
-	if autoCollectEnabled then
+	if miscState.autoCollectEnabled then
 		_wait(0.3)
 		startAutoCollect()
 	end
 
 	-- Re-enable trapdoor ESP
-	if trapdoorEspEnabled then
+	if miscState.trapdoorEspEnabled then
 		_wait(0.3)
 		startTrapdoorEsp()
 	end
 
 	-- Re-enable gravity
-	if gravityValue ~= 196 then
+	if moveState.gravityValue ~= 196 then
 		_wait(0.2)
-		setGravity(gravityValue)
+		setGravity(moveState.gravityValue)
 	end
 end)
 
