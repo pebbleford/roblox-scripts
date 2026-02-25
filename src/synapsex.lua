@@ -1953,6 +1953,8 @@ end
 
 -- ===================== INVISIBLE LOGIC =====================
 local savedTransparencies = {}
+local fakeCharacter = nil
+local invisPosLoop = nil
 
 local function startInvisible()
 	pcall(function()
@@ -1963,50 +1965,57 @@ local function startInvisible()
 		local hum = character:FindFirstChildOfClass("Humanoid")
 		if not hum then return end
 
-		-- If already sitting, get up first
-		if hum.SeatPart then
-			hum:ChangeState(Enum.HumanoidStateType.GettingUp)
-			_wait(0.3)
-		end
-
 		local savedCF = hrp.CFrame
-		local savedChar = character
 
-		-- FE Invisible: VehicleSeat + character nil trick
-		local seat = Instance.new("VehicleSeat")
-		seat.Size = Vector3.new(1, 1, 1)
-		seat.Transparency = 1
-		seat.CanCollide = false
-		seat.Anchored = true
-		seat.CFrame = savedCF
-		seat.Parent = workspace
+		-- FE Invisible: character swap method
+		-- Create fake character model hidden under the map
+		local fakeChar = Instance.new("Model")
+		fakeChar.Name = LocalPlayer.Name
 
-		seat:Sit(hum)
-		_wait(0.35)
+		local fakeHRP = Instance.new("Part")
+		fakeHRP.Name = "HumanoidRootPart"
+		fakeHRP.Size = Vector3.new(2, 2, 1)
+		fakeHRP.Transparency = 1
+		fakeHRP.CanCollide = false
+		fakeHRP.Anchored = true
+		fakeHRP.CFrame = CFrame.new(0, -3000, 0)
+		fakeHRP.Parent = fakeChar
 
-		-- Verify humanoid actually sat down
-		if not hum.SeatPart then
-			-- Retry once
-			seat:Sit(hum)
-			_wait(0.35)
-		end
+		local fakeHum = Instance.new("Humanoid")
+		fakeHum.Parent = fakeChar
+		fakeChar.Parent = workspace
 
-		-- Disconnect character from player (server stops replicating)
+		-- Step 1: Nil character to break server replication
 		LocalPlayer.Character = nil
-		_wait(0.2)
+		_wait(0.1)
 
-		-- Get out of seat properly
-		hum:ChangeState(Enum.HumanoidStateType.GettingUp)
-		_wait(0.15)
-		seat:Destroy()
-		_wait(0.15)
+		-- Step 2: Assign fake character - server latches onto the fake
+		LocalPlayer.Character = fakeChar
+		_wait(0.5)
 
-		-- Reassign character (local control restored, server still disconnected)
-		LocalPlayer.Character = savedChar
+		-- Step 3: Swap back to real character
+		-- Server still tracks the fake, our real movements aren't replicated
+		LocalPlayer.Character = character
 		_wait(0.1)
 
 		-- Restore position
 		if hrp and hrp.Parent then hrp.CFrame = savedCF end
+
+		-- Keep fake alive (don't destroy it or server reconnects to real char)
+		fakeCharacter = fakeChar
+
+		-- Keep real character anchored at position to prevent server drift
+		-- Use a loop to re-apply CFrame if server tries to correct
+		if invisPosLoop then invisPosLoop:Disconnect() end
+		invisPosLoop = RunService.Heartbeat:Connect(function()
+			pcall(function()
+				if fakeCharacter and fakeCharacter.Parent then
+					-- Keep fake HRP under map
+					local fHRP = fakeCharacter:FindFirstChild("HumanoidRootPart")
+					if fHRP then fHRP.CFrame = CFrame.new(0, -3000, 0) end
+				end
+			end)
+		end)
 
 		-- Apply client-side transparency so we can't see ourselves
 		savedTransparencies = {}
@@ -2030,14 +2039,23 @@ local function startInvisible()
 end
 
 local function stopInvisible()
-	-- Undo requires respawn to fully restore server-side visibility
 	pcall(function()
-		-- Restore client transparency first
+		-- Stop position loop
+		if invisPosLoop then invisPosLoop:Disconnect() invisPosLoop = nil end
+
+		-- Restore client transparency
 		for part, transparency in pairs(savedTransparencies) do
 			if part and part.Parent then part.Transparency = transparency end
 		end
 		savedTransparencies = {}
-		-- Respawn to restore server replication
+
+		-- Destroy fake character so server reconnects to real char
+		if fakeCharacter and fakeCharacter.Parent then
+			fakeCharacter:Destroy()
+		end
+		fakeCharacter = nil
+
+		-- Respawn to fully restore server replication
 		local character = LocalPlayer.Character
 		if character then
 			local hum = character:FindFirstChildOfClass("Humanoid")
