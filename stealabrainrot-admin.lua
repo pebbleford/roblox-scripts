@@ -29,9 +29,11 @@ local COLORS = {
 -- ===================== STATE =====================
 local adminSpamActive = false
 local adminDefenseActive = false
+local brainrotDefenseActive = false
 local adminSpamSpeed = 1.2
 local adminSpamTarget = "random"
 local defenseRadius = 40
+local brainrotDefenseRadius = 25
 local savedBasePosition = nil
 local windowVisible = true
 
@@ -496,6 +498,79 @@ local function stopAdminDefense()
 	notify("Admin Defense", "Stopped")
 end
 
+-- ===================== BRAINROT DEFENSE =====================
+-- Finds all brainrots (models with ProximityPrompts) in workspace
+local function findBrainrots()
+	local brainrots = {}
+	for _, obj in ipairs(workspace:GetDescendants()) do
+		if obj:IsA("ProximityPrompt") then
+			local parent = obj.Parent
+			if parent then
+				local root = parent
+				if parent:IsA("Model") then
+					root = parent:FindFirstChild("HumanoidRootPart") or parent.PrimaryPart or parent:FindFirstChildWhichIsA("BasePart")
+				end
+				if root and root:IsA("BasePart") then
+					table.insert(brainrots, {prompt = obj, part = root, name = parent.Name})
+				end
+			end
+		end
+	end
+	return brainrots
+end
+
+local brainrotDefenseCooldowns = {}
+local BRAINROT_DEFENSE_COOLDOWN = 2
+local brainrotDefenseCommandIndex = {}
+
+local function startBrainrotDefense()
+	brainrotDefenseActive = true
+	spawn(function()
+		while brainrotDefenseActive do
+			pcall(function()
+				local brainrots = findBrainrots()
+				if #brainrots == 0 then return end
+
+				for _, player in ipairs(Players:GetPlayers()) do
+					if player ~= LocalPlayer and player.Character then
+						local otherHrp = player.Character:FindFirstChild("HumanoidRootPart")
+						if otherHrp then
+							for _, b in ipairs(brainrots) do
+								local dist = (otherHrp.Position - b.part.Position).Magnitude
+								if dist <= brainrotDefenseRadius then
+									local now = tick()
+									local key = player.Name .. "_" .. b.name
+									local lastFire = brainrotDefenseCooldowns[key]
+									if not lastFire or (now - lastFire) >= BRAINROT_DEFENSE_COOLDOWN then
+										local idx = brainrotDefenseCommandIndex[player.Name] or 1
+										local cmd = defenseCommandOrder[idx]
+
+										fireAdminOnPlayer(cmd, player.Name)
+										notify("Brainrot Defense", ";" .. cmd .. " " .. player.DisplayName .. " (near " .. b.name .. "!)")
+
+										brainrotDefenseCooldowns[key] = now
+										brainrotDefenseCommandIndex[player.Name] = (idx % #defenseCommandOrder) + 1
+									end
+									break
+								end
+							end
+						end
+					end
+				end
+			end)
+			wait(0.8 + math.random() * 0.5)
+		end
+	end)
+	notify("Brainrot Defense", "Guarding all brainrots!")
+end
+
+local function stopBrainrotDefense()
+	brainrotDefenseActive = false
+	brainrotDefenseCooldowns = {}
+	brainrotDefenseCommandIndex = {}
+	notify("Brainrot Defense", "Stopped")
+end
+
 -- ===================== BUILD GUI =====================
 do
 	local tab = content
@@ -661,28 +736,46 @@ do
 	spacer4.LayoutOrder = 22
 	spacer4.Parent = tab
 
+	-- ===== BRAINROT DEFENSE =====
+	createSectionLabel(tab, "Brainrot Defense (Protect Brainrots)", 23)
+	createInfoLabel(tab, "Auto fires commands on anyone near ANY brainrot", 24)
+	createInfoLabel(tab, "No need to save base - guards all brainrots automatically", 25)
+	createToggle(tab, "Brainrot Defense", 26, function(on)
+		brainrotDefenseActive = on
+		if on then startBrainrotDefense() else stopBrainrotDefense() end
+	end)
+	createSlider(tab, "Brainrot Guard Radius (studs)", 10, 60, brainrotDefenseRadius, 27, function(val)
+		brainrotDefenseRadius = val
+	end)
+
+	local spacer4b = Instance.new("Frame")
+	spacer4b.Size = UDim2.new(1, 0, 0, 8)
+	spacer4b.BackgroundTransparency = 1
+	spacer4b.LayoutOrder = 28
+	spacer4b.Parent = tab
+
 	-- ===== QUICK ADMIN =====
-	createSectionLabel(tab, "Quick Admin (One-Shot)", 23)
-	createButton(tab, ";rocket (Launch Player)", 24, function() fireAdminCommand("rocket") end)
-	createButton(tab, ";jail (Trap in Cage)", 25, function() fireAdminCommand("jail") end)
-	createButton(tab, ";ragdoll (Knock Down)", 26, function() fireAdminCommand("ragdoll") end)
-	createButton(tab, ";jumpscare (Scare Player)", 27, function() fireAdminCommand("jumpscare") end)
-	createButton(tab, ";tiny (Shrink Player)", 28, function() fireAdminCommand("tiny") end)
-	createButton(tab, ";morph (Transform Player)", 29, function() fireAdminCommand("morph") end)
-	createButton(tab, ";balloon (Inflate Head)", 30, function() fireAdminCommand("balloon") end)
-	createButton(tab, ";inverse (Reverse Controls)", 31, function() fireAdminCommand("inverse") end)
-	createButton(tab, ";control (Possess Player)", 32, function() fireAdminCommand("control") end)
-	createInfoLabel(tab, "Fires at selected target above", 33)
+	createSectionLabel(tab, "Quick Admin (One-Shot)", 29)
+	createButton(tab, ";rocket (Launch Player)", 30, function() fireAdminCommand("rocket") end)
+	createButton(tab, ";jail (Trap in Cage)", 31, function() fireAdminCommand("jail") end)
+	createButton(tab, ";ragdoll (Knock Down)", 32, function() fireAdminCommand("ragdoll") end)
+	createButton(tab, ";jumpscare (Scare Player)", 33, function() fireAdminCommand("jumpscare") end)
+	createButton(tab, ";tiny (Shrink Player)", 34, function() fireAdminCommand("tiny") end)
+	createButton(tab, ";morph (Transform Player)", 35, function() fireAdminCommand("morph") end)
+	createButton(tab, ";balloon (Inflate Head)", 36, function() fireAdminCommand("balloon") end)
+	createButton(tab, ";inverse (Reverse Controls)", 37, function() fireAdminCommand("inverse") end)
+	createButton(tab, ";control (Possess Player)", 38, function() fireAdminCommand("control") end)
+	createInfoLabel(tab, "Fires at selected target above", 39)
 
 	local spacer5 = Instance.new("Frame")
 	spacer5.Size = UDim2.new(1, 0, 0, 8)
 	spacer5.BackgroundTransparency = 1
-	spacer5.LayoutOrder = 34
+	spacer5.LayoutOrder = 40
 	spacer5.Parent = tab
 
 	-- ===== SCRIPTS =====
-	createSectionLabel(tab, "Scripts", 35)
-	createButton(tab, "Load Steal a Brainrot Hub (Defense)", 36, function()
+	createSectionLabel(tab, "Scripts", 41)
+	createButton(tab, "Load Steal a Brainrot Hub (Defense)", 42, function()
 		notify("Loading", "Loading SAB Defense Hub...")
 		loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/stealabrainrot.lua"))()
 	end)
