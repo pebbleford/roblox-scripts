@@ -2215,7 +2215,8 @@ local function startWalkFling()
 		local root = character:FindFirstChild("HumanoidRootPart")
 		if not root then return end
 
-		-- Heartbeat: re-apply density every frame + velocity spikes when moving
+		-- Heartbeat: high density + walk velocity = fling on collision
+		-- MM2 anti-cheat resets huge velocities, so we keep it moderate
 		flingState.walkFlingConnection = RunService.Heartbeat:Connect(function()
 			pcall(function()
 				local char = LocalPlayer.Character
@@ -2225,7 +2226,7 @@ local function startWalkFling()
 				local hum = char:FindFirstChildOfClass("Humanoid")
 				if not hum then return end
 
-				-- Re-apply heavy density every frame (server may reset it)
+				-- Re-apply extreme density every frame (this is what flings people)
 				for _, part in ipairs(char:GetDescendants()) do
 					if part:IsA("BasePart") then
 						part.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
@@ -2234,7 +2235,8 @@ local function startWalkFling()
 
 				local moveDir = hum.MoveDirection
 				if moveDir.Magnitude > 0.1 then
-					rt.AssemblyLinearVelocity = moveDir.Unit * flingState.walkFlingPower
+					-- Moderate speed - high mass does the flinging, not high velocity
+					rt.AssemblyLinearVelocity = moveDir.Unit * 80 + Vector3.new(0, rt.AssemblyLinearVelocity.Y, 0)
 				end
 			end)
 		end)
@@ -2345,12 +2347,8 @@ local function startFling()
 		local root = character:FindFirstChild("HumanoidRootPart")
 		if not root then return end
 
-		-- Enable noclip so we can move freely while spinning
-		if not moveState.noclipEnabled then moveState.noclipEnabled = true startNoclip() end
-		_wait(0.1)
-
-		-- Heartbeat: continuously re-apply density + spin + velocity each frame
-		-- Using Assembly properties instead of BodyMovers (servers can't remove these)
+		-- Heartbeat: high density + moderate spin = fling on collision
+		-- MM2 resets insane velocities, so we use mass-based flinging instead
 		flingState.flingConnection = RunService.Heartbeat:Connect(function()
 			pcall(function()
 				local char = LocalPlayer.Character
@@ -2358,27 +2356,27 @@ local function startFling()
 				local rt = char:FindFirstChild("HumanoidRootPart")
 				if not rt then return end
 
-				-- Re-apply heavy density every frame (server may reset it)
+				-- Re-apply extreme density every frame (server resets this)
+				-- High mass is what actually flings other players on contact
 				for _, part in ipairs(char:GetDescendants()) do
 					if part:IsA("BasePart") then
 						part.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
-						part.CanCollide = false
 					end
 				end
 
-				-- Chaotic spin using AssemblyAngularVelocity (modern, can't be removed)
+				-- Moderate angular spin - enough to create chaotic collisions
+				-- but low enough that MM2 anti-cheat doesn't reset it
 				rt.AssemblyAngularVelocity = Vector3.new(
-					math.random(-1, 1) * flingState.flingPower,
-					math.random(-1, 1) * flingState.flingPower,
-					math.random(-1, 1) * flingState.flingPower
+					(math.random() - 0.5) * 80,
+					(math.random() - 0.5) * 80,
+					(math.random() - 0.5) * 80
 				)
 
-				-- Random velocity perturbation to create collisions
-				rt.AssemblyLinearVelocity = rt.AssemblyLinearVelocity + Vector3.new(
-					math.random(-80, 80),
-					0,
-					math.random(-80, 80)
-				)
+				-- Small velocity nudge based on move direction to approach targets
+				local hum = char:FindFirstChildOfClass("Humanoid")
+				if hum and hum.MoveDirection.Magnitude > 0.1 then
+					rt.AssemblyLinearVelocity = hum.MoveDirection.Unit * 60 + Vector3.new(0, rt.AssemblyLinearVelocity.Y, 0)
+				end
 			end)
 		end)
 
