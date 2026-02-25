@@ -63,17 +63,17 @@ local NBTF_GUNS = {
 local NBTF_ZERO_VALUES = {"RecoilDecay", "RecoilMax", "RecoilMin", "ShotCooldown", "TotalRecoilMax", "MaxSpread", "MinSpread"}
 local NBTF_MAX_VALUES = {"AmmoCapacity", "AmmoReserves", "FullMagazineSize", "HitDamage", "MaxDistance"}
 
--- Find any gun in the player's backpack (respects selectedWeapon if set)
+-- Find any gun in the player's backpack (respects aimState.selectedWeapon if set)
 local function findGunInBackpack()
 	-- If a specific weapon is selected, try to find it first
-	if selectedWeapon then
+	if aimState.selectedWeapon then
 		for _, tool in ipairs(LocalPlayer.Backpack:GetChildren()) do
-			if tool:IsA("Tool") and tool.Name == selectedWeapon then return tool end
+			if tool:IsA("Tool") and tool.Name == aimState.selectedWeapon then return tool end
 		end
 		local char = LocalPlayer.Character
 		if char then
 			for _, tool in ipairs(char:GetChildren()) do
-				if tool:IsA("Tool") and tool.Name == selectedWeapon then return tool end
+				if tool:IsA("Tool") and tool.Name == aimState.selectedWeapon then return tool end
 			end
 		end
 	end
@@ -189,104 +189,137 @@ local COLORS = {
 }
 
 -- ===================== STATE =====================
-local silentAimActive = false
-local wallbangActive = false
-local aimbotActive = false
-local espActive = false
-local flyActive = false
-local noclipActive = false
-local speedBoostActive = false
-local infJumpActive = false
-local godModeActive = false
-local hitboxExpandActive = false
-local infAmmoActive = false
-local antiAfkActive = false
-local fullbrightActive = false
-local vehicleFlyActive = false
-local spectateActive = false
-local noRecoilActive = false
-local autoFireActive = false
-local gravityActive = false
-local bringAllActive = false
-local antiKickActive = false
-local antiRagdollActive = false
-local autoRejoinActive = false
+-- ===================== STATE (grouped to reduce local count) =====================
+local aimState = {
+	silentAimActive = false,
+	wallbangActive = false,
+	aimbotActive = false,
+	targetPart = "Head",
+	fovRadius = 150,
+	hitChance = 100,
+	aimbotSmooth = 0.5,
+	selectedWeapon = nil,
+	silentAimConnection = nil,
+	lastSilentAimFire = 0,
+	silentAimCooldown = 0.4,
+	wallbangConnection = nil,
+	lastWallbangFire = 0,
+	wallbangCooldown = 0.5,
+	aimbotConnection = nil,
+	aimbotAlwaysOn = false,
+}
+
+local combatState = {
+	killAuraActive = false,
+	triggerBotActive = false,
+	antiAimActive = false,
+	autoFireActive = false,
+	noRecoilActive = false,
+	hitboxExpandActive = false,
+	infAmmoActive = false,
+	killAuraRange = 40,
+	triggerBotDelay = 0.1,
+	hitboxSize = 10,
+	killAuraConnection = nil,
+	triggerBotConnection = nil,
+	antiAimConnection = nil,
+	autoFireConnection = nil,
+	noRecoilConnection = nil,
+	hitboxConnection = nil,
+	ammoConnection = nil,
+	killAllDelay = 0.3,
+}
+
+local espState = {
+	espActive = false,
+	tracersActive = false,
+	fovCircleActive = false,
+	crosshairActive = false,
+	itemEspActive = false,
+	fullbrightActive = false,
+	noFogActive = false,
+	espHighlights = {},
+	tracerLines = {},
+	fovCircleDrawing = nil,
+	crosshairDrawing = nil,
+	crosshairLines = {},
+	itemEspHighlights = {},
+	savedLighting = {},
+	savedFog = nil,
+}
+
+local moveState = {
+	flyActive = false,
+	noclipActive = false,
+	speedBoostActive = false,
+	infJumpActive = false,
+	godModeActive = false,
+	bunnyHopActive = false,
+	longJumpActive = false,
+	vehicleFlyActive = false,
+	gravityActive = false,
+	flySpeed = 80,
+	speedValue = 50,
+	gravityValue = 196.2,
+	longJumpPower = 150,
+	flyConnection = nil,
+	flyBV = nil,
+	flyBG = nil,
+	noclipConnection = nil,
+	speedBV = nil,
+	speedConnection = nil,
+	godModeConnection = nil,
+	bunnyHopConnection = nil,
+	vehicleFlyConnection = nil,
+	vehicleFlyBV = nil,
+	vehicleFlyBG = nil,
+}
+
+local playerState = {
+	spectateActive = false,
+	spectateTarget = nil,
+	orbitActive = false,
+	orbitRadius = 15,
+	orbitSpeed = 2,
+	orbitTarget = nil,
+	orbitConnection = nil,
+	attachActive = false,
+	attachTarget = nil,
+	attachConnection = nil,
+	tpToMouseActive = false,
+	tpForwardDist = 50,
+	freecamActive = false,
+	freecamConnection = nil,
+	freecamCF = nil,
+	invisibleActive = false,
+	bringAllActive = false,
+	savedPositions = {},
+}
+
+local miscState = {
+	antiAfkActive = false,
+	antiKickActive = false,
+	antiRagdollActive = false,
+	autoRejoinActive = false,
+	autoRespawnActive = false,
+	chatSpyActive = false,
+	joinNotifyActive = false,
+	antiRagdollConnection = nil,
+	chatSpyConnection = nil,
+	joinNotifyConnections = {},
+}
+
+local uiState = {
+	windowVisible = true,
+	activeTab = "Aim",
+}
+
 
 -- New feature states
-local killAuraActive = false
-local triggerBotActive = false
-local antiAimActive = false
-local bunnyHopActive = false
-local tpToMouseActive = false
-local longJumpActive = false
-local invisibleActive = false
-local tracersActive = false
-local fovCircleActive = false
-local crosshairActive = false
-local itemEspActive = false
-local chatSpyActive = false
-local joinNotifyActive = false
-local autoRespawnActive = false
-local orbitActive = false
-local attachActive = false
-local noFogActive = false
-local freecamActive = false
 
-local selectedWeapon = nil -- nil = auto-detect
 
-local targetPart = "Head" -- Head, HumanoidRootPart
-local fovRadius = 150
-local hitChance = 100
-local aimbotSmooth = 0.5
-local flySpeed = 80
-local speedValue = 50
-local hitboxSize = 10
-local gravityValue = 196.2
-local windowVisible = true
-local activeTab = "Aim"
-local killAuraRange = 40
-local triggerBotDelay = 0.1
-local longJumpPower = 150
-local orbitRadius = 15
-local orbitSpeed = 2
-local tpForwardDist = 50
-local savedPositions = {} -- {name = CFrame}
 
 -- Connections / refs
-local flyConnection = nil
-local flyBV = nil
-local flyBG = nil
-local noclipConnection = nil
-local speedBV = nil
-local speedConnection = nil
-local godModeConnection = nil
-local hitboxConnection = nil
-local ammoConnection = nil
-local vehicleFlyConnection = nil
-local vehicleFlyBV = nil
-local vehicleFlyBG = nil
-local noRecoilConnection = nil
-local autoFireConnection = nil
-local espHighlights = {}
-local spectateTarget = nil
-local antiRagdollConnection = nil
-local killAllDelay = 0.3
-local killAuraConnection = nil
-local triggerBotConnection = nil
-local antiAimConnection = nil
-local bunnyHopConnection = nil
-local tracerLines = {}
-local fovCircleDrawing = nil
-local crosshairDrawing = nil
-local itemEspHighlights = {}
-local chatSpyConnection = nil
-local joinNotifyConnections = {}
-local orbitConnection = nil
-local orbitTarget = nil
-local attachConnection = nil
-local attachTarget = nil
-local freecamConnection = nil
-local freecamCF = nil
 
 -- ===================== HELPERS =====================
 local function getRoot()
@@ -401,7 +434,7 @@ end
 
 local function getTargetPartFromPlayer(player)
 	if not player.Character then return nil end
-	local part = player.Character:FindFirstChild(targetPart)
+	local part = player.Character:FindFirstChild(aimState.targetPart)
 	if not part then
 		part = player.Character:FindFirstChild("HumanoidRootPart")
 	end
@@ -411,7 +444,7 @@ end
 -- ===================== FOV / TARGET SELECTION =====================
 local function getClosestPlayerInFOV()
 	local closest = nil
-	local closestDist = fovRadius
+	local closestDist = aimState.fovRadius
 	local mousePos = UserInputService:GetMouseLocation()
 
 	for _, player in ipairs(Players:GetPlayers()) do
@@ -465,8 +498,8 @@ end
 -- ===================== KILL AURA =====================
 -- Auto-kills any enemy within range without aiming
 local function startKillAura()
-	killAuraConnection = RunService.Heartbeat:Connect(function()
-		if not killAuraActive then return end
+	combatState.killAuraConnection = RunService.Heartbeat:Connect(function()
+		if not combatState.killAuraActive then return end
 		pcall(function()
 			local hrp = getRoot()
 			if not hrp then return end
@@ -477,7 +510,7 @@ local function startKillAura()
 			for _, player in ipairs(Players:GetPlayers()) do
 				if isEnemy(player) and isAlive(player) then
 					local head = player.Character and player.Character:FindFirstChild("Head")
-					if head and (head.Position - hrp.Position).Magnitude <= killAuraRange then
+					if head and (head.Position - hrp.Position).Magnitude <= combatState.killAuraRange then
 						fireWeaponHit(player, gun)
 					end
 				end
@@ -487,14 +520,14 @@ local function startKillAura()
 end
 
 local function stopKillAura()
-	if killAuraConnection then killAuraConnection:Disconnect() killAuraConnection = nil end
+	if combatState.killAuraConnection then combatState.killAuraConnection:Disconnect() combatState.killAuraConnection = nil end
 end
 
 -- ===================== TRIGGER BOT =====================
 -- Auto-fires when crosshair is on an enemy
 local function startTriggerBot()
-	triggerBotConnection = RunService.Heartbeat:Connect(function()
-		if not triggerBotActive then return end
+	combatState.triggerBotConnection = RunService.Heartbeat:Connect(function()
+		if not combatState.triggerBotActive then return end
 		pcall(function()
 			local mouse = LocalPlayer:GetMouse()
 			local target = mouse.Target
@@ -512,19 +545,19 @@ local function startTriggerBot()
 				fireWeaponHit(targetPlayer, gun)
 			end
 		end)
-		task.wait(triggerBotDelay)
+		task.wait(combatState.triggerBotDelay)
 	end)
 end
 
 local function stopTriggerBot()
-	if triggerBotConnection then triggerBotConnection:Disconnect() triggerBotConnection = nil end
+	if combatState.triggerBotConnection then combatState.triggerBotConnection:Disconnect() combatState.triggerBotConnection = nil end
 end
 
 -- ===================== ANTI-AIM =====================
 -- Spins character rapidly to make it harder to hit
 local function startAntiAim()
-	antiAimConnection = RunService.Heartbeat:Connect(function()
-		if not antiAimActive then return end
+	combatState.antiAimConnection = RunService.Heartbeat:Connect(function()
+		if not combatState.antiAimActive then return end
 		pcall(function()
 			local hrp = getRoot()
 			if hrp then
@@ -535,14 +568,14 @@ local function startAntiAim()
 end
 
 local function stopAntiAim()
-	if antiAimConnection then antiAimConnection:Disconnect() antiAimConnection = nil end
+	if combatState.antiAimConnection then combatState.antiAimConnection:Disconnect() combatState.antiAimConnection = nil end
 end
 
 -- ===================== BUNNY HOP =====================
 -- Auto-jumps while moving for speed
 local function startBunnyHop()
-	bunnyHopConnection = RunService.Heartbeat:Connect(function()
-		if not bunnyHopActive then return end
+	moveState.bunnyHopConnection = RunService.Heartbeat:Connect(function()
+		if not moveState.bunnyHopActive then return end
 		pcall(function()
 			local hum = getHumanoid()
 			if hum and hum.MoveDirection.Magnitude > 0 then
@@ -555,7 +588,7 @@ local function startBunnyHop()
 end
 
 local function stopBunnyHop()
-	if bunnyHopConnection then bunnyHopConnection:Disconnect() bunnyHopConnection = nil end
+	if moveState.bunnyHopConnection then moveState.bunnyHopConnection:Disconnect() moveState.bunnyHopConnection = nil end
 end
 
 -- ===================== LONG JUMP =====================
@@ -568,7 +601,7 @@ local function doLongJump()
 		task.wait(0.1)
 		local bv = Instance.new("BodyVelocity")
 		bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-		bv.Velocity = hrp.CFrame.LookVector * longJumpPower + Vector3.new(0, longJumpPower * 0.3, 0)
+		bv.Velocity = hrp.CFrame.LookVector * moveState.longJumpPower + Vector3.new(0, moveState.longJumpPower * 0.3, 0)
 		bv.P = 9000
 		bv.Parent = hrp
 		task.delay(0.3, function() pcall(function() bv:Destroy() end) end)
@@ -581,8 +614,8 @@ local function tpForward()
 		local hrp = getRoot()
 		local char = LocalPlayer.Character
 		if hrp and char then
-			char:PivotTo(hrp.CFrame + hrp.CFrame.LookVector * tpForwardDist)
-			notify("TP", "Teleported " .. tpForwardDist .. " studs forward")
+			char:PivotTo(hrp.CFrame + hrp.CFrame.LookVector * playerState.tpForwardDist)
+			notify("TP", "Teleported " .. playerState.tpForwardDist .. " studs forward")
 		end
 	end)
 end
@@ -602,13 +635,13 @@ end
 local function savePosition(name)
 	local hrp = getRoot()
 	if hrp then
-		savedPositions[name] = hrp.CFrame
+		playerState.savedPositions[name] = hrp.CFrame
 		notify("Saved", "Position '" .. name .. "' saved!")
 	end
 end
 
 local function loadPosition(name)
-	local cf = savedPositions[name]
+	local cf = playerState.savedPositions[name]
 	if cf then
 		local char = LocalPlayer.Character
 		if char then
@@ -655,13 +688,13 @@ end
 
 -- ===================== TRACERS =====================
 local function clearTracers()
-	for _, line in pairs(tracerLines) do pcall(function() line:Remove() end) end
-	tracerLines = {}
+	for _, line in pairs(espState.tracerLines) do pcall(function() line:Remove() end) end
+	espState.tracerLines = {}
 end
 
 local function updateTracers()
 	clearTracers()
-	if not tracersActive then return end
+	if not espState.tracersActive then return end
 	pcall(function()
 		if not Drawing then return end -- Drawing API required
 		local hrp = getRoot()
@@ -678,7 +711,7 @@ local function updateTracers()
 						line.Thickness = 1.5
 						line.Transparency = 1
 						line.Visible = true
-						table.insert(tracerLines, line)
+						table.insert(espState.tracerLines, line)
 					end
 				end
 			end
@@ -688,7 +721,7 @@ end
 
 local function startTracers()
 	task.spawn(function()
-		while tracersActive do updateTracers() task.wait(0.05) end
+		while espState.tracersActive do updateTracers() task.wait(0.05) end
 		clearTracers()
 	end)
 end
@@ -697,40 +730,39 @@ end
 local function createFOVCircle()
 	pcall(function()
 		if not Drawing then return end
-		if fovCircleDrawing then fovCircleDrawing:Remove() end
-		fovCircleDrawing = Drawing.new("Circle")
-		fovCircleDrawing.Position = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
-		fovCircleDrawing.Radius = fovRadius
-		fovCircleDrawing.Color = Color3.fromRGB(255, 165, 0)
-		fovCircleDrawing.Thickness = 1.5
-		fovCircleDrawing.Filled = false
-		fovCircleDrawing.Transparency = 0.7
-		fovCircleDrawing.Visible = true
+		if espState.fovCircleDrawing then espState.fovCircleDrawing:Remove() end
+		espState.fovCircleDrawing = Drawing.new("Circle")
+		espState.fovCircleDrawing.Position = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+		espState.fovCircleDrawing.Radius = aimState.fovRadius
+		espState.fovCircleDrawing.Color = Color3.fromRGB(255, 165, 0)
+		espState.fovCircleDrawing.Thickness = 1.5
+		espState.fovCircleDrawing.Filled = false
+		espState.fovCircleDrawing.Transparency = 0.7
+		espState.fovCircleDrawing.Visible = true
 	end)
 end
 
 local function updateFOVCircle()
 	pcall(function()
-		if fovCircleDrawing then
-			fovCircleDrawing.Position = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
-			fovCircleDrawing.Radius = fovRadius
-			fovCircleDrawing.Visible = fovCircleActive
+		if espState.fovCircleDrawing then
+			espState.fovCircleDrawing.Position = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+			espState.fovCircleDrawing.Radius = aimState.fovRadius
+			espState.fovCircleDrawing.Visible = espState.fovCircleActive
 		end
 	end)
 end
 
 local function removeFOVCircle()
-	pcall(function() if fovCircleDrawing then fovCircleDrawing:Remove() fovCircleDrawing = nil end end)
+	pcall(function() if espState.fovCircleDrawing then espState.fovCircleDrawing:Remove() espState.fovCircleDrawing = nil end end)
 end
 
 -- ===================== CROSSHAIR =====================
-local crosshairLines = {}
 
 local function createCrosshair()
 	pcall(function()
 		if not Drawing then return end
-		for _, l in pairs(crosshairLines) do pcall(function() l:Remove() end) end
-		crosshairLines = {}
+		for _, l in pairs(espState.crosshairLines) do pcall(function() l:Remove() end) end
+		espState.crosshairLines = {}
 		local cx = camera.ViewportSize.X / 2
 		local cy = camera.ViewportSize.Y / 2
 		local gap = 4
@@ -749,25 +781,25 @@ local function createCrosshair()
 			line.Color = color
 			line.Thickness = 2
 			line.Visible = true
-			table.insert(crosshairLines, line)
+			table.insert(espState.crosshairLines, line)
 		end
 	end)
 end
 
 local function removeCrosshair()
-	for _, l in pairs(crosshairLines) do pcall(function() l:Remove() end) end
-	crosshairLines = {}
+	for _, l in pairs(espState.crosshairLines) do pcall(function() l:Remove() end) end
+	espState.crosshairLines = {}
 end
 
 -- ===================== ITEM ESP =====================
 local function clearItemESP()
-	for _, h in pairs(itemEspHighlights) do pcall(function() h:Destroy() end) end
-	itemEspHighlights = {}
+	for _, h in pairs(espState.itemEspHighlights) do pcall(function() h:Destroy() end) end
+	espState.itemEspHighlights = {}
 end
 
 local function updateItemESP()
 	clearItemESP()
-	if not itemEspActive then return end
+	if not espState.itemEspActive then return end
 	pcall(function()
 		-- Search workspace for dropped tools/weapons
 		for _, obj in ipairs(workspace:GetChildren()) do
@@ -790,7 +822,7 @@ local function updateItemESP()
 						hl.OutlineColor = Color3.fromRGB(255, 255, 255)
 						hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 						hl.Parent = obj
-						table.insert(itemEspHighlights, hl)
+						table.insert(espState.itemEspHighlights, hl)
 
 						local bb = Instance.new("BillboardGui")
 						bb.Name = "ItemESP_BB"
@@ -799,7 +831,7 @@ local function updateItemESP()
 						bb.StudsOffset = Vector3.new(0, 2, 0)
 						bb.Adornee = part
 						bb.Parent = obj
-						table.insert(itemEspHighlights, bb)
+						table.insert(espState.itemEspHighlights, bb)
 
 						local lbl = Instance.new("TextLabel")
 						lbl.Text = obj.Name
@@ -819,19 +851,19 @@ end
 
 local function startItemESP()
 	task.spawn(function()
-		while itemEspActive do updateItemESP() task.wait(3) end
+		while espState.itemEspActive do updateItemESP() task.wait(3) end
 		clearItemESP()
 	end)
 end
 
 -- ===================== CHAT SPY =====================
 local function startChatSpy()
-	chatSpyActive = true
+	miscState.chatSpyActive = true
 	pcall(function()
 		local TextChatService = game:GetService("TextChatService")
 		if TextChatService then
-			chatSpyConnection = TextChatService.MessageReceived:Connect(function(message)
-				if not chatSpyActive then return end
+			miscState.chatSpyConnection = TextChatService.MessageReceived:Connect(function(message)
+				if not miscState.chatSpyActive then return end
 				pcall(function()
 					local sender = message.TextSource
 					if sender then
@@ -849,41 +881,41 @@ local function startChatSpy()
 end
 
 local function stopChatSpy()
-	chatSpyActive = false
-	if chatSpyConnection then pcall(function() chatSpyConnection:Disconnect() end) chatSpyConnection = nil end
+	miscState.chatSpyActive = false
+	if miscState.chatSpyConnection then pcall(function() miscState.chatSpyConnection:Disconnect() end) miscState.chatSpyConnection = nil end
 end
 
 -- ===================== PLAYER JOIN/LEAVE NOTIFICATIONS =====================
 local function startJoinNotify()
-	joinNotifyActive = true
+	miscState.joinNotifyActive = true
 	local joinConn = Players.PlayerAdded:Connect(function(player)
-		if joinNotifyActive then
+		if miscState.joinNotifyActive then
 			notify("Joined", player.DisplayName .. " (@" .. player.Name .. ") joined")
 			print("[JOIN] " .. player.DisplayName .. " (@" .. player.Name .. ") joined the server")
 		end
 	end)
 	local leaveConn = Players.PlayerRemoving:Connect(function(player)
-		if joinNotifyActive then
+		if miscState.joinNotifyActive then
 			notify("Left", player.DisplayName .. " left the server")
 			print("[LEAVE] " .. player.DisplayName .. " (@" .. player.Name .. ") left the server")
 		end
 	end)
-	table.insert(joinNotifyConnections, joinConn)
-	table.insert(joinNotifyConnections, leaveConn)
+	table.insert(miscState.joinNotifyConnections, joinConn)
+	table.insert(miscState.joinNotifyConnections, leaveConn)
 end
 
 local function stopJoinNotify()
-	joinNotifyActive = false
-	for _, conn in ipairs(joinNotifyConnections) do pcall(function() conn:Disconnect() end) end
-	joinNotifyConnections = {}
+	miscState.joinNotifyActive = false
+	for _, conn in ipairs(miscState.joinNotifyConnections) do pcall(function() conn:Disconnect() end) end
+	miscState.joinNotifyConnections = {}
 end
 
 -- ===================== AUTO RESPAWN =====================
 local function setupAutoRespawn()
 	LocalPlayer.CharacterAdded:Connect(function(char)
-		if not autoRespawnActive then return end
+		if not miscState.autoRespawnActive then return end
 		char:WaitForChild("Humanoid").Died:Connect(function()
-			if autoRespawnActive then
+			if miscState.autoRespawnActive then
 				task.wait(1)
 				pcall(function()
 					-- Try to click respawn button
@@ -911,36 +943,36 @@ end
 
 -- ===================== ORBIT PLAYER =====================
 local function startOrbit(targetPlayer)
-	orbitTarget = targetPlayer
-	orbitActive = true
+	playerState.orbitTarget = targetPlayer
+	playerState.orbitActive = true
 	local angle = 0
-	orbitConnection = RunService.Heartbeat:Connect(function()
-		if not orbitActive or not orbitTarget then return end
+	playerState.orbitConnection = RunService.Heartbeat:Connect(function()
+		if not playerState.orbitActive or not playerState.orbitTarget then return end
 		pcall(function()
-			local theirHRP = orbitTarget.Character and orbitTarget.Character:FindFirstChild("HumanoidRootPart")
+			local theirHRP = playerState.orbitTarget.Character and playerState.orbitTarget.Character:FindFirstChild("HumanoidRootPart")
 			local char = LocalPlayer.Character
 			if not theirHRP or not char then return end
-			angle = angle + orbitSpeed * 0.03
-			local offset = Vector3.new(math.cos(angle) * orbitRadius, 0, math.sin(angle) * orbitRadius)
+			angle = angle + playerState.orbitSpeed * 0.03
+			local offset = Vector3.new(math.cos(angle) * playerState.orbitRadius, 0, math.sin(angle) * playerState.orbitRadius)
 			char:PivotTo(CFrame.new(theirHRP.Position + offset, theirHRP.Position))
 		end)
 	end)
 end
 
 local function stopOrbit()
-	orbitActive = false
-	orbitTarget = nil
-	if orbitConnection then orbitConnection:Disconnect() orbitConnection = nil end
+	playerState.orbitActive = false
+	playerState.orbitTarget = nil
+	if playerState.orbitConnection then playerState.orbitConnection:Disconnect() playerState.orbitConnection = nil end
 end
 
 -- ===================== ATTACH TO PLAYER =====================
 local function startAttach(targetPlayer)
-	attachTarget = targetPlayer
-	attachActive = true
-	attachConnection = RunService.Heartbeat:Connect(function()
-		if not attachActive or not attachTarget then return end
+	playerState.attachTarget = targetPlayer
+	playerState.attachActive = true
+	playerState.attachConnection = RunService.Heartbeat:Connect(function()
+		if not playerState.attachActive or not playerState.attachTarget then return end
 		pcall(function()
-			local theirHRP = attachTarget.Character and attachTarget.Character:FindFirstChild("HumanoidRootPart")
+			local theirHRP = playerState.attachTarget.Character and playerState.attachTarget.Character:FindFirstChild("HumanoidRootPart")
 			local char = LocalPlayer.Character
 			if not theirHRP or not char then return end
 			char:PivotTo(theirHRP.CFrame * CFrame.new(0, 0, -5))
@@ -949,22 +981,22 @@ local function startAttach(targetPlayer)
 end
 
 local function stopAttach()
-	attachActive = false
-	attachTarget = nil
-	if attachConnection then attachConnection:Disconnect() attachConnection = nil end
+	playerState.attachActive = false
+	playerState.attachTarget = nil
+	if playerState.attachConnection then playerState.attachConnection:Disconnect() playerState.attachConnection = nil end
 end
 
 -- ===================== FREECAM =====================
 local function startFreecam()
-	freecamActive = true
+	playerState.freecamActive = true
 	local hrp = getRoot()
-	freecamCF = hrp and hrp.CFrame or camera.CFrame
+	playerState.freecamCF = hrp and hrp.CFrame or camera.CFrame
 	camera.CameraType = Enum.CameraType.Scriptable
 
-	freecamConnection = RunService.RenderStepped:Connect(function()
-		if not freecamActive then return end
+	playerState.freecamConnection = RunService.RenderStepped:Connect(function()
+		if not playerState.freecamActive then return end
 		pcall(function()
-			local speed = flySpeed * 0.5
+			local speed = moveState.flySpeed * 0.5
 			local moveVec = Vector3.zero
 			local camCF = camera.CFrame
 			if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveVec = moveVec + camCF.LookVector end
@@ -974,25 +1006,24 @@ local function startFreecam()
 			if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveVec = moveVec + Vector3.new(0, 1, 0) end
 			if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveVec = moveVec - Vector3.new(0, 1, 0) end
 			if moveVec.Magnitude > 0 then
-				freecamCF = CFrame.new(freecamCF.Position + moveVec.Unit * speed * 0.016) * (camCF - camCF.Position)
+				playerState.freecamCF = CFrame.new(playerState.freecamCF.Position + moveVec.Unit * speed * 0.016) * (camCF - camCF.Position)
 			end
-			camera.CFrame = freecamCF
+			camera.CFrame = playerState.freecamCF
 		end)
 	end)
 end
 
 local function stopFreecam()
-	freecamActive = false
-	if freecamConnection then freecamConnection:Disconnect() freecamConnection = nil end
+	playerState.freecamActive = false
+	if playerState.freecamConnection then playerState.freecamConnection:Disconnect() playerState.freecamConnection = nil end
 	pcall(function() camera.CameraType = Enum.CameraType.Custom end)
 end
 
 -- ===================== NO FOG =====================
-local savedFog = nil
 local function enableNoFog()
 	pcall(function()
 		local Lighting = game:GetService("Lighting")
-		savedFog = {FogEnd = Lighting.FogEnd, FogStart = Lighting.FogStart, FogColor = Lighting.FogColor}
+		espState.savedFog = {FogEnd = Lighting.FogEnd, FogStart = Lighting.FogStart, FogColor = Lighting.FogColor}
 		Lighting.FogEnd = 9999999
 		Lighting.FogStart = 9999999
 	end)
@@ -1000,11 +1031,11 @@ end
 
 local function disableNoFog()
 	pcall(function()
-		if savedFog then
+		if espState.savedFog then
 			local Lighting = game:GetService("Lighting")
-			Lighting.FogEnd = savedFog.FogEnd
-			Lighting.FogStart = savedFog.FogStart
-			Lighting.FogColor = savedFog.FogColor
+			Lighting.FogEnd = espState.savedFog.FogEnd
+			Lighting.FogStart = espState.savedFog.FogStart
+			Lighting.FogColor = espState.savedFog.FogColor
 		end
 	end)
 end
@@ -1015,12 +1046,9 @@ end
 -- Requires executor with hookmetamethod support
 
 -- Silent aim connection + cooldown for stealth
-local silentAimConnection = nil
-local lastSilentAimFire = 0
-local silentAimCooldown = 0.4 -- seconds between fires (looks like normal shooting)
 
 local function enableSilentAim()
-	silentAimActive = true
+	aimState.silentAimActive = true
 
 	if not WeaponHitRemote then
 		notify("Silent Aim", "WeaponHit remote not found! Waiting for game to load...")
@@ -1035,14 +1063,14 @@ local function enableSilentAim()
 
 	-- Stealth silent aim: only fires ONE extra WeaponHit per cooldown period
 	-- Looks like a normal shot that just happens to hit the head
-	silentAimConnection = RunService.Heartbeat:Connect(function()
-		if not silentAimActive then return end
+	aimState.silentAimConnection = RunService.Heartbeat:Connect(function()
+		if not aimState.silentAimActive then return end
 		pcall(function()
 			if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then return end
 
 			-- Cooldown to avoid spam detection
 			local now = tick()
-			if now - lastSilentAimFire < silentAimCooldown then return end
+			if now - aimState.lastSilentAimFire < aimState.silentAimCooldown then return end
 
 			local char = LocalPlayer.Character
 			if not char then return end
@@ -1056,37 +1084,34 @@ local function enableSilentAim()
 
 			local targetPlayer = Players:GetPlayerFromCharacter(target.Parent)
 			if not targetPlayer then return end
-			if not calculateChance(hitChance) then return end
+			if not calculateChance(aimState.hitChance) then return end
 
 			fireWeaponHit(targetPlayer, equippedGun)
-			lastSilentAimFire = now
+			aimState.lastSilentAimFire = now
 		end)
 	end)
 
-	notify("Silent Aim", "Active (stealth mode - " .. silentAimCooldown .. "s cooldown)")
+	notify("Silent Aim", "Active (stealth mode - " .. aimState.silentAimCooldown .. "s cooldown)")
 end
 
 local function disableSilentAim()
-	silentAimActive = false
-	if silentAimConnection then silentAimConnection:Disconnect() silentAimConnection = nil end
+	aimState.silentAimActive = false
+	if aimState.silentAimConnection then aimState.silentAimConnection:Disconnect() aimState.silentAimConnection = nil end
 	notify("Silent Aim", "Disabled")
 end
 
 -- ===================== WALLBANG (Stealth - single target through walls) =====================
 -- Only fires at ONE closest enemy with cooldown - not all enemies every frame
-local wallbangConnection = nil
-local lastWallbangFire = 0
-local wallbangCooldown = 0.5
 
 local function enableWallbang()
-	wallbangActive = true
-	wallbangConnection = RunService.Heartbeat:Connect(function()
-		if not wallbangActive then return end
+	aimState.wallbangActive = true
+	aimState.wallbangConnection = RunService.Heartbeat:Connect(function()
+		if not aimState.wallbangActive then return end
 		pcall(function()
 			if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then return end
 
 			local now = tick()
-			if now - lastWallbangFire < wallbangCooldown then return end
+			if now - aimState.lastWallbangFire < aimState.wallbangCooldown then return end
 
 			local char = LocalPlayer.Character
 			if not char then return end
@@ -1100,29 +1125,27 @@ local function enableWallbang()
 			if not targetPlayer then return end
 
 			fireWeaponHit(targetPlayer, equippedGun)
-			lastWallbangFire = now
+			aimState.lastWallbangFire = now
 		end)
 	end)
 	notify("Wallbang", "Active (stealth - hits closest enemy through walls)")
 end
 
 local function disableWallbang()
-	wallbangActive = false
-	if wallbangConnection then wallbangConnection:Disconnect() wallbangConnection = nil end
+	aimState.wallbangActive = false
+	if aimState.wallbangConnection then aimState.wallbangConnection:Disconnect() aimState.wallbangConnection = nil end
 	notify("Wallbang", "Disabled")
 end
 
 -- ===================== AIMBOT (Camera Lock) =====================
 -- Locks camera to nearest enemy when holding right-click OR always-on mode
-local aimbotConnection = nil
-local aimbotAlwaysOn = false
 
 local function startAimbot()
-	aimbotConnection = RunService.RenderStepped:Connect(function()
+	aimState.aimbotConnection = RunService.RenderStepped:Connect(function()
 		pcall(function()
-			if not aimbotActive then return end
+			if not aimState.aimbotActive then return end
 			-- Work in both modes: always-on or hold right-click
-			if not aimbotAlwaysOn and not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then return end
+			if not aimState.aimbotAlwaysOn and not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then return end
 
 			local target = getClosestPlayerInFOV()
 			if not target then
@@ -1133,10 +1156,10 @@ local function startAimbot()
 				local camPos = camera.CFrame.Position
 				local targetCF = CFrame.new(camPos, target.Position)
 				-- Direct snap for low smoothness, lerp for high
-				if aimbotSmooth >= 0.9 then
+				if aimState.aimbotSmooth >= 0.9 then
 					camera.CFrame = targetCF
 				else
-					camera.CFrame = camera.CFrame:Lerp(targetCF, aimbotSmooth)
+					camera.CFrame = camera.CFrame:Lerp(targetCF, aimState.aimbotSmooth)
 				end
 			end
 		end)
@@ -1145,18 +1168,18 @@ local function startAimbot()
 end
 
 local function stopAimbot()
-	if aimbotConnection then aimbotConnection:Disconnect() aimbotConnection = nil end
+	if aimState.aimbotConnection then aimState.aimbotConnection:Disconnect() aimState.aimbotConnection = nil end
 end
 
 -- ===================== ESP =====================
 local function clearESP()
-	for _, obj in pairs(espHighlights) do pcall(function() obj:Destroy() end) end
-	espHighlights = {}
+	for _, obj in pairs(espState.espHighlights) do pcall(function() obj:Destroy() end) end
+	espState.espHighlights = {}
 end
 
 local function updateESP()
 	clearESP()
-	if not espActive then return end
+	if not espState.espActive then return end
 
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player ~= LocalPlayer and isAlive(player) then
@@ -1180,7 +1203,7 @@ local function updateESP()
 					hl.OutlineTransparency = 0
 					hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 					hl.Parent = char
-					table.insert(espHighlights, hl)
+					table.insert(espState.espHighlights, hl)
 				end
 
 				-- Name + Role + Health + Distance billboard
@@ -1196,7 +1219,7 @@ local function updateESP()
 					bb.StudsOffset = Vector3.new(0, 3.5, 0)
 					bb.Adornee = hrp
 					bb.Parent = char
-					table.insert(espHighlights, bb)
+					table.insert(espState.espHighlights, bb)
 
 					-- Name line
 					local lbl = Instance.new("TextLabel")
@@ -1236,14 +1259,14 @@ local function updateESP()
 					barBg.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 					barBg.BorderSizePixel = 0
 					barBg.Parent = bb
-					table.insert(espHighlights, barBg)
+					table.insert(espState.espHighlights, barBg)
 
 					local barFill = Instance.new("Frame")
 					barFill.Size = UDim2.new(hum.Health / hum.MaxHealth, 0, 1, 0)
 					barFill.BackgroundColor3 = hum.Health > hum.MaxHealth * 0.5 and COLORS.success or COLORS.error
 					barFill.BorderSizePixel = 0
 					barFill.Parent = barBg
-					table.insert(espHighlights, barFill)
+					table.insert(espState.espHighlights, barFill)
 
 					-- Weapon label
 					local tool = char:FindFirstChildOfClass("Tool")
@@ -1267,7 +1290,7 @@ end
 
 local function startESP()
 	task.spawn(function()
-		while espActive do updateESP() task.wait(1.5) end
+		while espState.espActive do updateESP() task.wait(1.5) end
 	end)
 	notify("ESP", "Player ESP active!")
 end
@@ -1323,7 +1346,7 @@ local function startInfAmmo()
 	-- Mod guns once immediately
 	modGuns()
 	-- Keep modding on heartbeat (in case guns reset)
-	ammoConnection = RunService.Heartbeat:Connect(function()
+	combatState.ammoConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local char = LocalPlayer.Character
 			if not char then return end
@@ -1345,18 +1368,18 @@ local function startInfAmmo()
 end
 
 local function stopInfAmmo()
-	if ammoConnection then ammoConnection:Disconnect() ammoConnection = nil end
+	if combatState.ammoConnection then combatState.ammoConnection:Disconnect() combatState.ammoConnection = nil end
 end
 
 -- ===================== HITBOX EXPANDER =====================
 local function startHitboxExpand()
-	hitboxConnection = RunService.Heartbeat:Connect(function()
+	combatState.hitboxConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			for _, player in ipairs(Players:GetPlayers()) do
 				if player ~= LocalPlayer and isAlive(player) then
 					local hrp = player.Character:FindFirstChild("HumanoidRootPart")
 					if hrp then
-						hrp.Size = Vector3.new(hitboxSize, hitboxSize, hitboxSize)
+						hrp.Size = Vector3.new(combatState.hitboxSize, combatState.hitboxSize, combatState.hitboxSize)
 						hrp.Transparency = 0.7
 					end
 				end
@@ -1367,7 +1390,7 @@ local function startHitboxExpand()
 end
 
 local function stopHitboxExpand()
-	if hitboxConnection then hitboxConnection:Disconnect() hitboxConnection = nil end
+	if combatState.hitboxConnection then combatState.hitboxConnection:Disconnect() combatState.hitboxConnection = nil end
 	pcall(function()
 		for _, player in ipairs(Players:GetPlayers()) do
 			if player ~= LocalPlayer and player.Character then
@@ -1383,7 +1406,7 @@ end
 
 -- ===================== GOD MODE =====================
 local function startGodMode()
-	godModeConnection = RunService.Heartbeat:Connect(function()
+	moveState.godModeConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local hum = getHumanoid()
 			if hum then
@@ -1398,7 +1421,7 @@ local function startGodMode()
 end
 
 local function stopGodMode()
-	if godModeConnection then godModeConnection:Disconnect() godModeConnection = nil end
+	if moveState.godModeConnection then moveState.godModeConnection:Disconnect() moveState.godModeConnection = nil end
 	pcall(function()
 		local hum = getHumanoid()
 		if hum then
@@ -1414,21 +1437,21 @@ local function startFly()
 	local hrp = getRoot()
 	if not hrp then return end
 
-	flyBV = Instance.new("BodyVelocity")
-	flyBV.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-	flyBV.Velocity = Vector3.new(0, 0, 0)
-	flyBV.P = 9000
-	flyBV.Parent = hrp
+	moveState.flyBV = Instance.new("BodyVelocity")
+	moveState.flyBV.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+	moveState.flyBV.Velocity = Vector3.new(0, 0, 0)
+	moveState.flyBV.P = 9000
+	moveState.flyBV.Parent = hrp
 
-	flyBG = Instance.new("BodyGyro")
-	flyBG.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-	flyBG.P = 9000
-	flyBG.CFrame = hrp.CFrame
-	flyBG.Parent = hrp
+	moveState.flyBG = Instance.new("BodyGyro")
+	moveState.flyBG.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+	moveState.flyBG.P = 9000
+	moveState.flyBG.CFrame = hrp.CFrame
+	moveState.flyBG.Parent = hrp
 
-	flyConnection = RunService.RenderStepped:Connect(function()
+	moveState.flyConnection = RunService.RenderStepped:Connect(function()
 		pcall(function()
-			if not flyBV or not flyBV.Parent then return end
+			if not moveState.flyBV or not moveState.flyBV.Parent then return end
 			local moveVec = Vector3.zero
 			local camCF = camera.CFrame
 			if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveVec = moveVec + camCF.LookVector end
@@ -1437,22 +1460,22 @@ local function startFly()
 			if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveVec = moveVec + camCF.RightVector end
 			if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveVec = moveVec + camCF.UpVector end
 			if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveVec = moveVec - camCF.UpVector end
-			flyBV.Velocity = moveVec.Magnitude > 0 and moveVec.Unit * flySpeed or Vector3.zero
-			flyBG.CFrame = camCF
+			moveState.flyBV.Velocity = moveVec.Magnitude > 0 and moveVec.Unit * moveState.flySpeed or Vector3.zero
+			moveState.flyBG.CFrame = camCF
 		end)
 	end)
 	notify("Fly", "Flying! WASD + Space/Shift")
 end
 
 local function stopFly()
-	if flyConnection then flyConnection:Disconnect() flyConnection = nil end
-	if flyBV then pcall(function() flyBV:Destroy() end) flyBV = nil end
-	if flyBG then pcall(function() flyBG:Destroy() end) flyBG = nil end
+	if moveState.flyConnection then moveState.flyConnection:Disconnect() moveState.flyConnection = nil end
+	if moveState.flyBV then pcall(function() moveState.flyBV:Destroy() end) moveState.flyBV = nil end
+	if moveState.flyBG then pcall(function() moveState.flyBG:Destroy() end) moveState.flyBG = nil end
 end
 
 -- ===================== NOCLIP =====================
 local function startNoclip()
-	noclipConnection = RunService.Stepped:Connect(function()
+	moveState.noclipConnection = RunService.Stepped:Connect(function()
 		pcall(function()
 			local char = LocalPlayer.Character
 			if not char then return end
@@ -1467,7 +1490,7 @@ local function startNoclip()
 end
 
 local function stopNoclip()
-	if noclipConnection then noclipConnection:Disconnect() noclipConnection = nil end
+	if moveState.noclipConnection then moveState.noclipConnection:Disconnect() moveState.noclipConnection = nil end
 end
 
 -- ===================== SPEED BOOST =====================
@@ -1475,23 +1498,23 @@ local function startSpeedBoost()
 	local hrp = getRoot()
 	if not hrp then return end
 
-	speedBV = Instance.new("BodyVelocity")
-	speedBV.MaxForce = Vector3.new(math.huge, 0, math.huge)
-	speedBV.Velocity = Vector3.new(0, 0, 0)
-	speedBV.P = 9000
-	speedBV.Parent = hrp
+	moveState.speedBV = Instance.new("BodyVelocity")
+	moveState.speedBV.MaxForce = Vector3.new(math.huge, 0, math.huge)
+	moveState.speedBV.Velocity = Vector3.new(0, 0, 0)
+	moveState.speedBV.P = 9000
+	moveState.speedBV.Parent = hrp
 
-	speedConnection = RunService.Heartbeat:Connect(function()
+	moveState.speedConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local rt = getRoot()
 			local hum = getHumanoid()
 			if not rt or not hum then return end
-			if not speedBV or not speedBV.Parent then return end
+			if not moveState.speedBV or not moveState.speedBV.Parent then return end
 			local moveDir = hum.MoveDirection
 			if moveDir.Magnitude > 0 then
-				speedBV.Velocity = Vector3.new(moveDir.X, 0, moveDir.Z).Unit * speedValue
+				moveState.speedBV.Velocity = Vector3.new(moveDir.X, 0, moveDir.Z).Unit * moveState.speedValue
 			else
-				speedBV.Velocity = Vector3.new(0, 0, 0)
+				moveState.speedBV.Velocity = Vector3.new(0, 0, 0)
 			end
 		end)
 	end)
@@ -1499,17 +1522,17 @@ local function startSpeedBoost()
 end
 
 local function stopSpeedBoost()
-	if speedConnection then speedConnection:Disconnect() speedConnection = nil end
-	if speedBV then pcall(function() speedBV:Destroy() end) speedBV = nil end
+	if moveState.speedConnection then moveState.speedConnection:Disconnect() moveState.speedConnection = nil end
+	if moveState.speedBV then pcall(function() moveState.speedBV:Destroy() end) moveState.speedBV = nil end
 end
 
 -- ===================== INFINITE JUMP =====================
 local function startInfJump()
-	infJumpActive = true
+	moveState.infJumpActive = true
 end
 
 UserInputService.JumpRequest:Connect(function()
-	if infJumpActive then
+	if moveState.infJumpActive then
 		pcall(function()
 			local hum = getHumanoid()
 			if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
@@ -1518,15 +1541,14 @@ UserInputService.JumpRequest:Connect(function()
 end)
 
 -- ===================== FULLBRIGHT =====================
-local savedLighting = {}
 
 local function enableFullbright()
 	local Lighting = game:GetService("Lighting")
-	savedLighting.Brightness = Lighting.Brightness
-	savedLighting.ClockTime = Lighting.ClockTime
-	savedLighting.FogEnd = Lighting.FogEnd
-	savedLighting.GlobalShadows = Lighting.GlobalShadows
-	savedLighting.OutdoorAmbient = Lighting.OutdoorAmbient
+	espState.savedLighting.Brightness = Lighting.Brightness
+	espState.savedLighting.ClockTime = Lighting.ClockTime
+	espState.savedLighting.FogEnd = Lighting.FogEnd
+	espState.savedLighting.GlobalShadows = Lighting.GlobalShadows
+	espState.savedLighting.OutdoorAmbient = Lighting.OutdoorAmbient
 
 	Lighting.Brightness = 2
 	Lighting.ClockTime = 14
@@ -1538,16 +1560,16 @@ end
 
 local function disableFullbright()
 	local Lighting = game:GetService("Lighting")
-	if savedLighting.Brightness then Lighting.Brightness = savedLighting.Brightness end
-	if savedLighting.ClockTime then Lighting.ClockTime = savedLighting.ClockTime end
-	if savedLighting.FogEnd then Lighting.FogEnd = savedLighting.FogEnd end
-	if savedLighting.GlobalShadows ~= nil then Lighting.GlobalShadows = savedLighting.GlobalShadows end
-	if savedLighting.OutdoorAmbient then Lighting.OutdoorAmbient = savedLighting.OutdoorAmbient end
+	if espState.savedLighting.Brightness then Lighting.Brightness = espState.savedLighting.Brightness end
+	if espState.savedLighting.ClockTime then Lighting.ClockTime = espState.savedLighting.ClockTime end
+	if espState.savedLighting.FogEnd then Lighting.FogEnd = espState.savedLighting.FogEnd end
+	if espState.savedLighting.GlobalShadows ~= nil then Lighting.GlobalShadows = espState.savedLighting.GlobalShadows end
+	if espState.savedLighting.OutdoorAmbient then Lighting.OutdoorAmbient = espState.savedLighting.OutdoorAmbient end
 end
 
 -- ===================== ANTI AFK =====================
 local function startAntiAfk()
-	antiAfkActive = true
+	miscState.antiAfkActive = true
 	pcall(function()
 		if getconnections then
 			for _, conn in pairs(getconnections(LocalPlayer.Idled)) do
@@ -1556,7 +1578,7 @@ local function startAntiAfk()
 		end
 	end)
 	task.spawn(function()
-		while antiAfkActive do
+		while miscState.antiAfkActive do
 			pcall(function()
 				local VirtualUser = game:GetService("VirtualUser")
 				VirtualUser:CaptureController()
@@ -1569,7 +1591,7 @@ local function startAntiAfk()
 end
 
 local function stopAntiAfk()
-	antiAfkActive = false
+	miscState.antiAfkActive = false
 end
 
 -- ===================== ANTI-KICK =====================
@@ -1600,7 +1622,7 @@ local function startAntiKick()
 	end)
 	-- VirtualUser anti-idle as fallback
 	task.spawn(function()
-		while antiKickActive do
+		while miscState.antiKickActive do
 			pcall(function()
 				local VU = game:GetService("VirtualUser")
 				VU:CaptureController()
@@ -1614,7 +1636,7 @@ end
 
 -- ===================== ANTI-RAGDOLL =====================
 local function startAntiRagdoll()
-	antiRagdollConnection = RunService.Heartbeat:Connect(function()
+	miscState.antiRagdollConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local hum = getHumanoid()
 			if hum then
@@ -1628,7 +1650,7 @@ local function startAntiRagdoll()
 end
 
 local function stopAntiRagdoll()
-	if antiRagdollConnection then antiRagdollConnection:Disconnect() antiRagdollConnection = nil end
+	if miscState.antiRagdollConnection then miscState.antiRagdollConnection:Disconnect() miscState.antiRagdollConnection = nil end
 	pcall(function()
 		local hum = getHumanoid()
 		if hum then
@@ -1839,23 +1861,23 @@ local function startVehicleFly()
 		end
 	end)
 
-	vehicleFlyBV = Instance.new("BodyVelocity")
-	vehicleFlyBV.Name = "NBTF_VFly_BV"
-	vehicleFlyBV.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-	vehicleFlyBV.Velocity = Vector3.new(0, 0, 0)
-	vehicleFlyBV.P = 9000
-	vehicleFlyBV.Parent = part
+	moveState.vehicleFlyBV = Instance.new("BodyVelocity")
+	moveState.vehicleFlyBV.Name = "NBTF_VFly_BV"
+	moveState.vehicleFlyBV.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+	moveState.vehicleFlyBV.Velocity = Vector3.new(0, 0, 0)
+	moveState.vehicleFlyBV.P = 9000
+	moveState.vehicleFlyBV.Parent = part
 
-	vehicleFlyBG = Instance.new("BodyGyro")
-	vehicleFlyBG.Name = "NBTF_VFly_BG"
-	vehicleFlyBG.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-	vehicleFlyBG.P = 9000
-	vehicleFlyBG.CFrame = part.CFrame
-	vehicleFlyBG.Parent = part
+	moveState.vehicleFlyBG = Instance.new("BodyGyro")
+	moveState.vehicleFlyBG.Name = "NBTF_VFly_BG"
+	moveState.vehicleFlyBG.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+	moveState.vehicleFlyBG.P = 9000
+	moveState.vehicleFlyBG.CFrame = part.CFrame
+	moveState.vehicleFlyBG.Parent = part
 
-	vehicleFlyConnection = RunService.RenderStepped:Connect(function()
+	moveState.vehicleFlyConnection = RunService.RenderStepped:Connect(function()
 		pcall(function()
-			if not vehicleFlyBV or not vehicleFlyBV.Parent then return end
+			if not moveState.vehicleFlyBV or not moveState.vehicleFlyBV.Parent then return end
 			local moveVec = Vector3.zero
 			local camCF = camera.CFrame
 			if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveVec = moveVec + camCF.LookVector end
@@ -1864,8 +1886,8 @@ local function startVehicleFly()
 			if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveVec = moveVec + camCF.RightVector end
 			if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveVec = moveVec + camCF.UpVector end
 			if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveVec = moveVec - camCF.UpVector end
-			vehicleFlyBV.Velocity = moveVec.Magnitude > 0 and moveVec.Unit * flySpeed or Vector3.zero
-			vehicleFlyBG.CFrame = camCF
+			moveState.vehicleFlyBV.Velocity = moveVec.Magnitude > 0 and moveVec.Unit * moveState.flySpeed or Vector3.zero
+			moveState.vehicleFlyBG.CFrame = camCF
 		end)
 	end)
 
@@ -1873,9 +1895,9 @@ local function startVehicleFly()
 end
 
 local function stopVehicleFly()
-	if vehicleFlyConnection then vehicleFlyConnection:Disconnect() vehicleFlyConnection = nil end
-	if vehicleFlyBV then pcall(function() vehicleFlyBV:Destroy() end) vehicleFlyBV = nil end
-	if vehicleFlyBG then pcall(function() vehicleFlyBG:Destroy() end) vehicleFlyBG = nil end
+	if moveState.vehicleFlyConnection then moveState.vehicleFlyConnection:Disconnect() moveState.vehicleFlyConnection = nil end
+	if moveState.vehicleFlyBV then pcall(function() moveState.vehicleFlyBV:Destroy() end) moveState.vehicleFlyBV = nil end
+	if moveState.vehicleFlyBG then pcall(function() moveState.vehicleFlyBG:Destroy() end) moveState.vehicleFlyBG = nil end
 end
 
 -- ===================== SPECTATE PLAYER =====================
@@ -1884,8 +1906,8 @@ local function spectatePlayer(player)
 		local hum = player.Character:FindFirstChildOfClass("Humanoid")
 		if hum then
 			camera.CameraSubject = hum
-			spectateTarget = player
-			spectateActive = true
+			playerState.spectateTarget = player
+			playerState.spectateActive = true
 			notify("Spectate", "Watching " .. player.DisplayName)
 		end
 	end
@@ -1902,8 +1924,8 @@ local function unspectate()
 			end
 		end
 	end)
-	spectateTarget = nil
-	spectateActive = false
+	playerState.spectateTarget = nil
+	playerState.spectateActive = false
 	notify("Spectate", "Stopped - camera returned to you")
 end
 
@@ -1913,7 +1935,7 @@ local function startNoRecoil()
 	-- Apply to all guns immediately
 	modGuns()
 	-- Keep applying on heartbeat
-	noRecoilConnection = RunService.Heartbeat:Connect(function()
+	combatState.noRecoilConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local char = LocalPlayer.Character
 			if not char then return end
@@ -1935,13 +1957,13 @@ local function startNoRecoil()
 end
 
 local function stopNoRecoil()
-	if noRecoilConnection then noRecoilConnection:Disconnect() noRecoilConnection = nil end
+	if combatState.noRecoilConnection then combatState.noRecoilConnection:Disconnect() combatState.noRecoilConnection = nil end
 end
 
 -- ===================== AUTO FIRE =====================
 -- Automatically fires equipped gun by simulating mouse1 clicks
 local function startAutoFire()
-	autoFireConnection = RunService.Heartbeat:Connect(function()
+	combatState.autoFireConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local char = LocalPlayer.Character
 			if not char then return end
@@ -1956,7 +1978,7 @@ local function startAutoFire()
 end
 
 local function stopAutoFire()
-	if autoFireConnection then autoFireConnection:Disconnect() autoFireConnection = nil end
+	if combatState.autoFireConnection then combatState.autoFireConnection:Disconnect() combatState.autoFireConnection = nil end
 end
 
 -- ===================== GRAVITY =====================
@@ -2034,7 +2056,7 @@ local function killAllPlayers()
 						fireWeaponHit(player, gun)
 					end)
 					if round == 1 then killed = killed + 1 end
-					task.wait(killAllDelay)
+					task.wait(combatState.killAllDelay)
 				end
 			end
 			if not killAllRunning then break end
@@ -2433,7 +2455,7 @@ for i, name in ipairs(tabNames) do
 end
 
 local function setActiveTab(name)
-	activeTab = name
+	uiState.activeTab = name
 	for tabName, frame in pairs(tabFrames) do frame.Visible = tabName == name end
 	for tabName, btn in pairs(tabButtons) do
 		btn.TextColor3 = tabName == name and COLORS.accent or COLORS.textSecondary
@@ -2623,7 +2645,7 @@ do
 
 	createSectionLabel(tab, "Silent Aim (Teleport Bullets)", o())
 	createToggle(tab, "Silent Aim", o(), function(on)
-		silentAimActive = on
+		aimState.silentAimActive = on
 		if on then enableSilentAim() else disableSilentAim() end
 	end)
 	createInfoLabel(tab, "Fires WeaponHit remote at nearest enemy when you shoot", o())
@@ -2640,26 +2662,26 @@ do
 	createSpacer(tab, o())
 
 	createSectionLabel(tab, "Settings", o())
-	createSlider(tab, "FOV Radius", 50, 360, fovRadius, o(), function(val)
-		fovRadius = val
+	createSlider(tab, "FOV Radius", 50, 360, aimState.fovRadius, o(), function(val)
+		aimState.fovRadius = val
 	end)
-	createSlider(tab, "Hit Chance %", 10, 100, hitChance, o(), function(val)
-		hitChance = val
+	createSlider(tab, "Hit Chance %", 10, 100, aimState.hitChance, o(), function(val)
+		aimState.hitChance = val
 	end)
 
 	createSpacer(tab, o())
 
 	createSectionLabel(tab, "Visual Aimbot", o())
 	createToggle(tab, "Aimbot (Right-Click Lock)", o(), function(on)
-		aimbotActive = on
+		aimState.aimbotActive = on
 		if on then startAimbot() else stopAimbot() end
 	end)
 	createToggle(tab, "Aimbot Always-On (No Right-Click)", o(), function(on)
-		aimbotAlwaysOn = on
+		aimState.aimbotAlwaysOn = on
 		if on then notify("Aimbot", "Always-on mode!") end
 	end)
-	createSlider(tab, "Aim Smoothness", 10, 100, math.floor(aimbotSmooth * 100), o(), function(val)
-		aimbotSmooth = val / 100
+	createSlider(tab, "Aim Smoothness", 10, 100, math.floor(aimState.aimbotSmooth * 100), o(), function(val)
+		aimState.aimbotSmooth = val / 100
 	end)
 	createInfoLabel(tab, "Locks camera on nearest enemy. Always-on = no click needed.", o())
 
@@ -2685,7 +2707,7 @@ do
 
 	local function updateWeaponHighlight()
 		for name, btn in pairs(weaponBtns) do
-			if name == (selectedWeapon or "Auto") then
+			if name == (aimState.selectedWeapon or "Auto") then
 				btn.BackgroundColor3 = COLORS.accent
 				btn.TextColor3 = Color3.fromRGB(10, 10, 10)
 			else
@@ -2711,9 +2733,9 @@ do
 		weaponBtns[name] = wb
 		wb.MouseButton1Click:Connect(function()
 			if name == "Auto" then
-				selectedWeapon = nil
+				aimState.selectedWeapon = nil
 			else
-				selectedWeapon = name
+				aimState.selectedWeapon = name
 			end
 			updateWeaponHighlight()
 			notify("Weapon", name == "Auto" and "Auto-detect mode" or "Using: " .. name)
@@ -2730,33 +2752,33 @@ do
 
 	createSectionLabel(tab, "Kill Aura", o())
 	createToggle(tab, "Kill Aura (Auto-Kill Nearby Enemies)", o(), function(on)
-		killAuraActive = on
+		combatState.killAuraActive = on
 		if on then startKillAura() else stopKillAura() end
 	end)
-	createSlider(tab, "Kill Aura Range (studs)", 10, 100, killAuraRange, o(), function(val) killAuraRange = val end)
+	createSlider(tab, "Kill Aura Range (studs)", 10, 100, combatState.killAuraRange, o(), function(val) combatState.killAuraRange = val end)
 	createInfoLabel(tab, "Auto-fires WeaponHit at ALL enemies within range", o())
 
 	createSpacer(tab, o())
 
 	createSectionLabel(tab, "Trigger Bot", o())
 	createToggle(tab, "Trigger Bot (Auto-Fire on Crosshair)", o(), function(on)
-		triggerBotActive = on
+		combatState.triggerBotActive = on
 		if on then startTriggerBot() else stopTriggerBot() end
 	end)
-	createSlider(tab, "Trigger Delay (x100 ms)", 1, 50, math.floor(triggerBotDelay * 100), o(), function(val)
-		triggerBotDelay = val / 100
+	createSlider(tab, "Trigger Delay (x100 ms)", 1, 50, math.floor(combatState.triggerBotDelay * 100), o(), function(val)
+		combatState.triggerBotDelay = val / 100
 	end)
 	createInfoLabel(tab, "Fires when your crosshair is on an enemy player", o())
 
 	createSpacer(tab, o())
 
 	createSectionLabel(tab, "Target Part", o())
-	createButton(tab, "Target: Head (Current: " .. targetPart .. ")", o(), function()
-		targetPart = "Head"
+	createButton(tab, "Target: Head (Current: " .. aimState.targetPart .. ")", o(), function()
+		aimState.targetPart = "Head"
 		notify("Target", "Targeting Head")
 	end)
 	createButton(tab, "Target: Torso (HumanoidRootPart)", o(), function()
-		targetPart = "HumanoidRootPart"
+		aimState.targetPart = "HumanoidRootPart"
 		notify("Target", "Targeting Torso")
 	end)
 	createInfoLabel(tab, "Head = more damage, Torso = easier to hit", o())
@@ -2770,7 +2792,7 @@ do
 
 	createSectionLabel(tab, "Ammo", o())
 	createToggle(tab, "Unlimited Ammo", o(), function(on)
-		infAmmoActive = on
+		combatState.infAmmoActive = on
 		if on then startInfAmmo() else stopInfAmmo() end
 	end)
 	createInfoLabel(tab, "Maxes AmmoCapacity/Reserves/Damage in weapon Configuration", o())
@@ -2783,11 +2805,11 @@ do
 
 	createSectionLabel(tab, "Hitbox", o())
 	createToggle(tab, "Hitbox Expander", o(), function(on)
-		hitboxExpandActive = on
+		combatState.hitboxExpandActive = on
 		if on then startHitboxExpand() else stopHitboxExpand() end
 	end)
-	createSlider(tab, "Hitbox Size", 5, 30, hitboxSize, o(), function(val)
-		hitboxSize = val
+	createSlider(tab, "Hitbox Size", 5, 30, combatState.hitboxSize, o(), function(val)
+		combatState.hitboxSize = val
 	end)
 	createInfoLabel(tab, "Makes enemy HumanoidRootParts larger = easier hits", o())
 
@@ -2797,11 +2819,11 @@ do
 
 	createSectionLabel(tab, "Weapon Mods", o())
 	createToggle(tab, "No Recoil", o(), function(on)
-		noRecoilActive = on
+		combatState.noRecoilActive = on
 		if on then startNoRecoil() else stopNoRecoil() end
 	end)
 	createToggle(tab, "Auto Fire (Hold LMB = Rapid)", o(), function(on)
-		autoFireActive = on
+		combatState.autoFireActive = on
 		if on then startAutoFire() else stopAutoFire() end
 	end)
 	createInfoLabel(tab, "No recoil zeros gun config values. Auto fire spams tool:Activate()", o())
@@ -2810,12 +2832,12 @@ do
 
 	createSectionLabel(tab, "Protection", o())
 	createToggle(tab, "God Mode (Infinite Health)", o(), function(on)
-		godModeActive = on
+		moveState.godModeActive = on
 		if on then startGodMode() else stopGodMode() end
 	end)
 	createInfoLabel(tab, "Heals to max every frame, prevents death states", o())
 	createToggle(tab, "Anti-Ragdoll (No Knockdown)", o(), function(on)
-		antiRagdollActive = on
+		miscState.antiRagdollActive = on
 		if on then startAntiRagdoll() else stopAntiRagdoll() end
 	end)
 	createInfoLabel(tab, "Prevents ragdoll/falling states (lighter than God Mode)", o())
@@ -3231,7 +3253,7 @@ do
 
 	createSectionLabel(tab, "Anti-Aim", o())
 	createToggle(tab, "Anti-Aim (Spin to Dodge)", o(), function(on)
-		antiAimActive = on
+		combatState.antiAimActive = on
 		if on then startAntiAim() else stopAntiAim() end
 	end)
 	createInfoLabel(tab, "Rapidly spins your character to make you harder to hit", o())
@@ -3265,16 +3287,16 @@ do
 
 	createSectionLabel(tab, "Flight", o())
 	createToggle(tab, "Fly (WASD + Space/Shift)", o(), function(on)
-		flyActive = on
+		moveState.flyActive = on
 		if on then startFly() else stopFly() end
 	end)
-	createSlider(tab, "Fly Speed", 10, 300, flySpeed, o(), function(val) flySpeed = val end)
+	createSlider(tab, "Fly Speed", 10, 300, moveState.flySpeed, o(), function(val) moveState.flySpeed = val end)
 
 	createSpacer(tab, o())
 
 	createSectionLabel(tab, "Vehicle Fly", o())
 	createToggle(tab, "Vehicle Fly (Sit in Vehicle First)", o(), function(on)
-		vehicleFlyActive = on
+		moveState.vehicleFlyActive = on
 		if on then startVehicleFly() else stopVehicleFly() end
 	end)
 	createInfoLabel(tab, "Sit in any vehicle/car, then toggle to fly it", o())
@@ -3283,28 +3305,28 @@ do
 
 	createSectionLabel(tab, "Speed", o())
 	createToggle(tab, "Speed Boost", o(), function(on)
-		speedBoostActive = on
+		moveState.speedBoostActive = on
 		if on then startSpeedBoost() else stopSpeedBoost() end
 	end)
-	createSlider(tab, "Speed Value", 20, 300, speedValue, o(), function(val) speedValue = val end)
+	createSlider(tab, "Speed Value", 20, 300, moveState.speedValue, o(), function(val) moveState.speedValue = val end)
 
 	createSpacer(tab, o())
 
 	createSectionLabel(tab, "Other", o())
 	createToggle(tab, "Noclip (Walk Through Walls)", o(), function(on)
-		noclipActive = on
+		moveState.noclipActive = on
 		if on then startNoclip() else stopNoclip() end
 	end)
 	createToggle(tab, "Infinite Jump", o(), function(on)
-		infJumpActive = on
+		moveState.infJumpActive = on
 		if on then notify("Inf Jump", "Active!") end
 	end)
 
 	createSpacer(tab, o())
 
 	createSectionLabel(tab, "World", o())
-	createSlider(tab, "Gravity", 0, 500, math.floor(gravityValue), o(), function(val)
-		gravityValue = val
+	createSlider(tab, "Gravity", 0, 500, math.floor(moveState.gravityValue), o(), function(val)
+		moveState.gravityValue = val
 		setGravity(val)
 	end)
 	createInfoLabel(tab, "Default: 196. Lower = moon gravity. 0 = float.", o())
@@ -3313,11 +3335,11 @@ do
 
 	createSectionLabel(tab, "AFK & Protection", o())
 	createToggle(tab, "Anti-AFK (Prevent Idle Kick)", o(), function(on)
-		antiAfkActive = on
+		miscState.antiAfkActive = on
 		if on then startAntiAfk() else stopAntiAfk() end
 	end)
 	createToggle(tab, "Anti-Kick (Block Server Kicks)", o(), function(on)
-		antiKickActive = on
+		miscState.antiKickActive = on
 		if on then startAntiKick() end
 	end)
 	createInfoLabel(tab, "Disables Idled + hooks Kick method (needs executor support)", o())
@@ -3326,18 +3348,18 @@ do
 
 	createSectionLabel(tab, "Advanced Movement", o())
 	createToggle(tab, "Bunny Hop (Auto-Jump While Moving)", o(), function(on)
-		bunnyHopActive = on
+		moveState.bunnyHopActive = on
 		if on then startBunnyHop() else stopBunnyHop() end
 	end)
 	createButton(tab, "Long Jump (Launch Forward)", o(), function() doLongJump() end)
-	createSlider(tab, "Long Jump Power", 50, 400, longJumpPower, o(), function(val) longJumpPower = val end)
+	createSlider(tab, "Long Jump Power", 50, 400, moveState.longJumpPower, o(), function(val) moveState.longJumpPower = val end)
 	createInfoLabel(tab, "Bunny hop auto-jumps for max speed. Long jump launches you forward.", o())
 
 	createSpacer(tab, o())
 
 	createSectionLabel(tab, "Teleport Tools", o())
 	createButton(tab, "TP Forward", o(), function() tpForward() end)
-	createSlider(tab, "TP Distance (studs)", 10, 200, tpForwardDist, o(), function(val) tpForwardDist = val end)
+	createSlider(tab, "TP Distance (studs)", 10, 200, playerState.tpForwardDist, o(), function(val) playerState.tpForwardDist = val end)
 	createButton(tab, "TP to Mouse Click Position", o(), function() tpToMouse() end)
 	createInfoLabel(tab, "TP Forward moves in facing direction. Mouse TP goes to cursor.", o())
 
@@ -3345,7 +3367,7 @@ do
 
 	createSectionLabel(tab, "Camera", o())
 	createToggle(tab, "Freecam (Detach Camera)", o(), function(on)
-		freecamActive = on
+		playerState.freecamActive = on
 		if on then startFreecam() else stopFreecam() end
 	end)
 	createInfoLabel(tab, "WASD + Space/Shift to move camera freely. Character stays still.", o())
@@ -3370,7 +3392,7 @@ do
 
 	createSectionLabel(tab, "ESP", o())
 	createToggle(tab, "Player ESP (Names/Health/Distance)", o(), function(on)
-		espActive = on
+		espState.espActive = on
 		if on then startESP() else clearESP() end
 	end)
 	createInfoLabel(tab, "Blue = Facility, Red = Rebel. Shows role + weapon.", o())
@@ -3379,12 +3401,12 @@ do
 
 	createSectionLabel(tab, "Lighting", o())
 	createToggle(tab, "Fullbright (Remove Darkness)", o(), function(on)
-		fullbrightActive = on
+		espState.fullbrightActive = on
 		if on then enableFullbright() else disableFullbright() end
 	end)
 	createInfoLabel(tab, "Max brightness, no fog, no shadows", o())
 	createToggle(tab, "No Fog (Remove Fog Only)", o(), function(on)
-		noFogActive = on
+		espState.noFogActive = on
 		if on then enableNoFog() else disableNoFog() end
 	end)
 
@@ -3392,15 +3414,15 @@ do
 
 	createSectionLabel(tab, "Overlays (Requires Drawing API)", o())
 	createToggle(tab, "Tracers (Lines to Enemies)", o(), function(on)
-		tracersActive = on
+		espState.tracersActive = on
 		if on then startTracers() end
 	end)
 	createToggle(tab, "FOV Circle (Show Aim FOV)", o(), function(on)
-		fovCircleActive = on
+		espState.fovCircleActive = on
 		if on then
 			createFOVCircle()
 			task.spawn(function()
-				while fovCircleActive do updateFOVCircle() task.wait(0.03) end
+				while espState.fovCircleActive do updateFOVCircle() task.wait(0.03) end
 				removeFOVCircle()
 			end)
 		else
@@ -3408,7 +3430,7 @@ do
 		end
 	end)
 	createToggle(tab, "Crosshair Overlay", o(), function(on)
-		crosshairActive = on
+		espState.crosshairActive = on
 		if on then createCrosshair() else removeCrosshair() end
 	end)
 	createInfoLabel(tab, "Tracers/FOV/Crosshair need Drawing API (most executors)", o())
@@ -3417,7 +3439,7 @@ do
 
 	createSectionLabel(tab, "Item ESP", o())
 	createToggle(tab, "Item / Weapon ESP (Ground Items)", o(), function(on)
-		itemEspActive = on
+		espState.itemEspActive = on
 		if on then startItemESP() else clearItemESP() end
 	end)
 	createInfoLabel(tab, "Highlights dropped weapons/tools/crates on the ground", o())
@@ -3426,7 +3448,7 @@ do
 
 	createSectionLabel(tab, "Character", o())
 	createToggle(tab, "Invisible (Client-Side)", o(), function(on)
-		invisibleActive = on
+		playerState.invisibleActive = on
 		if on then startInvisible() else stopInvisible() end
 	end)
 	createInfoLabel(tab, "Makes your character invisible locally (others still see you)", o())
@@ -3758,7 +3780,7 @@ do
 							for i = 1, 3 do
 								local ok = fireWeaponHit(player, gun)
 								print("[SX NBTF] Round " .. i .. " fired: " .. tostring(ok))
-								task.wait(killAllDelay)
+								task.wait(combatState.killAllDelay)
 							end
 							notify("Kill", "Fired 3 rounds at " .. player.DisplayName)
 						end)
@@ -3831,7 +3853,7 @@ do
 	task.spawn(function()
 		while task.wait(0.5) do
 			pcall(function()
-				if not silentAimActive and not aimbotActive then
+				if not aimState.silentAimActive and not aimState.aimbotActive then
 					targetInfoLabel.Text = "No target - enable Silent Aim or Aimbot"
 					targetInfoLabel.TextColor3 = COLORS.textSecondary
 					return
@@ -3948,8 +3970,8 @@ do
 		stopAttach()
 		notify("Stopped", "No longer orbiting or following")
 	end)
-	createSlider(tab, "Orbit Radius (studs)", 5, 50, orbitRadius, o(), function(val) orbitRadius = val end)
-	createSlider(tab, "Orbit Speed", 1, 10, orbitSpeed, o(), function(val) orbitSpeed = val end)
+	createSlider(tab, "Orbit Radius (studs)", 5, 50, playerState.orbitRadius, o(), function(val) playerState.orbitRadius = val end)
+	createSlider(tab, "Orbit Speed", 1, 10, playerState.orbitSpeed, o(), function(val) playerState.orbitSpeed = val end)
 	createInfoLabel(tab, "Orbit circles around them. Follow stays behind them.", o())
 
 	refreshOrbitList()
@@ -3963,7 +3985,7 @@ do
 
 	createSectionLabel(tab, "Chat Spy", o())
 	createToggle(tab, "Chat Spy (Log All Chat to F9)", o(), function(on)
-		chatSpyActive = on
+		miscState.chatSpyActive = on
 		if on then startChatSpy() else stopChatSpy() end
 	end)
 	createInfoLabel(tab, "Logs all chat messages to F9 console", o())
@@ -3972,7 +3994,7 @@ do
 
 	createSectionLabel(tab, "Join / Leave Notifications", o())
 	createToggle(tab, "Player Join/Leave Alerts", o(), function(on)
-		joinNotifyActive = on
+		miscState.joinNotifyActive = on
 		if on then startJoinNotify() else stopJoinNotify() end
 	end)
 	createInfoLabel(tab, "Notification + F9 log when players join/leave", o())
@@ -3981,7 +4003,7 @@ do
 
 	createSectionLabel(tab, "Auto Respawn", o())
 	createToggle(tab, "Auto Respawn on Death", o(), function(on)
-		autoRespawnActive = on
+		miscState.autoRespawnActive = on
 		if on then
 			notify("Auto Respawn", "Will auto-respawn when you die")
 		end
@@ -4172,14 +4194,14 @@ do
 
 	createSectionLabel(tab, "Stealth Configuration", o())
 	createInfoLabel(tab, "Adjust cooldowns to balance stealth vs. effectiveness", o())
-	createSlider(tab, "Silent Aim Cooldown (x0.1s)", 1, 20, math.floor(silentAimCooldown * 10), o(), function(val)
-		silentAimCooldown = val / 10
+	createSlider(tab, "Silent Aim Cooldown (x0.1s)", 1, 20, math.floor(aimState.silentAimCooldown * 10), o(), function(val)
+		aimState.silentAimCooldown = val / 10
 	end)
-	createSlider(tab, "Wallbang Cooldown (x0.1s)", 1, 20, math.floor(wallbangCooldown * 10), o(), function(val)
-		wallbangCooldown = val / 10
+	createSlider(tab, "Wallbang Cooldown (x0.1s)", 1, 20, math.floor(aimState.wallbangCooldown * 10), o(), function(val)
+		aimState.wallbangCooldown = val / 10
 	end)
-	createSlider(tab, "Kill All Delay (x0.1s)", 1, 10, math.floor(killAllDelay * 10), o(), function(val)
-		killAllDelay = val / 10
+	createSlider(tab, "Kill All Delay (x0.1s)", 1, 10, math.floor(combatState.killAllDelay * 10), o(), function(val)
+		combatState.killAllDelay = val / 10
 	end)
 
 	createSpacer(tab, o())
@@ -4267,7 +4289,7 @@ do
 		end)
 	end)
 	createToggle(tab, "Auto-Rejoin on Kick", o(), function(on)
-		autoRejoinActive = on
+		miscState.autoRejoinActive = on
 		if on then
 			notify("Auto-Rejoin", "Will rejoin if kicked")
 		end
@@ -4277,7 +4299,7 @@ do
 	-- Setup auto-rejoin hooks
 	pcall(function()
 		game:GetService("GuiService").ErrorMessageChanged:Connect(function(msg)
-			if autoRejoinActive and msg ~= "" then
+			if miscState.autoRejoinActive and msg ~= "" then
 				task.wait(3)
 				pcall(function() TeleportService:Teleport(game.PlaceId, LocalPlayer) end)
 			end
@@ -4346,7 +4368,7 @@ end
 local contentVisible = true
 minimizeBtn.MouseButton1Click:Connect(function()
 	contentVisible = not contentVisible
-	for _, frame in pairs(tabFrames) do frame.Visible = contentVisible and frame == tabFrames[activeTab] end
+	for _, frame in pairs(tabFrames) do frame.Visible = contentVisible and frame == tabFrames[uiState.activeTab] end
 	tabBar.Visible = contentVisible
 	do local curW = mainFrame.AbsoluteSize.X; mainFrame.Size = contentVisible and UDim2.new(0, curW, 0, windowH) or UDim2.new(0, curW, 0, 32) end
 	minimizeBtn.Text = contentVisible and "-" or "+"
@@ -4355,24 +4377,24 @@ end)
 UserInputService.InputBegan:Connect(function(input, processed)
 	if processed then return end
 	if input.KeyCode == Enum.KeyCode.RightShift then
-		windowVisible = not windowVisible
-		mainFrame.Visible = windowVisible
+		uiState.windowVisible = not uiState.windowVisible
+		mainFrame.Visible = uiState.windowVisible
 	end
 end)
 
 -- ===================== RESPAWN HANDLER =====================
 LocalPlayer.CharacterAdded:Connect(function()
 	task.wait(1)
-	if flyActive then stopFly() task.wait(0.3) startFly() end
-	if speedBoostActive then stopSpeedBoost() task.wait(0.3) startSpeedBoost() end
-	if noclipActive then stopNoclip() task.wait(0.3) startNoclip() end
-	if godModeActive then stopGodMode() task.wait(0.3) startGodMode() end
-	if antiRagdollActive then stopAntiRagdoll() task.wait(0.3) startAntiRagdoll() end
-	if infAmmoActive then modGuns() end
-	if noRecoilActive then modGuns() end
-	if bunnyHopActive then stopBunnyHop() task.wait(0.1) startBunnyHop() end
-	if antiAimActive then stopAntiAim() task.wait(0.1) startAntiAim() end
-	if invisibleActive then task.wait(0.5) startInvisible() end
+	if moveState.flyActive then stopFly() task.wait(0.3) startFly() end
+	if moveState.speedBoostActive then stopSpeedBoost() task.wait(0.3) startSpeedBoost() end
+	if moveState.noclipActive then stopNoclip() task.wait(0.3) startNoclip() end
+	if moveState.godModeActive then stopGodMode() task.wait(0.3) startGodMode() end
+	if miscState.antiRagdollActive then stopAntiRagdoll() task.wait(0.3) startAntiRagdoll() end
+	if combatState.infAmmoActive then modGuns() end
+	if combatState.noRecoilActive then modGuns() end
+	if moveState.bunnyHopActive then stopBunnyHop() task.wait(0.1) startBunnyHop() end
+	if combatState.antiAimActive then stopAntiAim() task.wait(0.1) startAntiAim() end
+	if playerState.invisibleActive then task.wait(0.5) startInvisible() end
 end)
 
 -- Setup auto respawn listener
