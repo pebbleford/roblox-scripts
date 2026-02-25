@@ -1,0 +1,42 @@
+Synapse X The Revival - Loadstrings
+=====================================
+
+-- Synapse X Admin Hub (v2.3)
+loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/synapsex.lua"))()
+
+-- RIVALS FPS Hub (v1.4)
+loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/rivals.lua"))()
+
+-- Murder Mystery 2 Hub (v1.1)
+loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/mm2.lua"))()
+
+-- Brookhaven Hub (v1.0)
+loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/brookhaven.lua"))()
+
+-- SharkBite 2 Hub (v1.0)
+loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/sharkbite.lua"))()
+
+-- Nuclear Blast Testing Facility Hub
+loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/nbtf.lua"))()
+
+-- Elected Hub
+loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/elected.lua"))()
+
+-- 99 Nights in the Forest Hub
+loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/99nights.lua"))()
+
+-- Standalone Scripts (not obfuscated)
+-- Spin Fling
+loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/spinfling.lua"))()
+
+-- ESP Loader
+loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/esp.lua"))()
+
+-- Steal a Brainrot
+loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/stealabrainrot.lua"))()
+
+-- Steal a Brainrot Admin
+loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/stealabrainrot-admin.lua"))()
+
+-- Loader
+loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/loader.lua"))()
