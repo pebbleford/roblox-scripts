@@ -64,7 +64,7 @@ local NBTF_ZERO_VALUES = {"RecoilDecay", "RecoilMax", "RecoilMin", "ShotCooldown
 local NBTF_MAX_VALUES = {"AmmoCapacity", "AmmoReserves", "FullMagazineSize", "HitDamage", "MaxDistance"}
 
 -- Find any gun in the player's backpack (respects aimState.selectedWeapon if set)
-local function findGunInBackpack()
+function helpers.findGunInBackpack()
 	-- If a specific weapon is selected, try to find it first
 	if aimState.selectedWeapon then
 		for _, tool in ipairs(LocalPlayer.Backpack:GetChildren()) do
@@ -104,7 +104,7 @@ local function findGunInBackpack()
 end
 
 -- Fire a weapon hit on a target player using the NBTF WeaponHit remote
-local function equipGun(gun)
+function helpers.equipGun(gun)
 	if not gun then return nil end
 	local char = LocalPlayer.Character
 	if not char then return nil end
@@ -129,11 +129,11 @@ local function fireWeaponHit(targetPlayer, gun)
 	if not targetPlayer or not targetPlayer.Character then return false end
 	local head = targetPlayer.Character:FindFirstChild("Head")
 	if not head then return false end
-	if not gun then gun = findGunInBackpack() end
+	if not gun then gun = helpers.findGunInBackpack() end
 	if not gun then return false end
 
 	-- Gun must be equipped for server to accept the hit
-	equipGun(gun)
+	helpers.equipGun(gun)
 
 	-- d=0 and maxDist=0 bypasses server distance checks
 	-- p=zero and t=0 bypasses position/timing validation
@@ -162,7 +162,7 @@ local function fireWeaponHit(targetPlayer, gun)
 end
 
 -- Click simulation fallback
-local function mouse1click()
+function helpers.mouse1click()
 	VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
 	task.wait(0.05)
 	VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
@@ -321,24 +321,28 @@ local uiState = {
 
 -- Connections / refs
 
+local helpers = {}
+local actions = {}
+local uiBuilder = {}
+
 -- ===================== HELPERS =====================
-local function getRoot()
+function helpers.getRoot()
 	local char = LocalPlayer.Character
 	return char and char:FindFirstChild("HumanoidRootPart")
 end
 
-local function getHumanoid()
+function helpers.getHumanoid()
 	local char = LocalPlayer.Character
 	return char and char:FindFirstChildOfClass("Humanoid")
 end
 
-local function notify(title, msg)
+function helpers.notify(title, msg)
 	pcall(function()
 		game:GetService("StarterGui"):SetCore("SendNotification", {Title = title, Text = msg, Duration = 3})
 	end)
 end
 
-local function isEnemy(player)
+function helpers.isEnemy(player)
 	if player == LocalPlayer then return false end
 	if not player.Character then return false end
 	local hum = player.Character:FindFirstChildOfClass("Humanoid")
@@ -350,7 +354,7 @@ local function isEnemy(player)
 	return true
 end
 
-local function isAlive(player)
+function helpers.isAlive(player)
 	if not player or not player.Character then return false end
 	local hum = player.Character:FindFirstChildOfClass("Humanoid")
 	return hum and hum.Health > 0
@@ -358,7 +362,7 @@ end
 
 -- Detect if player is Facility (blue) or Rebel (red)
 -- NBTF uses team names like "Facility", "Rebel", "Government", etc.
-local function getPlayerTeamInfo(player)
+function helpers.getPlayerTeamInfo(player)
 	local teamName = ""
 	local roleName = ""
 	local color = COLORS.rebelColor -- default red
@@ -432,7 +436,7 @@ local function getPlayerTeamInfo(player)
 	return color, displayRole, teamName
 end
 
-local function getTargetPartFromPlayer(player)
+function helpers.getTargetPartFromPlayer(player)
 	if not player.Character then return nil end
 	local part = player.Character:FindFirstChild(aimState.targetPart)
 	if not part then
@@ -442,14 +446,14 @@ local function getTargetPartFromPlayer(player)
 end
 
 -- ===================== FOV / TARGET SELECTION =====================
-local function getClosestPlayerInFOV()
+function helpers.getClosestPlayerInFOV()
 	local closest = nil
 	local closestDist = aimState.fovRadius
 	local mousePos = UserInputService:GetMouseLocation()
 
 	for _, player in ipairs(Players:GetPlayers()) do
-		if isEnemy(player) and isAlive(player) then
-			local part = getTargetPartFromPlayer(player)
+		if helpers.isEnemy(player) and helpers.isAlive(player) then
+			local part = helpers.getTargetPartFromPlayer(player)
 			if part then
 				local screenPos, onScreen = camera:WorldToViewportPoint(part.Position)
 				if onScreen then
@@ -466,15 +470,15 @@ local function getClosestPlayerInFOV()
 	return closest
 end
 
-local function getClosestPlayer3D()
-	local hrp = getRoot()
+function helpers.getClosestPlayer3D()
+	local hrp = helpers.getRoot()
 	if not hrp then return nil end
 	local closest = nil
 	local closestDist = math.huge
 
 	for _, player in ipairs(Players:GetPlayers()) do
-		if isEnemy(player) and isAlive(player) then
-			local part = getTargetPartFromPlayer(player)
+		if helpers.isEnemy(player) and helpers.isAlive(player) then
+			local part = helpers.getTargetPartFromPlayer(player)
 			if part then
 				local dist = (part.Position - hrp.Position).Magnitude
 				if dist < closestDist then
@@ -487,11 +491,11 @@ local function getClosestPlayer3D()
 	return closest
 end
 
-local function calculateChance(percentage)
+function helpers.calculateChance(percentage)
 	return math.random(1, 100) <= percentage
 end
 
-local function getDirection(origin, targetPos)
+function helpers.getDirection(origin, targetPos)
 	return (targetPos - origin).Unit * 1000
 end
 
@@ -501,14 +505,14 @@ local function startKillAura()
 	combatState.killAuraConnection = RunService.Heartbeat:Connect(function()
 		if not combatState.killAuraActive then return end
 		pcall(function()
-			local hrp = getRoot()
+			local hrp = helpers.getRoot()
 			if not hrp then return end
-			local gun = findGunInBackpack()
+			local gun = helpers.findGunInBackpack()
 			if not gun then return end
-			equipGun(gun)
+			helpers.equipGun(gun)
 
 			for _, player in ipairs(Players:GetPlayers()) do
-				if isEnemy(player) and isAlive(player) then
+				if helpers.isEnemy(player) and helpers.isAlive(player) then
 					local head = player.Character and player.Character:FindFirstChild("Head")
 					if head and (head.Position - hrp.Position).Magnitude <= combatState.killAuraRange then
 						fireWeaponHit(player, gun)
@@ -537,11 +541,11 @@ local function startTriggerBot()
 			local model = target:FindFirstAncestorOfClass("Model")
 			if not model then return end
 			local targetPlayer = Players:GetPlayerFromCharacter(model)
-			if not targetPlayer or not isEnemy(targetPlayer) then return end
+			if not targetPlayer or not helpers.isEnemy(targetPlayer) then return end
 
-			local gun = findGunInBackpack()
+			local gun = helpers.findGunInBackpack()
 			if gun then
-				equipGun(gun)
+				helpers.equipGun(gun)
 				fireWeaponHit(targetPlayer, gun)
 			end
 		end)
@@ -559,7 +563,7 @@ local function startAntiAim()
 	combatState.antiAimConnection = RunService.Heartbeat:Connect(function()
 		if not combatState.antiAimActive then return end
 		pcall(function()
-			local hrp = getRoot()
+			local hrp = helpers.getRoot()
 			if hrp then
 				hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(30), 0)
 			end
@@ -577,7 +581,7 @@ local function startBunnyHop()
 	moveState.bunnyHopConnection = RunService.Heartbeat:Connect(function()
 		if not moveState.bunnyHopActive then return end
 		pcall(function()
-			local hum = getHumanoid()
+			local hum = helpers.getHumanoid()
 			if hum and hum.MoveDirection.Magnitude > 0 then
 				if hum.FloorMaterial ~= Enum.Material.Air then
 					hum:ChangeState(Enum.HumanoidStateType.Jumping)
@@ -592,10 +596,10 @@ local function stopBunnyHop()
 end
 
 -- ===================== LONG JUMP =====================
-local function doLongJump()
+function actions.doLongJump()
 	pcall(function()
-		local hrp = getRoot()
-		local hum = getHumanoid()
+		local hrp = helpers.getRoot()
+		local hum = helpers.getHumanoid()
 		if not hrp or not hum then return end
 		hum:ChangeState(Enum.HumanoidStateType.Jumping)
 		task.wait(0.1)
@@ -609,19 +613,19 @@ local function doLongJump()
 end
 
 -- ===================== TP FORWARD =====================
-local function tpForward()
+function actions.tpForward()
 	pcall(function()
-		local hrp = getRoot()
+		local hrp = helpers.getRoot()
 		local char = LocalPlayer.Character
 		if hrp and char then
 			char:PivotTo(hrp.CFrame + hrp.CFrame.LookVector * playerState.tpForwardDist)
-			notify("TP", "Teleported " .. playerState.tpForwardDist .. " studs forward")
+			helpers.notify("TP", "Teleported " .. playerState.tpForwardDist .. " studs forward")
 		end
 	end)
 end
 
 -- ===================== TP TO MOUSE =====================
-local function tpToMouse()
+function actions.tpToMouse()
 	pcall(function()
 		local mouse = LocalPlayer:GetMouse()
 		local char = LocalPlayer.Character
@@ -632,24 +636,24 @@ local function tpToMouse()
 end
 
 -- ===================== SAVE / LOAD POSITION =====================
-local function savePosition(name)
-	local hrp = getRoot()
+function actions.savePosition(name)
+	local hrp = helpers.getRoot()
 	if hrp then
 		playerState.savedPositions[name] = hrp.CFrame
-		notify("Saved", "Position '" .. name .. "' saved!")
+		helpers.notify("Saved", "Position '" .. name .. "' saved!")
 	end
 end
 
-local function loadPosition(name)
+function actions.loadPosition(name)
 	local cf = playerState.savedPositions[name]
 	if cf then
 		local char = LocalPlayer.Character
 		if char then
 			char:PivotTo(cf)
-			notify("Loaded", "Teleported to '" .. name .. "'")
+			helpers.notify("Loaded", "Teleported to '" .. name .. "'")
 		end
 	else
-		notify("Error", "No saved position '" .. name .. "'")
+		helpers.notify("Error", "No saved position '" .. name .. "'")
 	end
 end
 
@@ -667,7 +671,7 @@ local function startInvisible()
 		end
 		local face = char:FindFirstChild("Head") and char.Head:FindFirstChildOfClass("Decal")
 		if face then face.Transparency = 1 end
-		notify("Invisible", "You are now invisible (client-side)")
+		helpers.notify("Invisible", "You are now invisible (client-side)")
 	end)
 end
 
@@ -682,7 +686,7 @@ local function stopInvisible()
 				part.Transparency = 0
 			end
 		end
-		notify("Invisible", "Visibility restored")
+		helpers.notify("Invisible", "Visibility restored")
 	end)
 end
 
@@ -697,9 +701,9 @@ local function updateTracers()
 	if not espState.tracersActive then return end
 	pcall(function()
 		if not Drawing then return end -- Drawing API required
-		local hrp = getRoot()
+		local hrp = helpers.getRoot()
 		for _, player in ipairs(Players:GetPlayers()) do
-			if isEnemy(player) and isAlive(player) then
+			if helpers.isEnemy(player) and helpers.isAlive(player) then
 				local pHRP = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 				if pHRP then
 					local screenPos, onScreen = camera:WorldToViewportPoint(pHRP.Position)
@@ -877,7 +881,7 @@ local function startChatSpy()
 			end)
 		end
 	end)
-	notify("Chat Spy", "Logging all chat to F9")
+	helpers.notify("Chat Spy", "Logging all chat to F9")
 end
 
 local function stopChatSpy()
@@ -890,13 +894,13 @@ local function startJoinNotify()
 	miscState.joinNotifyActive = true
 	local joinConn = Players.PlayerAdded:Connect(function(player)
 		if miscState.joinNotifyActive then
-			notify("Joined", player.DisplayName .. " (@" .. player.Name .. ") joined")
+			helpers.notify("Joined", player.DisplayName .. " (@" .. player.Name .. ") joined")
 			print("[JOIN] " .. player.DisplayName .. " (@" .. player.Name .. ") joined the server")
 		end
 	end)
 	local leaveConn = Players.PlayerRemoving:Connect(function(player)
 		if miscState.joinNotifyActive then
-			notify("Left", player.DisplayName .. " left the server")
+			helpers.notify("Left", player.DisplayName .. " left the server")
 			print("[LEAVE] " .. player.DisplayName .. " (@" .. player.Name .. ") left the server")
 		end
 	end)
@@ -989,7 +993,7 @@ end
 -- ===================== FREECAM =====================
 local function startFreecam()
 	playerState.freecamActive = true
-	local hrp = getRoot()
+	local hrp = helpers.getRoot()
 	playerState.freecamCF = hrp and hrp.CFrame or camera.CFrame
 	camera.CameraType = Enum.CameraType.Scriptable
 
@@ -1051,12 +1055,12 @@ local function enableSilentAim()
 	aimState.silentAimActive = true
 
 	if not WeaponHitRemote then
-		notify("Silent Aim", "WeaponHit remote not found! Waiting for game to load...")
+		helpers.notify("Silent Aim", "WeaponHit remote not found! Waiting for game to load...")
 		pcall(function()
 			WeaponHitRemote = game:GetService("ReplicatedStorage").WeaponsSystem.Network.WeaponHit
 		end)
 		if not WeaponHitRemote then
-			notify("Error", "Could not find WeaponsSystem.Network.WeaponHit")
+			helpers.notify("Error", "Could not find WeaponsSystem.Network.WeaponHit")
 			return
 		end
 	end
@@ -1078,26 +1082,26 @@ local function enableSilentAim()
 			local equippedGun = char:FindFirstChildOfClass("Tool")
 			if not equippedGun then return end
 
-			local target = getClosestPlayerInFOV()
-			if not target then target = getClosestPlayer3D() end
+			local target = helpers.getClosestPlayerInFOV()
+			if not target then target = helpers.getClosestPlayer3D() end
 			if not target or not target.Parent then return end
 
 			local targetPlayer = Players:GetPlayerFromCharacter(target.Parent)
 			if not targetPlayer then return end
-			if not calculateChance(aimState.hitChance) then return end
+			if not helpers.calculateChance(aimState.hitChance) then return end
 
 			fireWeaponHit(targetPlayer, equippedGun)
 			aimState.lastSilentAimFire = now
 		end)
 	end)
 
-	notify("Silent Aim", "Active (stealth mode - " .. aimState.silentAimCooldown .. "s cooldown)")
+	helpers.notify("Silent Aim", "Active (stealth mode - " .. aimState.silentAimCooldown .. "s cooldown)")
 end
 
 local function disableSilentAim()
 	aimState.silentAimActive = false
 	if aimState.silentAimConnection then aimState.silentAimConnection:Disconnect() aimState.silentAimConnection = nil end
-	notify("Silent Aim", "Disabled")
+	helpers.notify("Silent Aim", "Disabled")
 end
 
 -- ===================== WALLBANG (Stealth - single target through walls) =====================
@@ -1119,7 +1123,7 @@ local function enableWallbang()
 			if not equippedGun then return end
 
 			-- Only target the CLOSEST enemy, not all of them
-			local target = getClosestPlayer3D()
+			local target = helpers.getClosestPlayer3D()
 			if not target or not target.Parent then return end
 			local targetPlayer = Players:GetPlayerFromCharacter(target.Parent)
 			if not targetPlayer then return end
@@ -1128,13 +1132,13 @@ local function enableWallbang()
 			aimState.lastWallbangFire = now
 		end)
 	end)
-	notify("Wallbang", "Active (stealth - hits closest enemy through walls)")
+	helpers.notify("Wallbang", "Active (stealth - hits closest enemy through walls)")
 end
 
 local function disableWallbang()
 	aimState.wallbangActive = false
 	if aimState.wallbangConnection then aimState.wallbangConnection:Disconnect() aimState.wallbangConnection = nil end
-	notify("Wallbang", "Disabled")
+	helpers.notify("Wallbang", "Disabled")
 end
 
 -- ===================== AIMBOT (Camera Lock) =====================
@@ -1147,10 +1151,10 @@ local function startAimbot()
 			-- Work in both modes: always-on or hold right-click
 			if not aimState.aimbotAlwaysOn and not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then return end
 
-			local target = getClosestPlayerInFOV()
+			local target = helpers.getClosestPlayerInFOV()
 			if not target then
 				-- Fallback: try 3D closest if FOV finds nothing
-				target = getClosestPlayer3D()
+				target = helpers.getClosestPlayer3D()
 			end
 			if target then
 				local camPos = camera.CFrame.Position
@@ -1164,7 +1168,7 @@ local function startAimbot()
 			end
 		end)
 	end)
-	notify("Aimbot", "Active! Right-click to lock on")
+	helpers.notify("Aimbot", "Active! Right-click to lock on")
 end
 
 local function stopAimbot()
@@ -1182,7 +1186,7 @@ local function updateESP()
 	if not espState.espActive then return end
 
 	for _, player in ipairs(Players:GetPlayers()) do
-		if player ~= LocalPlayer and isAlive(player) then
+		if player ~= LocalPlayer and helpers.isAlive(player) then
 			pcall(function()
 				local char = player.Character
 				local hrp = char:FindFirstChild("HumanoidRootPart")
@@ -1190,7 +1194,7 @@ local function updateESP()
 				if not hrp or not hum then return end
 
 				-- Get team color: Facility = blue, Rebel = red
-				local color, roleName, teamName = getPlayerTeamInfo(player)
+				local color, roleName, teamName = helpers.getPlayerTeamInfo(player)
 
 				-- Highlight with team color
 				if not char:FindFirstChild("NBTF_HL") then
@@ -1207,7 +1211,7 @@ local function updateESP()
 				end
 
 				-- Name + Role + Health + Distance billboard
-				local myRoot = getRoot()
+				local myRoot = helpers.getRoot()
 				local dist = myRoot and math.floor((hrp.Position - myRoot.Position).Magnitude) or 0
 				local healthPct = math.floor((hum.Health / hum.MaxHealth) * 100)
 
@@ -1292,12 +1296,12 @@ local function startESP()
 	task.spawn(function()
 		while espState.espActive do updateESP() task.wait(1.5) end
 	end)
-	notify("ESP", "Player ESP active!")
+	helpers.notify("ESP", "Player ESP active!")
 end
 
 -- ===================== UNLIMITED AMMO (NBTF-Specific) =====================
 -- NBTF weapons store ammo in tool.Configuration (AmmoCapacity, AmmoReserves, etc.)
-local function modGuns()
+function actions.modGuns()
 	pcall(function()
 		for _, tool in ipairs(LocalPlayer.Backpack:GetChildren()) do
 			if tool:IsA("Tool") then
@@ -1344,7 +1348,7 @@ end
 
 local function startInfAmmo()
 	-- Mod guns once immediately
-	modGuns()
+	actions.modGuns()
 	-- Keep modding on heartbeat (in case guns reset)
 	combatState.ammoConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
@@ -1364,7 +1368,7 @@ local function startInfAmmo()
 			end
 		end)
 	end)
-	notify("Ammo", "Unlimited ammo + max damage active!")
+	helpers.notify("Ammo", "Unlimited ammo + max damage active!")
 end
 
 local function stopInfAmmo()
@@ -1376,7 +1380,7 @@ local function startHitboxExpand()
 	combatState.hitboxConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			for _, player in ipairs(Players:GetPlayers()) do
-				if player ~= LocalPlayer and isAlive(player) then
+				if player ~= LocalPlayer and helpers.isAlive(player) then
 					local hrp = player.Character:FindFirstChild("HumanoidRootPart")
 					if hrp then
 						hrp.Size = Vector3.new(combatState.hitboxSize, combatState.hitboxSize, combatState.hitboxSize)
@@ -1386,7 +1390,7 @@ local function startHitboxExpand()
 			end
 		end)
 	end)
-	notify("Hitbox", "Enemy hitboxes expanded!")
+	helpers.notify("Hitbox", "Enemy hitboxes expanded!")
 end
 
 local function stopHitboxExpand()
@@ -1408,7 +1412,7 @@ end
 local function startGodMode()
 	moveState.godModeConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
-			local hum = getHumanoid()
+			local hum = helpers.getHumanoid()
 			if hum then
 				hum.Health = hum.MaxHealth
 				hum:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
@@ -1417,13 +1421,13 @@ local function startGodMode()
 			end
 		end)
 	end)
-	notify("God Mode", "Invincible!")
+	helpers.notify("God Mode", "Invincible!")
 end
 
 local function stopGodMode()
 	if moveState.godModeConnection then moveState.godModeConnection:Disconnect() moveState.godModeConnection = nil end
 	pcall(function()
-		local hum = getHumanoid()
+		local hum = helpers.getHumanoid()
 		if hum then
 			hum:SetStateEnabled(Enum.HumanoidStateType.Dead, true)
 			hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
@@ -1434,7 +1438,7 @@ end
 
 -- ===================== FLY =====================
 local function startFly()
-	local hrp = getRoot()
+	local hrp = helpers.getRoot()
 	if not hrp then return end
 
 	moveState.flyBV = Instance.new("BodyVelocity")
@@ -1464,7 +1468,7 @@ local function startFly()
 			moveState.flyBG.CFrame = camCF
 		end)
 	end)
-	notify("Fly", "Flying! WASD + Space/Shift")
+	helpers.notify("Fly", "Flying! WASD + Space/Shift")
 end
 
 local function stopFly()
@@ -1486,7 +1490,7 @@ local function startNoclip()
 			end
 		end)
 	end)
-	notify("Noclip", "Walk through walls!")
+	helpers.notify("Noclip", "Walk through walls!")
 end
 
 local function stopNoclip()
@@ -1495,7 +1499,7 @@ end
 
 -- ===================== SPEED BOOST =====================
 local function startSpeedBoost()
-	local hrp = getRoot()
+	local hrp = helpers.getRoot()
 	if not hrp then return end
 
 	moveState.speedBV = Instance.new("BodyVelocity")
@@ -1506,8 +1510,8 @@ local function startSpeedBoost()
 
 	moveState.speedConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
-			local rt = getRoot()
-			local hum = getHumanoid()
+			local rt = helpers.getRoot()
+			local hum = helpers.getHumanoid()
 			if not rt or not hum then return end
 			if not moveState.speedBV or not moveState.speedBV.Parent then return end
 			local moveDir = hum.MoveDirection
@@ -1518,7 +1522,7 @@ local function startSpeedBoost()
 			end
 		end)
 	end)
-	notify("Speed", "Speed boost active!")
+	helpers.notify("Speed", "Speed boost active!")
 end
 
 local function stopSpeedBoost()
@@ -1534,7 +1538,7 @@ end
 UserInputService.JumpRequest:Connect(function()
 	if moveState.infJumpActive then
 		pcall(function()
-			local hum = getHumanoid()
+			local hum = helpers.getHumanoid()
 			if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
 		end)
 	end
@@ -1555,7 +1559,7 @@ local function enableFullbright()
 	Lighting.FogEnd = 100000
 	Lighting.GlobalShadows = false
 	Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
-	notify("Fullbright", "Full visibility!")
+	helpers.notify("Fullbright", "Full visibility!")
 end
 
 local function disableFullbright()
@@ -1587,7 +1591,7 @@ local function startAntiAfk()
 			task.wait(300)
 		end
 	end)
-	notify("Anti-AFK", "AFK prevention active!")
+	helpers.notify("Anti-AFK", "AFK prevention active!")
 end
 
 local function stopAntiAfk()
@@ -1631,14 +1635,14 @@ local function startAntiKick()
 			task.wait(60)
 		end
 	end)
-	notify("Anti-Kick", "Kick protection active!")
+	helpers.notify("Anti-Kick", "Kick protection active!")
 end
 
 -- ===================== ANTI-RAGDOLL =====================
 local function startAntiRagdoll()
 	miscState.antiRagdollConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
-			local hum = getHumanoid()
+			local hum = helpers.getHumanoid()
 			if hum then
 				hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
 				hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
@@ -1646,13 +1650,13 @@ local function startAntiRagdoll()
 			end
 		end)
 	end)
-	notify("Anti-Ragdoll", "Ragdoll prevention active!")
+	helpers.notify("Anti-Ragdoll", "Ragdoll prevention active!")
 end
 
 local function stopAntiRagdoll()
 	if miscState.antiRagdollConnection then miscState.antiRagdollConnection:Disconnect() miscState.antiRagdollConnection = nil end
 	pcall(function()
-		local hum = getHumanoid()
+		local hum = helpers.getHumanoid()
 		if hum then
 			hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
 			hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
@@ -1662,7 +1666,7 @@ local function stopAntiRagdoll()
 end
 
 -- ===================== CHAT MESSAGE SENDER =====================
-local function sendChatMessage(msg)
+function helpers.sendChatMessage(msg)
 	if not msg or msg == "" then return end
 	-- Method 1: TextChatService (modern)
 	pcall(function()
@@ -1689,7 +1693,7 @@ end
 -- The real GUI requires Council Executive/Facility Director or Raid Leader/Warlord/Overseer
 -- and is NEVER replicated to non-authorized players, so we build our own
 
-local function showCustomAnnouncement(text, protocol, duration)
+function actions.showCustomAnnouncement(text, protocol, duration)
 	duration = duration or 8
 	protocol = protocol or "alert" -- alert, lockdown, core, normal
 
@@ -1707,7 +1711,7 @@ local function showCustomAnnouncement(text, protocol, duration)
 	if not announceGui.Parent then announceGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
 	-- Get team info for styling
-	local teamColor, roleName, teamName = getPlayerTeamInfo(LocalPlayer)
+	local teamColor, roleName, teamName = helpers.getPlayerTeamInfo(LocalPlayer)
 	local isRebel = teamName:lower():find("rebel") or teamName:lower():find("rebellion")
 
 	-- Protocol colors
@@ -1819,7 +1823,7 @@ end
 -- ===================== VEHICLE / CAR FLY =====================
 -- Finds VehicleSeat you're sitting in, applies BodyVelocity + BodyGyro to the vehicle
 -- Works with any vehicle in any game
-local function getVehicle()
+function actions.getVehicle()
 	local char = LocalPlayer.Character
 	if not char then return nil, nil end
 	local hum = char:FindFirstChildOfClass("Humanoid")
@@ -1835,9 +1839,9 @@ local function getVehicle()
 end
 
 local function startVehicleFly()
-	local vehicle, part = getVehicle()
+	local vehicle, part = actions.getVehicle()
 	if not part then
-		notify("Vehicle Fly", "You must be sitting in a vehicle!")
+		helpers.notify("Vehicle Fly", "You must be sitting in a vehicle!")
 		return
 	end
 
@@ -1891,7 +1895,7 @@ local function startVehicleFly()
 		end)
 	end)
 
-	notify("Vehicle Fly", "Flying with vehicle! WASD + Space/Shift")
+	helpers.notify("Vehicle Fly", "Flying with vehicle! WASD + Space/Shift")
 end
 
 local function stopVehicleFly()
@@ -1901,19 +1905,19 @@ local function stopVehicleFly()
 end
 
 -- ===================== SPECTATE PLAYER =====================
-local function spectatePlayer(player)
+function actions.spectatePlayer(player)
 	if player and player.Character then
 		local hum = player.Character:FindFirstChildOfClass("Humanoid")
 		if hum then
 			camera.CameraSubject = hum
 			playerState.spectateTarget = player
 			playerState.spectateActive = true
-			notify("Spectate", "Watching " .. player.DisplayName)
+			helpers.notify("Spectate", "Watching " .. player.DisplayName)
 		end
 	end
 end
 
-local function unspectate()
+function actions.unspectate()
 	pcall(function()
 		local char = LocalPlayer.Character
 		if char then
@@ -1926,14 +1930,14 @@ local function unspectate()
 	end)
 	playerState.spectateTarget = nil
 	playerState.spectateActive = false
-	notify("Spectate", "Stopped - camera returned to you")
+	helpers.notify("Spectate", "Stopped - camera returned to you")
 end
 
 -- ===================== NO RECOIL (NBTF-Specific) =====================
 -- Sets RecoilDecay/RecoilMax/RecoilMin/MaxSpread/MinSpread to 0 in weapon Configuration
 local function startNoRecoil()
 	-- Apply to all guns immediately
-	modGuns()
+	actions.modGuns()
 	-- Keep applying on heartbeat
 	combatState.noRecoilConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
@@ -1953,7 +1957,7 @@ local function startNoRecoil()
 			end
 		end)
 	end)
-	notify("No Recoil", "Zero recoil + zero spread!")
+	helpers.notify("No Recoil", "Zero recoil + zero spread!")
 end
 
 local function stopNoRecoil()
@@ -1974,7 +1978,7 @@ local function startAutoFire()
 			end
 		end)
 	end)
-	notify("Auto Fire", "Hold left click for rapid fire!")
+	helpers.notify("Auto Fire", "Hold left click for rapid fire!")
 end
 
 local function stopAutoFire()
@@ -1982,18 +1986,18 @@ local function stopAutoFire()
 end
 
 -- ===================== GRAVITY =====================
-local function setGravity(val)
+function actions.setGravity(val)
 	workspace.Gravity = val
 end
 
 -- ===================== BRING ALL PLAYERS =====================
 -- Teleports all enemy players to your position
-local function bringAllPlayers()
-	local hrp = getRoot()
-	if not hrp then notify("Error", "No character") return end
+function actions.bringAllPlayers()
+	local hrp = helpers.getRoot()
+	if not hrp then helpers.notify("Error", "No character") return end
 	local count = 0
 	for _, player in ipairs(Players:GetPlayers()) do
-		if player ~= LocalPlayer and isAlive(player) then
+		if player ~= LocalPlayer and helpers.isAlive(player) then
 			pcall(function()
 				local theirHRP = player.Character:FindFirstChild("HumanoidRootPart")
 				if theirHRP then
@@ -2003,7 +2007,7 @@ local function bringAllPlayers()
 			end)
 		end
 	end
-	notify("Bring All", "Brought " .. count .. " players!")
+	helpers.notify("Bring All", "Brought " .. count .. " players!")
 end
 
 -- ===================== KILL ALL (Stealth - Delayed WeaponHit) =====================
@@ -2011,19 +2015,19 @@ end
 -- Uses only ONE gun, 3 rounds per player, 0.3s between each fire
 local killAllRunning = false
 
-local function killAllPlayers()
+function actions.killAllPlayers()
 	if not WeaponHitRemote then
-		notify("Error", "WeaponHit remote not found!")
+		helpers.notify("Error", "WeaponHit remote not found!")
 		return
 	end
 	if killAllRunning then
-		notify("Kill All", "Already running! Wait for it to finish.")
+		helpers.notify("Kill All", "Already running! Wait for it to finish.")
 		return
 	end
 
 	task.spawn(function()
 		killAllRunning = true
-		local gun = findGunInBackpack()
+		local gun = helpers.findGunInBackpack()
 		if not gun then
 			-- Try equipped tool
 			local char = LocalPlayer.Character
@@ -2032,7 +2036,7 @@ local function killAllPlayers()
 			end
 		end
 		if not gun then
-			notify("Error", "No gun found! Equip a weapon first.")
+			helpers.notify("Error", "No gun found! Equip a weapon first.")
 			killAllRunning = false
 			return
 		end
@@ -2040,18 +2044,18 @@ local function killAllPlayers()
 		local killed = 0
 		local targets = {}
 		for _, player in ipairs(Players:GetPlayers()) do
-			if player ~= LocalPlayer and isAlive(player) then
+			if player ~= LocalPlayer and helpers.isAlive(player) then
 				table.insert(targets, player)
 			end
 		end
 
-		notify("Kill All", "Targeting " .. #targets .. " players (stealth mode)...")
+		helpers.notify("Kill All", "Targeting " .. #targets .. " players (stealth mode)...")
 
 		-- 3 rounds per target, configurable delay between each fire
 		for round = 1, 3 do
 			for _, player in ipairs(targets) do
 				if not killAllRunning then break end
-				if isAlive(player) then
+				if helpers.isAlive(player) then
 					pcall(function()
 						fireWeaponHit(player, gun)
 					end)
@@ -2064,15 +2068,15 @@ local function killAllPlayers()
 		end
 
 		killAllRunning = false
-		notify("Kill All", "Done! Fired at " .. killed .. " players (3 rounds each)")
+		helpers.notify("Kill All", "Done! Fired at " .. killed .. " players (3 rounds each)")
 	end)
 end
 
 -- ===================== FREEZE ALL PLAYERS =====================
-local function freezeAllPlayers()
+function actions.freezeAllPlayers()
 	local count = 0
 	for _, player in ipairs(Players:GetPlayers()) do
-		if player ~= LocalPlayer and isAlive(player) then
+		if player ~= LocalPlayer and helpers.isAlive(player) then
 			pcall(function()
 				local hrp = player.Character:FindFirstChild("HumanoidRootPart")
 				if hrp then
@@ -2082,10 +2086,10 @@ local function freezeAllPlayers()
 			end)
 		end
 	end
-	notify("Freeze", "Froze " .. count .. " players!")
+	helpers.notify("Freeze", "Froze " .. count .. " players!")
 end
 
-local function unfreezeAllPlayers()
+function actions.unfreezeAllPlayers()
 	local count = 0
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player ~= LocalPlayer and player.Character then
@@ -2098,11 +2102,11 @@ local function unfreezeAllPlayers()
 			end)
 		end
 	end
-	notify("Unfreeze", "Unfroze " .. count .. " players!")
+	helpers.notify("Unfreeze", "Unfroze " .. count .. " players!")
 end
 
 -- ===================== TELEPORT TO PLAYER =====================
-local function teleportToPlayer(playerName)
+function actions.teleportToPlayer(playerName)
 	local target = nil
 	for _, p in ipairs(Players:GetPlayers()) do
 		if p.Name:lower():find(playerName:lower()) or p.DisplayName:lower():find(playerName:lower()) then
@@ -2114,10 +2118,10 @@ local function teleportToPlayer(playerName)
 		local char = LocalPlayer.Character
 		if char then
 			char:PivotTo(target.Character.HumanoidRootPart.CFrame + Vector3.new(0, 5, 0))
-			notify("Teleport", "Teleported to " .. target.DisplayName)
+			helpers.notify("Teleport", "Teleported to " .. target.DisplayName)
 		end
 	else
-		notify("Error", "Player not found or dead")
+		helpers.notify("Error", "Player not found or dead")
 	end
 end
 
@@ -2162,7 +2166,7 @@ local NBTF_SEARCH_NAMES = {
 }
 
 -- Find a part/model in workspace by name - only checks direct children and 2 levels deep
-local function findLocationByName(searchName)
+function actions.findLocationByName(searchName)
 	local best = nil
 	local searchLower = searchName:lower()
 
@@ -2195,7 +2199,7 @@ local function findLocationByName(searchName)
 end
 
 -- Get position from a found object (small offset so you don't clip into floor)
-local function getLocationPosition(obj)
+function actions.getLocationPosition(obj)
 	if obj:IsA("Model") then
 		local primary = obj.PrimaryPart
 		if primary then return primary.Position + Vector3.new(0, 3, 0) end
@@ -2209,15 +2213,15 @@ end
 
 -- Scan workspace and build a list of all found teleportable locations
 -- Only checks top-level + 1 level deep to avoid timeout
-local function scanLocations()
+function actions.scanLocations()
 	local found = {}
 	local seen = {} -- avoid duplicates
 
 	for _, searchName in ipairs(NBTF_SEARCH_NAMES) do
-		local obj = findLocationByName(searchName)
+		local obj = actions.findLocationByName(searchName)
 		if obj and not seen[obj] then
 			seen[obj] = true
-			local pos = getLocationPosition(obj)
+			local pos = actions.getLocationPosition(obj)
 			if pos then
 				table.insert(found, {name = obj.Name, pos = pos, obj = obj})
 			end
@@ -2245,7 +2249,7 @@ screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 pcall(function() screenGui.Parent = game:GetService("CoreGui") end)
 if not screenGui.Parent then screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
-local function addCorner(inst, radius)
+function uiBuilder.addCorner(inst, radius)
 	local c = Instance.new("UICorner")
 	c.CornerRadius = UDim.new(0, radius or 6)
 	c.Parent = inst
@@ -2275,7 +2279,7 @@ mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
 mainFrame.Draggable = true
 mainFrame.Parent = screenGui
-addCorner(mainFrame, 8)
+uiBuilder.addCorner(mainFrame, 8)
 
 local borderStroke = Instance.new("UIStroke")
 borderStroke.Color = COLORS.border
@@ -2352,7 +2356,7 @@ titleBar.Size = UDim2.new(1, 0, 0, 30)
 titleBar.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 titleBar.BorderSizePixel = 0
 titleBar.Parent = mainFrame
-addCorner(titleBar, 8)
+uiBuilder.addCorner(titleBar, 8)
 
 local titleFix = Instance.new("Frame")
 titleFix.Size = UDim2.new(1, 0, 0, 10)
@@ -2454,7 +2458,7 @@ for i, name in ipairs(tabNames) do
 	pad.Parent = content
 end
 
-local function setActiveTab(name)
+function uiBuilder.setActiveTab(name)
 	uiState.activeTab = name
 	for tabName, frame in pairs(tabFrames) do frame.Visible = tabName == name end
 	for tabName, btn in pairs(tabButtons) do
@@ -2462,10 +2466,10 @@ local function setActiveTab(name)
 		btn.Font = tabName == name and Enum.Font.GothamBold or Enum.Font.GothamMedium
 	end
 end
-for name, btn in pairs(tabButtons) do btn.MouseButton1Click:Connect(function() setActiveTab(name) end) end
+for name, btn in pairs(tabButtons) do btn.MouseButton1Click:Connect(function() uiBuilder.setActiveTab(name) end) end
 
 -- ===================== UI BUILDERS =====================
-local function createSectionLabel(parent, text, order)
+function uiBuilder.createSectionLabel(parent, text, order)
 	local lbl = Instance.new("TextLabel")
 	lbl.Size = UDim2.new(1, 0, 0, 22)
 	lbl.BackgroundTransparency = 1
@@ -2478,7 +2482,7 @@ local function createSectionLabel(parent, text, order)
 	lbl.Parent = parent
 end
 
-local function createInfoLabel(parent, text, order)
+function uiBuilder.createInfoLabel(parent, text, order)
 	local lbl = Instance.new("TextLabel")
 	lbl.Size = UDim2.new(1, 0, 0, 16)
 	lbl.BackgroundTransparency = 1
@@ -2491,14 +2495,14 @@ local function createInfoLabel(parent, text, order)
 	lbl.Parent = parent
 end
 
-local function createToggle(parent, text, order, callback)
+function uiBuilder.createToggle(parent, text, order, callback)
 	local row = Instance.new("Frame")
 	row.Size = UDim2.new(1, 0, 0, 28)
 	row.BackgroundColor3 = COLORS.panel
 	row.BorderSizePixel = 0
 	row.LayoutOrder = order or 0
 	row.Parent = parent
-	addCorner(row, 5)
+	uiBuilder.addCorner(row, 5)
 
 	local lbl = Instance.new("TextLabel")
 	lbl.Size = UDim2.new(1, -60, 1, 0)
@@ -2517,7 +2521,7 @@ local function createToggle(parent, text, order, callback)
 	toggleFrame.BackgroundColor3 = COLORS.toggleOff
 	toggleFrame.BorderSizePixel = 0
 	toggleFrame.Parent = row
-	addCorner(toggleFrame, 9)
+	uiBuilder.addCorner(toggleFrame, 9)
 
 	local circle = Instance.new("Frame")
 	circle.Size = UDim2.new(0, 14, 0, 14)
@@ -2525,7 +2529,7 @@ local function createToggle(parent, text, order, callback)
 	circle.BackgroundColor3 = COLORS.textPrimary
 	circle.BorderSizePixel = 0
 	circle.Parent = toggleFrame
-	addCorner(circle, 7)
+	uiBuilder.addCorner(circle, 7)
 
 	local isOn = false
 	local btn = Instance.new("TextButton")
@@ -2542,7 +2546,7 @@ local function createToggle(parent, text, order, callback)
 	end)
 end
 
-local function createButton(parent, text, order, callback)
+function uiBuilder.createButton(parent, text, order, callback)
 	local btn = Instance.new("TextButton")
 	btn.Size = UDim2.new(1, 0, 0, 30)
 	btn.BackgroundColor3 = COLORS.accent
@@ -2553,21 +2557,21 @@ local function createButton(parent, text, order, callback)
 	btn.TextSize = 12
 	btn.LayoutOrder = order or 0
 	btn.Parent = parent
-	addCorner(btn, 5)
+	uiBuilder.addCorner(btn, 5)
 	btn.MouseEnter:Connect(function() btn.BackgroundColor3 = COLORS.accentHover end)
 	btn.MouseLeave:Connect(function() btn.BackgroundColor3 = COLORS.accent end)
 	btn.MouseButton1Click:Connect(function() if callback then callback() end end)
 	return btn
 end
 
-local function createSlider(parent, text, min, max, default, order, callback)
+function uiBuilder.createSlider(parent, text, min, max, default, order, callback)
 	local container = Instance.new("Frame")
 	container.Size = UDim2.new(1, 0, 0, 38)
 	container.BackgroundColor3 = COLORS.panel
 	container.BorderSizePixel = 0
 	container.LayoutOrder = order or 0
 	container.Parent = parent
-	addCorner(container, 5)
+	uiBuilder.addCorner(container, 5)
 
 	local lbl = Instance.new("TextLabel")
 	lbl.Size = UDim2.new(0.5, -10, 0, 16)
@@ -2597,14 +2601,14 @@ local function createSlider(parent, text, min, max, default, order, callback)
 	track.BackgroundColor3 = COLORS.border
 	track.BorderSizePixel = 0
 	track.Parent = container
-	addCorner(track, 3)
+	uiBuilder.addCorner(track, 3)
 
 	local fill = Instance.new("Frame")
 	fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
 	fill.BackgroundColor3 = COLORS.accent
 	fill.BorderSizePixel = 0
 	fill.Parent = track
-	addCorner(fill, 3)
+	uiBuilder.addCorner(fill, 3)
 
 	local sliderBtn = Instance.new("TextButton")
 	sliderBtn.Size = UDim2.new(1, 0, 0, 18)
@@ -2629,7 +2633,7 @@ local function createSlider(parent, text, min, max, default, order, callback)
 	end)
 end
 
-local function createSpacer(parent, order)
+function uiBuilder.createSpacer(parent, order)
 	local s = Instance.new("Frame")
 	s.Size = UDim2.new(1, 0, 0, 6)
 	s.BackgroundTransparency = 1
@@ -2643,52 +2647,52 @@ do
 	local n = 0
 	local function o() n = n + 1 return n end
 
-	createSectionLabel(tab, "Silent Aim (Teleport Bullets)", o())
-	createToggle(tab, "Silent Aim", o(), function(on)
+	uiBuilder.createSectionLabel(tab, "Silent Aim (Teleport Bullets)", o())
+	uiBuilder.createToggle(tab, "Silent Aim", o(), function(on)
 		aimState.silentAimActive = on
 		if on then enableSilentAim() else disableSilentAim() end
 	end)
-	createInfoLabel(tab, "Fires WeaponHit remote at nearest enemy when you shoot", o())
-	createInfoLabel(tab, "Uses actual NBTF WeaponsSystem - no hookmetamethod needed!", o())
+	uiBuilder.createInfoLabel(tab, "Fires WeaponHit remote at nearest enemy when you shoot", o())
+	uiBuilder.createInfoLabel(tab, "Uses actual NBTF WeaponsSystem - no hookmetamethod needed!", o())
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Wallbang (Shoot Through Walls)", o())
-	createToggle(tab, "Wallbang", o(), function(on)
+	uiBuilder.createSectionLabel(tab, "Wallbang (Shoot Through Walls)", o())
+	uiBuilder.createToggle(tab, "Wallbang", o(), function(on)
 		if on then enableWallbang() else disableWallbang() end
 	end)
-	createInfoLabel(tab, "Fires WeaponHit with d=0/maxDist=0 - hits through any wall", o())
+	uiBuilder.createInfoLabel(tab, "Fires WeaponHit with d=0/maxDist=0 - hits through any wall", o())
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Settings", o())
-	createSlider(tab, "FOV Radius", 50, 360, aimState.fovRadius, o(), function(val)
+	uiBuilder.createSectionLabel(tab, "Settings", o())
+	uiBuilder.createSlider(tab, "FOV Radius", 50, 360, aimState.fovRadius, o(), function(val)
 		aimState.fovRadius = val
 	end)
-	createSlider(tab, "Hit Chance %", 10, 100, aimState.hitChance, o(), function(val)
+	uiBuilder.createSlider(tab, "Hit Chance %", 10, 100, aimState.hitChance, o(), function(val)
 		aimState.hitChance = val
 	end)
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Visual Aimbot", o())
-	createToggle(tab, "Aimbot (Right-Click Lock)", o(), function(on)
+	uiBuilder.createSectionLabel(tab, "Visual Aimbot", o())
+	uiBuilder.createToggle(tab, "Aimbot (Right-Click Lock)", o(), function(on)
 		aimState.aimbotActive = on
 		if on then startAimbot() else stopAimbot() end
 	end)
-	createToggle(tab, "Aimbot Always-On (No Right-Click)", o(), function(on)
+	uiBuilder.createToggle(tab, "Aimbot Always-On (No Right-Click)", o(), function(on)
 		aimState.aimbotAlwaysOn = on
-		if on then notify("Aimbot", "Always-on mode!") end
+		if on then helpers.notify("Aimbot", "Always-on mode!") end
 	end)
-	createSlider(tab, "Aim Smoothness", 10, 100, math.floor(aimState.aimbotSmooth * 100), o(), function(val)
+	uiBuilder.createSlider(tab, "Aim Smoothness", 10, 100, math.floor(aimState.aimbotSmooth * 100), o(), function(val)
 		aimState.aimbotSmooth = val / 100
 	end)
-	createInfoLabel(tab, "Locks camera on nearest enemy. Always-on = no click needed.", o())
+	uiBuilder.createInfoLabel(tab, "Locks camera on nearest enemy. Always-on = no click needed.", o())
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Weapon Selector", o())
-	createInfoLabel(tab, "Choose which gun silent aim/wallbang uses (Auto = first found)", o())
+	uiBuilder.createSectionLabel(tab, "Weapon Selector", o())
+	uiBuilder.createInfoLabel(tab, "Choose which gun silent aim/wallbang uses (Auto = first found)", o())
 
 	local weaponBtns = {}
 	local weaponListFrame = Instance.new("Frame")
@@ -2729,7 +2733,7 @@ do
 		wb.TextTruncate = Enum.TextTruncate.AtEnd
 		wb.LayoutOrder = order
 		wb.Parent = weaponListFrame
-		addCorner(wb, 4)
+		uiBuilder.addCorner(wb, 4)
 		weaponBtns[name] = wb
 		wb.MouseButton1Click:Connect(function()
 			if name == "Auto" then
@@ -2738,7 +2742,7 @@ do
 				aimState.selectedWeapon = name
 			end
 			updateWeaponHighlight()
-			notify("Weapon", name == "Auto" and "Auto-detect mode" or "Using: " .. name)
+			helpers.notify("Weapon", name == "Auto" and "Auto-detect mode" or "Using: " .. name)
 		end)
 	end
 
@@ -2748,40 +2752,40 @@ do
 	end
 	updateWeaponHighlight()
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Kill Aura", o())
-	createToggle(tab, "Kill Aura (Auto-Kill Nearby Enemies)", o(), function(on)
+	uiBuilder.createSectionLabel(tab, "Kill Aura", o())
+	uiBuilder.createToggle(tab, "Kill Aura (Auto-Kill Nearby Enemies)", o(), function(on)
 		combatState.killAuraActive = on
 		if on then startKillAura() else stopKillAura() end
 	end)
-	createSlider(tab, "Kill Aura Range (studs)", 10, 100, combatState.killAuraRange, o(), function(val) combatState.killAuraRange = val end)
-	createInfoLabel(tab, "Auto-fires WeaponHit at ALL enemies within range", o())
+	uiBuilder.createSlider(tab, "Kill Aura Range (studs)", 10, 100, combatState.killAuraRange, o(), function(val) combatState.killAuraRange = val end)
+	uiBuilder.createInfoLabel(tab, "Auto-fires WeaponHit at ALL enemies within range", o())
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Trigger Bot", o())
-	createToggle(tab, "Trigger Bot (Auto-Fire on Crosshair)", o(), function(on)
+	uiBuilder.createSectionLabel(tab, "Trigger Bot", o())
+	uiBuilder.createToggle(tab, "Trigger Bot (Auto-Fire on Crosshair)", o(), function(on)
 		combatState.triggerBotActive = on
 		if on then startTriggerBot() else stopTriggerBot() end
 	end)
-	createSlider(tab, "Trigger Delay (x100 ms)", 1, 50, math.floor(combatState.triggerBotDelay * 100), o(), function(val)
+	uiBuilder.createSlider(tab, "Trigger Delay (x100 ms)", 1, 50, math.floor(combatState.triggerBotDelay * 100), o(), function(val)
 		combatState.triggerBotDelay = val / 100
 	end)
-	createInfoLabel(tab, "Fires when your crosshair is on an enemy player", o())
+	uiBuilder.createInfoLabel(tab, "Fires when your crosshair is on an enemy player", o())
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Target Part", o())
-	createButton(tab, "Target: Head (Current: " .. aimState.targetPart .. ")", o(), function()
+	uiBuilder.createSectionLabel(tab, "Target Part", o())
+	uiBuilder.createButton(tab, "Target: Head (Current: " .. aimState.targetPart .. ")", o(), function()
 		aimState.targetPart = "Head"
-		notify("Target", "Targeting Head")
+		helpers.notify("Target", "Targeting Head")
 	end)
-	createButton(tab, "Target: Torso (HumanoidRootPart)", o(), function()
+	uiBuilder.createButton(tab, "Target: Torso (HumanoidRootPart)", o(), function()
 		aimState.targetPart = "HumanoidRootPart"
-		notify("Target", "Targeting Torso")
+		helpers.notify("Target", "Targeting Torso")
 	end)
-	createInfoLabel(tab, "Head = more damage, Torso = easier to hit", o())
+	uiBuilder.createInfoLabel(tab, "Head = more damage, Torso = easier to hit", o())
 end
 
 -- ===================== BUILD COMBAT TAB =====================
@@ -2790,72 +2794,72 @@ do
 	local n = 0
 	local function o() n = n + 1 return n end
 
-	createSectionLabel(tab, "Ammo", o())
-	createToggle(tab, "Unlimited Ammo", o(), function(on)
+	uiBuilder.createSectionLabel(tab, "Ammo", o())
+	uiBuilder.createToggle(tab, "Unlimited Ammo", o(), function(on)
 		combatState.infAmmoActive = on
 		if on then startInfAmmo() else stopInfAmmo() end
 	end)
-	createInfoLabel(tab, "Maxes AmmoCapacity/Reserves/Damage in weapon Configuration", o())
-	createButton(tab, "Mod All Guns (Ammo + Damage + No Recoil)", o(), function()
-		modGuns()
-		notify("Mod Guns", "All guns modded! Max ammo, damage, zero recoil/spread")
+	uiBuilder.createInfoLabel(tab, "Maxes AmmoCapacity/Reserves/Damage in weapon Configuration", o())
+	uiBuilder.createButton(tab, "Mod All Guns (Ammo + Damage + No Recoil)", o(), function()
+		actions.modGuns()
+		helpers.notify("Mod Guns", "All guns modded! Max ammo, damage, zero recoil/spread")
 	end)
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Hitbox", o())
-	createToggle(tab, "Hitbox Expander", o(), function(on)
+	uiBuilder.createSectionLabel(tab, "Hitbox", o())
+	uiBuilder.createToggle(tab, "Hitbox Expander", o(), function(on)
 		combatState.hitboxExpandActive = on
 		if on then startHitboxExpand() else stopHitboxExpand() end
 	end)
-	createSlider(tab, "Hitbox Size", 5, 30, combatState.hitboxSize, o(), function(val)
+	uiBuilder.createSlider(tab, "Hitbox Size", 5, 30, combatState.hitboxSize, o(), function(val)
 		combatState.hitboxSize = val
 	end)
-	createInfoLabel(tab, "Makes enemy HumanoidRootParts larger = easier hits", o())
+	uiBuilder.createInfoLabel(tab, "Makes enemy HumanoidRootParts larger = easier hits", o())
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Weapon Mods", o())
-	createToggle(tab, "No Recoil", o(), function(on)
+	uiBuilder.createSectionLabel(tab, "Weapon Mods", o())
+	uiBuilder.createToggle(tab, "No Recoil", o(), function(on)
 		combatState.noRecoilActive = on
 		if on then startNoRecoil() else stopNoRecoil() end
 	end)
-	createToggle(tab, "Auto Fire (Hold LMB = Rapid)", o(), function(on)
+	uiBuilder.createToggle(tab, "Auto Fire (Hold LMB = Rapid)", o(), function(on)
 		combatState.autoFireActive = on
 		if on then startAutoFire() else stopAutoFire() end
 	end)
-	createInfoLabel(tab, "No recoil zeros gun config values. Auto fire spams tool:Activate()", o())
+	uiBuilder.createInfoLabel(tab, "No recoil zeros gun config values. Auto fire spams tool:Activate()", o())
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Protection", o())
-	createToggle(tab, "God Mode (Infinite Health)", o(), function(on)
+	uiBuilder.createSectionLabel(tab, "Protection", o())
+	uiBuilder.createToggle(tab, "God Mode (Infinite Health)", o(), function(on)
 		moveState.godModeActive = on
 		if on then startGodMode() else stopGodMode() end
 	end)
-	createInfoLabel(tab, "Heals to max every frame, prevents death states", o())
-	createToggle(tab, "Anti-Ragdoll (No Knockdown)", o(), function(on)
+	uiBuilder.createInfoLabel(tab, "Heals to max every frame, prevents death states", o())
+	uiBuilder.createToggle(tab, "Anti-Ragdoll (No Knockdown)", o(), function(on)
 		miscState.antiRagdollActive = on
 		if on then startAntiRagdoll() else stopAntiRagdoll() end
 	end)
-	createInfoLabel(tab, "Prevents ragdoll/falling states (lighter than God Mode)", o())
+	uiBuilder.createInfoLabel(tab, "Prevents ragdoll/falling states (lighter than God Mode)", o())
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Player Control", o())
-	createButton(tab, "Bring All Players to You", o(), bringAllPlayers)
-	createButton(tab, "Kill All (WeaponHit Remote)", o(), killAllPlayers)
-	createButton(tab, "Freeze All Players", o(), freezeAllPlayers)
-	createButton(tab, "Unfreeze All Players", o(), unfreezeAllPlayers)
-	createInfoLabel(tab, "Bring/freeze work on all non-team players", o())
+	uiBuilder.createSectionLabel(tab, "Player Control", o())
+	uiBuilder.createButton(tab, "Bring All Players to You", o(), actions.bringAllPlayers)
+	uiBuilder.createButton(tab, "Kill All (WeaponHit Remote)", o(), actions.killAllPlayers)
+	uiBuilder.createButton(tab, "Freeze All Players", o(), actions.freezeAllPlayers)
+	uiBuilder.createButton(tab, "Unfreeze All Players", o(), actions.unfreezeAllPlayers)
+	uiBuilder.createInfoLabel(tab, "Bring/freeze work on all non-team players", o())
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Announcement System", o())
-	createInfoLabel(tab, "TP to Broadcast Room + auto-fire the console prompt to open GUI", o())
-	createInfoLabel(tab, "Uses noclip to bypass keycard door", o())
+	uiBuilder.createSectionLabel(tab, "Announcement System", o())
+	uiBuilder.createInfoLabel(tab, "TP to Broadcast Room + auto-fire the console prompt to open GUI", o())
+	uiBuilder.createInfoLabel(tab, "Uses noclip to bypass keycard door", o())
 
 	-- Helper: fire a single ProximityPrompt
 	local function firePrompt(obj)
@@ -2896,10 +2900,10 @@ do
 		return prompts, detectors
 	end
 
-	createButton(tab, "TP to Broadcast Room + Open Console", o(), function()
+	uiBuilder.createButton(tab, "TP to Broadcast Room + Open Console", o(), function()
 		local char = LocalPlayer.Character
 		if not char then return end
-		local hrp = getRoot()
+		local hrp = helpers.getRoot()
 		if not hrp then return end
 
 		-- Lightweight noclip - only root parts, not every descendant
@@ -2938,23 +2942,23 @@ do
 		end
 
 		if not found then
-			found = findLocationByName("SCC") or findLocationByName("Strategic") or findLocationByName("Executive")
+			found = actions.findLocationByName("SCC") or actions.findLocationByName("Strategic") or actions.findLocationByName("Executive")
 		end
 
 		if found then
-			local pos = getLocationPosition(found)
+			local pos = actions.getLocationPosition(found)
 			if not pos and found:IsA("BasePart") then pos = found.Position + Vector3.new(0, 3, 0) end
 			if pos then
 				char:PivotTo(CFrame.new(pos))
-				notify("Teleport", "TP to: " .. found.Name)
+				helpers.notify("Teleport", "TP to: " .. found.Name)
 			end
 		else
-			notify("Error", "Broadcast Room not found")
+			helpers.notify("Error", "Broadcast Room not found")
 		end
 
 		-- Wait then fire nearby prompts (reuse cached descendants)
 		task.wait(0.5)
-		hrp = getRoot()
+		hrp = helpers.getRoot()
 		if hrp then
 			local prompts, detectors = getNearbyPrompts(allDesc, hrp.Position, 50)
 			for _, p in ipairs(prompts) do
@@ -2967,9 +2971,9 @@ do
 			end
 			local total = #prompts + #detectors
 			if total > 0 then
-				notify("Announce", "Fired " .. total .. " prompts - check your screen!")
+				helpers.notify("Announce", "Fired " .. total .. " prompts - check your screen!")
 			else
-				notify("Announce", "No prompts nearby - walk up to the console")
+				helpers.notify("Announce", "No prompts nearby - walk up to the console")
 			end
 		end
 
@@ -2977,9 +2981,9 @@ do
 		task.delay(3, function() pcall(function() tempNoclip:Disconnect() end) end)
 	end)
 
-	createButton(tab, "Fire ALL Nearby Prompts (within 30m)", o(), function()
-		local hrp = getRoot()
-		if not hrp then notify("Error", "No character") return end
+	uiBuilder.createButton(tab, "Fire ALL Nearby Prompts (within 30m)", o(), function()
+		local hrp = helpers.getRoot()
+		if not hrp then helpers.notify("Error", "No character") return end
 		local prompts, detectors = getNearbyPrompts(workspace:GetDescendants(), hrp.Position, 30)
 		for _, p in ipairs(prompts) do
 			firePrompt(p)
@@ -2989,12 +2993,12 @@ do
 			pcall(function() if fireclickdetector then fireclickdetector(d) end end)
 			print("[SX NBTF] Fired click: " .. d.Parent.Name)
 		end
-		notify("Prompts", "Fired " .. (#prompts + #detectors) .. " nearby prompts/detectors")
+		helpers.notify("Prompts", "Fired " .. (#prompts + #detectors) .. " nearby prompts/detectors")
 	end)
 
-	createButton(tab, "List ALL Prompts Near You (F9)", o(), function()
-		local hrp = getRoot()
-		if not hrp then notify("Error", "No character") return end
+	uiBuilder.createButton(tab, "List ALL Prompts Near You (F9)", o(), function()
+		local hrp = helpers.getRoot()
+		if not hrp then helpers.notify("Error", "No character") return end
 		print("=== PROMPTS WITHIN 100m ===")
 		local prompts, detectors = getNearbyPrompts(workspace:GetDescendants(), hrp.Position, 100)
 		for _, obj in ipairs(prompts) do
@@ -3014,13 +3018,13 @@ do
 			end)
 		end
 		print("=== " .. (#prompts + #detectors) .. " PROMPTS FOUND ===")
-		notify("Debug", (#prompts + #detectors) .. " prompts/detectors printed to F9")
+		helpers.notify("Debug", (#prompts + #detectors) .. " prompts/detectors printed to F9")
 	end)
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
 	-- Keep the custom announcement for fun / local display
-	createSectionLabel(tab, "Custom Announcement (Local Only)", o())
+	uiBuilder.createSectionLabel(tab, "Custom Announcement (Local Only)", o())
 	local announcementText = "Alert: All personnel report to SCC immediately"
 	local announceTB = Instance.new("TextBox")
 	announceTB.Size = UDim2.new(1, 0, 0, 28)
@@ -3035,7 +3039,7 @@ do
 	announceTB.ClearTextOnFocus = false
 	announceTB.LayoutOrder = o()
 	announceTB.Parent = tab
-	addCorner(announceTB, 5)
+	uiBuilder.addCorner(announceTB, 5)
 	local tbPad = Instance.new("UIPadding")
 	tbPad.PaddingLeft = UDim.new(0, 8)
 	tbPad.PaddingRight = UDim.new(0, 8)
@@ -3072,7 +3076,7 @@ do
 		pb.TextSize = 10
 		pb.LayoutOrder = i
 		pb.Parent = protoFrame
-		addCorner(pb, 4)
+		uiBuilder.addCorner(pb, 4)
 		protoBtns[proto.id] = {btn = pb, color = proto.color}
 		pb.MouseButton1Click:Connect(function()
 			selectedProtocol = proto.id
@@ -3081,15 +3085,15 @@ do
 			end
 		end)
 	end
-	createButton(tab, "Show Local Announcement", o(), function()
-		showCustomAnnouncement(announcementText, selectedProtocol, 8)
+	uiBuilder.createButton(tab, "Show Local Announcement", o(), function()
+		actions.showCustomAnnouncement(announcementText, selectedProtocol, 8)
 	end)
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "GUI & Remote Debug", o())
+	uiBuilder.createSectionLabel(tab, "GUI & Remote Debug", o())
 
-	createButton(tab, "Force Show ALL Hidden GUIs", o(), function()
+	uiBuilder.createButton(tab, "Force Show ALL Hidden GUIs", o(), function()
 		local count = 0
 		pcall(function()
 			for _, gui in ipairs(LocalPlayer.PlayerGui:GetChildren()) do
@@ -3134,10 +3138,10 @@ do
 				end
 			end)
 		end
-		notify("GUIs", "Enabled/unhidden/cloned " .. count .. " elements")
+		helpers.notify("GUIs", "Enabled/unhidden/cloned " .. count .. " elements")
 	end)
 
-	createButton(tab, "Dump ALL GUIs to F9", o(), function()
+	uiBuilder.createButton(tab, "Dump ALL GUIs to F9", o(), function()
 		pcall(function()
 			print("=== FULL GUI SCAN ===")
 			local containers = {
@@ -3162,10 +3166,10 @@ do
 			end
 			print("=== END SCAN ===")
 		end)
-		notify("Debug", "Full GUI scan printed to F9 console")
+		helpers.notify("Debug", "Full GUI scan printed to F9 console")
 	end)
 
-	createButton(tab, "List All Remotes (F9)", o(), function()
+	uiBuilder.createButton(tab, "List All Remotes (F9)", o(), function()
 		pcall(function()
 			print("=== ALL REMOTES ===")
 			local containers = {}
@@ -3180,15 +3184,15 @@ do
 			end
 			print("=== END ===")
 		end)
-		notify("Remotes", "Printed to F9 console")
+		helpers.notify("Remotes", "Printed to F9 console")
 	end)
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Rank Change", o())
-	createInfoLabel(tab, "Searches for rank/role remotes (may be patched)", o())
+	uiBuilder.createSectionLabel(tab, "Rank Change", o())
+	uiBuilder.createInfoLabel(tab, "Searches for rank/role remotes (may be patched)", o())
 
-	createButton(tab, "Try Change Rank (prints result to F9)", o(), function()
+	uiBuilder.createButton(tab, "Try Change Rank (prints result to F9)", o(), function()
 		pcall(function()
 			local RS = game:GetService("ReplicatedStorage")
 			-- Search for any rank-related remote
@@ -3208,16 +3212,16 @@ do
 			end
 			if not found then
 				print("[SX NBTF] No rank remotes found - may be patched")
-				notify("Rank", "No rank remote found - likely patched")
+				helpers.notify("Rank", "No rank remote found - likely patched")
 			else
-				notify("Rank", "Fired rank remotes - check if it worked")
+				helpers.notify("Rank", "Fired rank remotes - check if it worked")
 			end
 		end)
 	end)
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Chat Commands", o())
+	uiBuilder.createSectionLabel(tab, "Chat Commands", o())
 	local chatText = ""
 	local chatTB = Instance.new("TextBox")
 	chatTB.Size = UDim2.new(1, 0, 0, 28)
@@ -3232,7 +3236,7 @@ do
 	chatTB.ClearTextOnFocus = false
 	chatTB.LayoutOrder = o()
 	chatTB.Parent = tab
-	addCorner(chatTB, 5)
+	uiBuilder.addCorner(chatTB, 5)
 	local chatPad = Instance.new("UIPadding")
 	chatPad.PaddingLeft = UDim.new(0, 8)
 	chatPad.PaddingRight = UDim.new(0, 8)
@@ -3241,41 +3245,41 @@ do
 		chatText = chatTB.Text
 	end)
 
-	createButton(tab, "Send Chat Message", o(), function()
+	uiBuilder.createButton(tab, "Send Chat Message", o(), function()
 		if chatText ~= "" then
-			sendChatMessage(chatText)
-			notify("Chat", "Sent: " .. chatText)
+			helpers.sendChatMessage(chatText)
+			helpers.notify("Chat", "Sent: " .. chatText)
 		end
 	end)
-	createInfoLabel(tab, "Sends via TextChatService or legacy SayMessageRequest", o())
+	uiBuilder.createInfoLabel(tab, "Sends via TextChatService or legacy SayMessageRequest", o())
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Anti-Aim", o())
-	createToggle(tab, "Anti-Aim (Spin to Dodge)", o(), function(on)
+	uiBuilder.createSectionLabel(tab, "Anti-Aim", o())
+	uiBuilder.createToggle(tab, "Anti-Aim (Spin to Dodge)", o(), function(on)
 		combatState.antiAimActive = on
 		if on then startAntiAim() else stopAntiAim() end
 	end)
-	createInfoLabel(tab, "Rapidly spins your character to make you harder to hit", o())
+	uiBuilder.createInfoLabel(tab, "Rapidly spins your character to make you harder to hit", o())
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Quick Actions", o())
-	createButton(tab, "Auto-Equip Best Gun", o(), function()
-		local gun = findGunInBackpack()
+	uiBuilder.createSectionLabel(tab, "Quick Actions", o())
+	uiBuilder.createButton(tab, "Auto-Equip Best Gun", o(), function()
+		local gun = helpers.findGunInBackpack()
 		if gun then
-			equipGun(gun)
-			notify("Equip", "Equipped: " .. gun.Name)
+			helpers.equipGun(gun)
+			helpers.notify("Equip", "Equipped: " .. gun.Name)
 		else
-			notify("Error", "No gun found in backpack!")
+			helpers.notify("Error", "No gun found in backpack!")
 		end
 	end)
-	createButton(tab, "Drop All Weapons", o(), function()
+	uiBuilder.createButton(tab, "Drop All Weapons", o(), function()
 		pcall(function()
-			local hum = getHumanoid()
+			local hum = helpers.getHumanoid()
 			if hum then hum:UnequipTools() end
 		end)
-		notify("Weapons", "All weapons unequipped")
+		helpers.notify("Weapons", "All weapons unequipped")
 	end)
 end
 
@@ -3285,103 +3289,103 @@ do
 	local n = 0
 	local function o() n = n + 1 return n end
 
-	createSectionLabel(tab, "Flight", o())
-	createToggle(tab, "Fly (WASD + Space/Shift)", o(), function(on)
+	uiBuilder.createSectionLabel(tab, "Flight", o())
+	uiBuilder.createToggle(tab, "Fly (WASD + Space/Shift)", o(), function(on)
 		moveState.flyActive = on
 		if on then startFly() else stopFly() end
 	end)
-	createSlider(tab, "Fly Speed", 10, 300, moveState.flySpeed, o(), function(val) moveState.flySpeed = val end)
+	uiBuilder.createSlider(tab, "Fly Speed", 10, 300, moveState.flySpeed, o(), function(val) moveState.flySpeed = val end)
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Vehicle Fly", o())
-	createToggle(tab, "Vehicle Fly (Sit in Vehicle First)", o(), function(on)
+	uiBuilder.createSectionLabel(tab, "Vehicle Fly", o())
+	uiBuilder.createToggle(tab, "Vehicle Fly (Sit in Vehicle First)", o(), function(on)
 		moveState.vehicleFlyActive = on
 		if on then startVehicleFly() else stopVehicleFly() end
 	end)
-	createInfoLabel(tab, "Sit in any vehicle/car, then toggle to fly it", o())
+	uiBuilder.createInfoLabel(tab, "Sit in any vehicle/car, then toggle to fly it", o())
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Speed", o())
-	createToggle(tab, "Speed Boost", o(), function(on)
+	uiBuilder.createSectionLabel(tab, "Speed", o())
+	uiBuilder.createToggle(tab, "Speed Boost", o(), function(on)
 		moveState.speedBoostActive = on
 		if on then startSpeedBoost() else stopSpeedBoost() end
 	end)
-	createSlider(tab, "Speed Value", 20, 300, moveState.speedValue, o(), function(val) moveState.speedValue = val end)
+	uiBuilder.createSlider(tab, "Speed Value", 20, 300, moveState.speedValue, o(), function(val) moveState.speedValue = val end)
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Other", o())
-	createToggle(tab, "Noclip (Walk Through Walls)", o(), function(on)
+	uiBuilder.createSectionLabel(tab, "Other", o())
+	uiBuilder.createToggle(tab, "Noclip (Walk Through Walls)", o(), function(on)
 		moveState.noclipActive = on
 		if on then startNoclip() else stopNoclip() end
 	end)
-	createToggle(tab, "Infinite Jump", o(), function(on)
+	uiBuilder.createToggle(tab, "Infinite Jump", o(), function(on)
 		moveState.infJumpActive = on
-		if on then notify("Inf Jump", "Active!") end
+		if on then helpers.notify("Inf Jump", "Active!") end
 	end)
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "World", o())
-	createSlider(tab, "Gravity", 0, 500, math.floor(moveState.gravityValue), o(), function(val)
+	uiBuilder.createSectionLabel(tab, "World", o())
+	uiBuilder.createSlider(tab, "Gravity", 0, 500, math.floor(moveState.gravityValue), o(), function(val)
 		moveState.gravityValue = val
-		setGravity(val)
+		actions.setGravity(val)
 	end)
-	createInfoLabel(tab, "Default: 196. Lower = moon gravity. 0 = float.", o())
+	uiBuilder.createInfoLabel(tab, "Default: 196. Lower = moon gravity. 0 = float.", o())
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "AFK & Protection", o())
-	createToggle(tab, "Anti-AFK (Prevent Idle Kick)", o(), function(on)
+	uiBuilder.createSectionLabel(tab, "AFK & Protection", o())
+	uiBuilder.createToggle(tab, "Anti-AFK (Prevent Idle Kick)", o(), function(on)
 		miscState.antiAfkActive = on
 		if on then startAntiAfk() else stopAntiAfk() end
 	end)
-	createToggle(tab, "Anti-Kick (Block Server Kicks)", o(), function(on)
+	uiBuilder.createToggle(tab, "Anti-Kick (Block Server Kicks)", o(), function(on)
 		miscState.antiKickActive = on
 		if on then startAntiKick() end
 	end)
-	createInfoLabel(tab, "Disables Idled + hooks Kick method (needs executor support)", o())
+	uiBuilder.createInfoLabel(tab, "Disables Idled + hooks Kick method (needs executor support)", o())
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Advanced Movement", o())
-	createToggle(tab, "Bunny Hop (Auto-Jump While Moving)", o(), function(on)
+	uiBuilder.createSectionLabel(tab, "Advanced Movement", o())
+	uiBuilder.createToggle(tab, "Bunny Hop (Auto-Jump While Moving)", o(), function(on)
 		moveState.bunnyHopActive = on
 		if on then startBunnyHop() else stopBunnyHop() end
 	end)
-	createButton(tab, "Long Jump (Launch Forward)", o(), function() doLongJump() end)
-	createSlider(tab, "Long Jump Power", 50, 400, moveState.longJumpPower, o(), function(val) moveState.longJumpPower = val end)
-	createInfoLabel(tab, "Bunny hop auto-jumps for max speed. Long jump launches you forward.", o())
+	uiBuilder.createButton(tab, "Long Jump (Launch Forward)", o(), function() actions.doLongJump() end)
+	uiBuilder.createSlider(tab, "Long Jump Power", 50, 400, moveState.longJumpPower, o(), function(val) moveState.longJumpPower = val end)
+	uiBuilder.createInfoLabel(tab, "Bunny hop auto-jumps for max speed. Long jump launches you forward.", o())
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Teleport Tools", o())
-	createButton(tab, "TP Forward", o(), function() tpForward() end)
-	createSlider(tab, "TP Distance (studs)", 10, 200, playerState.tpForwardDist, o(), function(val) playerState.tpForwardDist = val end)
-	createButton(tab, "TP to Mouse Click Position", o(), function() tpToMouse() end)
-	createInfoLabel(tab, "TP Forward moves in facing direction. Mouse TP goes to cursor.", o())
+	uiBuilder.createSectionLabel(tab, "Teleport Tools", o())
+	uiBuilder.createButton(tab, "TP Forward", o(), function() actions.tpForward() end)
+	uiBuilder.createSlider(tab, "TP Distance (studs)", 10, 200, playerState.tpForwardDist, o(), function(val) playerState.tpForwardDist = val end)
+	uiBuilder.createButton(tab, "TP to Mouse Click Position", o(), function() actions.tpToMouse() end)
+	uiBuilder.createInfoLabel(tab, "TP Forward moves in facing direction. Mouse TP goes to cursor.", o())
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Camera", o())
-	createToggle(tab, "Freecam (Detach Camera)", o(), function(on)
+	uiBuilder.createSectionLabel(tab, "Camera", o())
+	uiBuilder.createToggle(tab, "Freecam (Detach Camera)", o(), function(on)
 		playerState.freecamActive = on
 		if on then startFreecam() else stopFreecam() end
 	end)
-	createInfoLabel(tab, "WASD + Space/Shift to move camera freely. Character stays still.", o())
+	uiBuilder.createInfoLabel(tab, "WASD + Space/Shift to move camera freely. Character stays still.", o())
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Saved Positions", o())
-	createButton(tab, "Save Current Position (Slot 1)", o(), function() savePosition("slot1") end)
-	createButton(tab, "Save Current Position (Slot 2)", o(), function() savePosition("slot2") end)
-	createButton(tab, "Save Current Position (Slot 3)", o(), function() savePosition("slot3") end)
-	createButton(tab, "Load Position (Slot 1)", o(), function() loadPosition("slot1") end)
-	createButton(tab, "Load Position (Slot 2)", o(), function() loadPosition("slot2") end)
-	createButton(tab, "Load Position (Slot 3)", o(), function() loadPosition("slot3") end)
-	createInfoLabel(tab, "Save your position and teleport back anytime", o())
+	uiBuilder.createSectionLabel(tab, "Saved Positions", o())
+	uiBuilder.createButton(tab, "Save Current Position (Slot 1)", o(), function() actions.savePosition("slot1") end)
+	uiBuilder.createButton(tab, "Save Current Position (Slot 2)", o(), function() actions.savePosition("slot2") end)
+	uiBuilder.createButton(tab, "Save Current Position (Slot 3)", o(), function() actions.savePosition("slot3") end)
+	uiBuilder.createButton(tab, "Load Position (Slot 1)", o(), function() actions.loadPosition("slot1") end)
+	uiBuilder.createButton(tab, "Load Position (Slot 2)", o(), function() actions.loadPosition("slot2") end)
+	uiBuilder.createButton(tab, "Load Position (Slot 3)", o(), function() actions.loadPosition("slot3") end)
+	uiBuilder.createInfoLabel(tab, "Save your position and teleport back anytime", o())
 end
 
 -- ===================== BUILD VISUALS TAB =====================
@@ -3390,34 +3394,34 @@ do
 	local n = 0
 	local function o() n = n + 1 return n end
 
-	createSectionLabel(tab, "ESP", o())
-	createToggle(tab, "Player ESP (Names/Health/Distance)", o(), function(on)
+	uiBuilder.createSectionLabel(tab, "ESP", o())
+	uiBuilder.createToggle(tab, "Player ESP (Names/Health/Distance)", o(), function(on)
 		espState.espActive = on
 		if on then startESP() else clearESP() end
 	end)
-	createInfoLabel(tab, "Blue = Facility, Red = Rebel. Shows role + weapon.", o())
+	uiBuilder.createInfoLabel(tab, "Blue = Facility, Red = Rebel. Shows role + weapon.", o())
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Lighting", o())
-	createToggle(tab, "Fullbright (Remove Darkness)", o(), function(on)
+	uiBuilder.createSectionLabel(tab, "Lighting", o())
+	uiBuilder.createToggle(tab, "Fullbright (Remove Darkness)", o(), function(on)
 		espState.fullbrightActive = on
 		if on then enableFullbright() else disableFullbright() end
 	end)
-	createInfoLabel(tab, "Max brightness, no fog, no shadows", o())
-	createToggle(tab, "No Fog (Remove Fog Only)", o(), function(on)
+	uiBuilder.createInfoLabel(tab, "Max brightness, no fog, no shadows", o())
+	uiBuilder.createToggle(tab, "No Fog (Remove Fog Only)", o(), function(on)
 		espState.noFogActive = on
 		if on then enableNoFog() else disableNoFog() end
 	end)
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Overlays (Requires Drawing API)", o())
-	createToggle(tab, "Tracers (Lines to Enemies)", o(), function(on)
+	uiBuilder.createSectionLabel(tab, "Overlays (Requires Drawing API)", o())
+	uiBuilder.createToggle(tab, "Tracers (Lines to Enemies)", o(), function(on)
 		espState.tracersActive = on
 		if on then startTracers() end
 	end)
-	createToggle(tab, "FOV Circle (Show Aim FOV)", o(), function(on)
+	uiBuilder.createToggle(tab, "FOV Circle (Show Aim FOV)", o(), function(on)
 		espState.fovCircleActive = on
 		if on then
 			createFOVCircle()
@@ -3429,29 +3433,29 @@ do
 			removeFOVCircle()
 		end
 	end)
-	createToggle(tab, "Crosshair Overlay", o(), function(on)
+	uiBuilder.createToggle(tab, "Crosshair Overlay", o(), function(on)
 		espState.crosshairActive = on
 		if on then createCrosshair() else removeCrosshair() end
 	end)
-	createInfoLabel(tab, "Tracers/FOV/Crosshair need Drawing API (most executors)", o())
+	uiBuilder.createInfoLabel(tab, "Tracers/FOV/Crosshair need Drawing API (most executors)", o())
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Item ESP", o())
-	createToggle(tab, "Item / Weapon ESP (Ground Items)", o(), function(on)
+	uiBuilder.createSectionLabel(tab, "Item ESP", o())
+	uiBuilder.createToggle(tab, "Item / Weapon ESP (Ground Items)", o(), function(on)
 		espState.itemEspActive = on
 		if on then startItemESP() else clearItemESP() end
 	end)
-	createInfoLabel(tab, "Highlights dropped weapons/tools/crates on the ground", o())
+	uiBuilder.createInfoLabel(tab, "Highlights dropped weapons/tools/crates on the ground", o())
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Character", o())
-	createToggle(tab, "Invisible (Client-Side)", o(), function(on)
+	uiBuilder.createSectionLabel(tab, "Character", o())
+	uiBuilder.createToggle(tab, "Invisible (Client-Side)", o(), function(on)
 		playerState.invisibleActive = on
 		if on then startInvisible() else stopInvisible() end
 	end)
-	createInfoLabel(tab, "Makes your character invisible locally (others still see you)", o())
+	uiBuilder.createInfoLabel(tab, "Makes your character invisible locally (others still see you)", o())
 end
 
 -- ===================== BUILD TELEPORT TAB =====================
@@ -3460,8 +3464,8 @@ do
 	local n = 0
 	local function o() n = n + 1 return n end
 
-	createSectionLabel(tab, "Secret / Special Locations", o())
-	createButton(tab, "TP: Mod Room / Regular Lounge", o(), function()
+	uiBuilder.createSectionLabel(tab, "Secret / Special Locations", o())
+	uiBuilder.createButton(tab, "TP: Mod Room / Regular Lounge", o(), function()
 		local char = LocalPlayer.Character
 		if not char then return end
 		local searchTerms = {
@@ -3509,23 +3513,23 @@ do
 			end
 			if pos then
 				char:PivotTo(CFrame.new(pos))
-				notify("Teleport", "Found: " .. found.Name)
+				helpers.notify("Teleport", "Found: " .. found.Name)
 				return
 			end
 		end
 		-- Fallback: try Maintenance
-		local maint = findLocationByName("Maintenance")
+		local maint = actions.findLocationByName("Maintenance")
 		if maint then
-			local pos = getLocationPosition(maint)
+			local pos = actions.getLocationPosition(maint)
 			if pos then
 				char:PivotTo(CFrame.new(pos))
-				notify("Teleport", "TP to Maintenance (Mod Room behind it on canyon wall)")
+				helpers.notify("Teleport", "TP to Maintenance (Mod Room behind it on canyon wall)")
 				return
 			end
 		end
-		notify("Error", "Not found - click 'Print Workspace Names' and check F9")
+		helpers.notify("Error", "Not found - click 'Print Workspace Names' and check F9")
 	end)
-	createButton(tab, "Print Workspace Names (F9)", o(), function()
+	uiBuilder.createButton(tab, "Print Workspace Names (F9)", o(), function()
 		pcall(function()
 			print("=== Workspace Top-Level ===")
 			for _, obj in ipairs(workspace:GetChildren()) do
@@ -3548,14 +3552,14 @@ do
 			end
 			print("=== End ===")
 		end)
-		notify("Debug", "Workspace names printed to F9 console")
+		helpers.notify("Debug", "Workspace names printed to F9 console")
 	end)
-	createInfoLabel(tab, "Behind Maintenance Offices on the Canyon Wall", o())
+	uiBuilder.createInfoLabel(tab, "Behind Maintenance Offices on the Canyon Wall", o())
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Facility Locations (Auto-Scanned)", o())
-	createInfoLabel(tab, "Scans workspace for named areas - click Scan to find them", o())
+	uiBuilder.createSectionLabel(tab, "Facility Locations (Auto-Scanned)", o())
+	uiBuilder.createInfoLabel(tab, "Scans workspace for named areas - click Scan to find them", o())
 
 	-- Location list container
 	local locListFrame = Instance.new("Frame")
@@ -3574,9 +3578,9 @@ do
 		for _, child in ipairs(locListFrame:GetChildren()) do
 			if child:IsA("TextButton") then child:Destroy() end
 		end
-		local locations = scanLocations()
+		local locations = actions.scanLocations()
 		if #locations == 0 then
-			notify("Scan", "No named locations found in workspace")
+			helpers.notify("Scan", "No named locations found in workspace")
 			return
 		end
 		for i, loc in ipairs(locations) do
@@ -3590,24 +3594,24 @@ do
 			locBtn.TextSize = 10
 			locBtn.LayoutOrder = i
 			locBtn.Parent = locListFrame
-			addCorner(locBtn, 4)
+			uiBuilder.addCorner(locBtn, 4)
 			locBtn.MouseButton1Click:Connect(function()
 				local char = LocalPlayer.Character
 				if char then
 					char:PivotTo(CFrame.new(loc.pos))
-					notify("Teleport", loc.name)
+					helpers.notify("Teleport", loc.name)
 				end
 			end)
 		end
-		notify("Scan", "Found " .. #locations .. " locations!")
+		helpers.notify("Scan", "Found " .. #locations .. " locations!")
 	end
 
-	createButton(tab, "Scan Facility Locations", o(), refreshLocations)
+	uiBuilder.createButton(tab, "Scan Facility Locations", o(), refreshLocations)
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Player Teleport", o())
-	createInfoLabel(tab, "Click a player name to teleport to them", o())
+	uiBuilder.createSectionLabel(tab, "Player Teleport", o())
+	uiBuilder.createInfoLabel(tab, "Click a player name to teleport to them", o())
 
 	-- Dynamic player list buttons
 	local playerListFrame = Instance.new("Frame")
@@ -3628,7 +3632,7 @@ do
 		end
 		for i, player in ipairs(Players:GetPlayers()) do
 			if player ~= LocalPlayer then
-				local color, roleName, teamName = getPlayerTeamInfo(player)
+				local color, roleName, teamName = helpers.getPlayerTeamInfo(player)
 				local roleDisplay = ""
 				if roleName ~= "" then
 					roleDisplay = " [" .. roleName .. "]"
@@ -3645,21 +3649,21 @@ do
 				pBtn.TextSize = 11
 				pBtn.LayoutOrder = i
 				pBtn.Parent = playerListFrame
-				addCorner(pBtn, 4)
+				uiBuilder.addCorner(pBtn, 4)
 				pBtn.MouseButton1Click:Connect(function()
-					teleportToPlayer(player.Name)
+					actions.teleportToPlayer(player.Name)
 				end)
 			end
 		end
 	end
 
-	createButton(tab, "Refresh Player List", o(), refreshPlayerList)
+	uiBuilder.createButton(tab, "Refresh Player List", o(), refreshPlayerList)
 	refreshPlayerList()
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Spectate", o())
-	createInfoLabel(tab, "Click a player above to TP, or use buttons below to spectate", o())
+	uiBuilder.createSectionLabel(tab, "Spectate", o())
+	uiBuilder.createInfoLabel(tab, "Click a player above to TP, or use buttons below to spectate", o())
 
 	-- Spectate player list
 	local specListFrame = Instance.new("Frame")
@@ -3690,16 +3694,16 @@ do
 				sBtn.TextSize = 10
 				sBtn.LayoutOrder = i
 				sBtn.Parent = specListFrame
-				addCorner(sBtn, 4)
+				uiBuilder.addCorner(sBtn, 4)
 				sBtn.MouseButton1Click:Connect(function()
-					spectatePlayer(player)
+					actions.spectatePlayer(player)
 				end)
 			end
 		end
 	end
 
-	createButton(tab, "Stop Spectating", o(), unspectate)
-	createButton(tab, "Refresh Spectate List", o(), refreshSpecList)
+	uiBuilder.createButton(tab, "Stop Spectating", o(), actions.unspectate)
+	uiBuilder.createButton(tab, "Refresh Spectate List", o(), refreshSpecList)
 	refreshSpecList()
 end
 
@@ -3709,8 +3713,8 @@ do
 	local n = 0
 	local function o() n = n + 1 return n end
 
-	createSectionLabel(tab, "Player Actions", o())
-	createInfoLabel(tab, "Per-player actions: Kill, Bring, Teleport, Spectate", o())
+	uiBuilder.createSectionLabel(tab, "Player Actions", o())
+	uiBuilder.createInfoLabel(tab, "Per-player actions: Kill, Bring, Teleport, Spectate", o())
 
 	local playerActionsFrame = Instance.new("Frame")
 	playerActionsFrame.Size = UDim2.new(1, 0, 0, 0)
@@ -3732,7 +3736,7 @@ do
 		for _, player in ipairs(Players:GetPlayers()) do
 			if player ~= LocalPlayer then
 				idx = idx + 1
-				local color, roleName, teamName = getPlayerTeamInfo(player)
+				local color, roleName, teamName = helpers.getPlayerTeamInfo(player)
 				local roleDisplay = ""
 				if roleName ~= "" then
 					roleDisplay = " [" .. roleName .. "]"
@@ -3746,7 +3750,7 @@ do
 				row.BorderSizePixel = 0
 				row.LayoutOrder = idx
 				row.Parent = playerActionsFrame
-				addCorner(row, 5)
+				uiBuilder.addCorner(row, 5)
 
 				local nameLbl = Instance.new("TextLabel")
 				nameLbl.Size = UDim2.new(1, -220, 1, 0)
@@ -3763,16 +3767,16 @@ do
 				-- Action buttons
 				local actions = {
 					{text = "Kill", offset = 215, fn = function()
-						local gun = findGunInBackpack()
+						local gun = helpers.findGunInBackpack()
 						if not gun then
-							notify("Error", "No gun found! Equip a weapon first.")
+							helpers.notify("Error", "No gun found! Equip a weapon first.")
 							return
 						end
-						if not isAlive(player) then
-							notify("Error", player.DisplayName .. " is dead or not in game")
+						if not helpers.isAlive(player) then
+							helpers.notify("Error", player.DisplayName .. " is dead or not in game")
 							return
 						end
-						equipGun(gun)
+						helpers.equipGun(gun)
 						print("[SX NBTF] Killing " .. player.DisplayName .. " with " .. gun.Name .. " (equipped: " .. tostring(gun.Parent == LocalPlayer.Character) .. ")")
 						print("[SX NBTF] Remote: " .. tostring(WeaponHitRemote))
 						print("[SX NBTF] Target head: " .. tostring(player.Character and player.Character:FindFirstChild("Head")))
@@ -3782,24 +3786,24 @@ do
 								print("[SX NBTF] Round " .. i .. " fired: " .. tostring(ok))
 								task.wait(combatState.killAllDelay)
 							end
-							notify("Kill", "Fired 3 rounds at " .. player.DisplayName)
+							helpers.notify("Kill", "Fired 3 rounds at " .. player.DisplayName)
 						end)
 					end},
 					{text = "Bring", offset = 165, fn = function()
 						pcall(function()
-							local myHRP = getRoot()
+							local myHRP = helpers.getRoot()
 							local theirHRP = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 							if myHRP and theirHRP then
 								theirHRP.CFrame = myHRP.CFrame + Vector3.new(math.random(-5, 5), 0, math.random(-5, 5))
-								notify("Bring", "Brought " .. player.DisplayName)
+								helpers.notify("Bring", "Brought " .. player.DisplayName)
 							end
 						end)
 					end},
 					{text = "TP", offset = 120, fn = function()
-						teleportToPlayer(player.Name)
+						actions.teleportToPlayer(player.Name)
 					end},
 					{text = "Spec", offset = 75, fn = function()
-						spectatePlayer(player)
+						actions.spectatePlayer(player)
 					end},
 				}
 
@@ -3814,7 +3818,7 @@ do
 					abtn.Font = Enum.Font.GothamBold
 					abtn.TextSize = 9
 					abtn.Parent = row
-					addCorner(abtn, 4)
+					uiBuilder.addCorner(abtn, 4)
 					abtn.MouseEnter:Connect(function() abtn.BackgroundColor3 = COLORS.accentHover end)
 					abtn.MouseLeave:Connect(function() abtn.BackgroundColor3 = COLORS.accent end)
 					abtn.MouseButton1Click:Connect(action.fn)
@@ -3823,16 +3827,16 @@ do
 		end
 	end
 
-	createButton(tab, "Refresh Player List", o(), refreshPlayerActions)
+	uiBuilder.createButton(tab, "Refresh Player List", o(), refreshPlayerActions)
 	refreshPlayerActions()
 
 	-- Auto-refresh on player join/leave
 	Players.PlayerAdded:Connect(function() task.wait(1) refreshPlayerActions() end)
 	Players.PlayerRemoving:Connect(function() task.wait(0.5) refreshPlayerActions() end)
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Target Info", o())
+	uiBuilder.createSectionLabel(tab, "Target Info", o())
 	local targetInfoLabel = Instance.new("TextLabel")
 	targetInfoLabel.Size = UDim2.new(1, 0, 0, 24)
 	targetInfoLabel.BackgroundColor3 = COLORS.panel
@@ -3844,7 +3848,7 @@ do
 	targetInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
 	targetInfoLabel.LayoutOrder = o()
 	targetInfoLabel.Parent = tab
-	addCorner(targetInfoLabel, 5)
+	uiBuilder.addCorner(targetInfoLabel, 5)
 	local tipPad = Instance.new("UIPadding")
 	tipPad.PaddingLeft = UDim.new(0, 8)
 	tipPad.Parent = targetInfoLabel
@@ -3858,14 +3862,14 @@ do
 					targetInfoLabel.TextColor3 = COLORS.textSecondary
 					return
 				end
-				local target = getClosestPlayerInFOV()
-				if not target then target = getClosestPlayer3D() end
+				local target = helpers.getClosestPlayerInFOV()
+				if not target then target = helpers.getClosestPlayer3D() end
 				if target and target.Parent then
 					local p = Players:GetPlayerFromCharacter(target.Parent)
 					if p then
 						local hum = target.Parent:FindFirstChildOfClass("Humanoid")
 						local hp = hum and math.floor((hum.Health / hum.MaxHealth) * 100) or 0
-						local myRoot = getRoot()
+						local myRoot = helpers.getRoot()
 						local dist = myRoot and math.floor((target.Position - myRoot.Position).Magnitude) or 0
 						local weapon = target.Parent:FindFirstChildOfClass("Tool")
 						local weaponName = weapon and weapon.Name or "None"
@@ -3880,13 +3884,13 @@ do
 		end
 	end)
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createButton(tab, "Stop Spectating", o(), unspectate)
+	uiBuilder.createButton(tab, "Stop Spectating", o(), actions.unspectate)
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Orbit / Follow", o())
+	uiBuilder.createSectionLabel(tab, "Orbit / Follow", o())
 
 	-- Orbit player list
 	local orbitFrame = Instance.new("Frame")
@@ -3914,7 +3918,7 @@ do
 				row.BorderSizePixel = 0
 				row.LayoutOrder = idx
 				row.Parent = orbitFrame
-				addCorner(row, 4)
+				uiBuilder.addCorner(row, 4)
 
 				local lbl = Instance.new("TextLabel")
 				lbl.Size = UDim2.new(1, -120, 1, 0)
@@ -3936,12 +3940,12 @@ do
 				orbitBtn.Font = Enum.Font.GothamBold
 				orbitBtn.TextSize = 9
 				orbitBtn.Parent = row
-				addCorner(orbitBtn, 4)
+				uiBuilder.addCorner(orbitBtn, 4)
 				orbitBtn.MouseButton1Click:Connect(function()
 					stopOrbit()
 					stopAttach()
 					startOrbit(player)
-					notify("Orbit", "Orbiting " .. player.DisplayName)
+					helpers.notify("Orbit", "Orbiting " .. player.DisplayName)
 				end)
 
 				local followBtn = Instance.new("TextButton")
@@ -3953,26 +3957,26 @@ do
 				followBtn.Font = Enum.Font.GothamBold
 				followBtn.TextSize = 9
 				followBtn.Parent = row
-				addCorner(followBtn, 4)
+				uiBuilder.addCorner(followBtn, 4)
 				followBtn.MouseButton1Click:Connect(function()
 					stopOrbit()
 					stopAttach()
 					startAttach(player)
-					notify("Follow", "Following " .. player.DisplayName)
+					helpers.notify("Follow", "Following " .. player.DisplayName)
 				end)
 			end
 		end
 	end
 
-	createButton(tab, "Refresh Orbit/Follow List", o(), refreshOrbitList)
-	createButton(tab, "Stop Orbit / Follow", o(), function()
+	uiBuilder.createButton(tab, "Refresh Orbit/Follow List", o(), refreshOrbitList)
+	uiBuilder.createButton(tab, "Stop Orbit / Follow", o(), function()
 		stopOrbit()
 		stopAttach()
-		notify("Stopped", "No longer orbiting or following")
+		helpers.notify("Stopped", "No longer orbiting or following")
 	end)
-	createSlider(tab, "Orbit Radius (studs)", 5, 50, playerState.orbitRadius, o(), function(val) playerState.orbitRadius = val end)
-	createSlider(tab, "Orbit Speed", 1, 10, playerState.orbitSpeed, o(), function(val) playerState.orbitSpeed = val end)
-	createInfoLabel(tab, "Orbit circles around them. Follow stays behind them.", o())
+	uiBuilder.createSlider(tab, "Orbit Radius (studs)", 5, 50, playerState.orbitRadius, o(), function(val) playerState.orbitRadius = val end)
+	uiBuilder.createSlider(tab, "Orbit Speed", 1, 10, playerState.orbitSpeed, o(), function(val) playerState.orbitSpeed = val end)
+	uiBuilder.createInfoLabel(tab, "Orbit circles around them. Follow stays behind them.", o())
 
 	refreshOrbitList()
 end
@@ -3983,36 +3987,36 @@ do
 	local n = 0
 	local function o() n = n + 1 return n end
 
-	createSectionLabel(tab, "Chat Spy", o())
-	createToggle(tab, "Chat Spy (Log All Chat to F9)", o(), function(on)
+	uiBuilder.createSectionLabel(tab, "Chat Spy", o())
+	uiBuilder.createToggle(tab, "Chat Spy (Log All Chat to F9)", o(), function(on)
 		miscState.chatSpyActive = on
 		if on then startChatSpy() else stopChatSpy() end
 	end)
-	createInfoLabel(tab, "Logs all chat messages to F9 console", o())
+	uiBuilder.createInfoLabel(tab, "Logs all chat messages to F9 console", o())
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Join / Leave Notifications", o())
-	createToggle(tab, "Player Join/Leave Alerts", o(), function(on)
+	uiBuilder.createSectionLabel(tab, "Join / Leave Notifications", o())
+	uiBuilder.createToggle(tab, "Player Join/Leave Alerts", o(), function(on)
 		miscState.joinNotifyActive = on
 		if on then startJoinNotify() else stopJoinNotify() end
 	end)
-	createInfoLabel(tab, "Notification + F9 log when players join/leave", o())
+	uiBuilder.createInfoLabel(tab, "Notification + F9 log when players join/leave", o())
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Auto Respawn", o())
-	createToggle(tab, "Auto Respawn on Death", o(), function(on)
+	uiBuilder.createSectionLabel(tab, "Auto Respawn", o())
+	uiBuilder.createToggle(tab, "Auto Respawn on Death", o(), function(on)
 		miscState.autoRespawnActive = on
 		if on then
-			notify("Auto Respawn", "Will auto-respawn when you die")
+			helpers.notify("Auto Respawn", "Will auto-respawn when you die")
 		end
 	end)
-	createInfoLabel(tab, "Clicks respawn button or loads character on death", o())
+	uiBuilder.createInfoLabel(tab, "Clicks respawn button or loads character on death", o())
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Player Count", o())
+	uiBuilder.createSectionLabel(tab, "Player Count", o())
 	local playerCountLabel = Instance.new("TextLabel")
 	playerCountLabel.Size = UDim2.new(1, 0, 0, 20)
 	playerCountLabel.BackgroundColor3 = COLORS.panel
@@ -4023,7 +4027,7 @@ do
 	playerCountLabel.TextSize = 11
 	playerCountLabel.LayoutOrder = o()
 	playerCountLabel.Parent = tab
-	addCorner(playerCountLabel, 5)
+	uiBuilder.addCorner(playerCountLabel, 5)
 
 	task.spawn(function()
 		while task.wait(5) do
@@ -4033,9 +4037,9 @@ do
 		end
 	end)
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "FPS Display", o())
+	uiBuilder.createSectionLabel(tab, "FPS Display", o())
 	local fpsLabel = Instance.new("TextLabel")
 	fpsLabel.Size = UDim2.new(1, 0, 0, 20)
 	fpsLabel.BackgroundColor3 = COLORS.panel
@@ -4046,7 +4050,7 @@ do
 	fpsLabel.TextSize = 12
 	fpsLabel.LayoutOrder = o()
 	fpsLabel.Parent = tab
-	addCorner(fpsLabel, 5)
+	uiBuilder.addCorner(fpsLabel, 5)
 
 	task.spawn(function()
 		while task.wait(0.5) do
@@ -4064,10 +4068,10 @@ do
 		end
 	end)
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Workspace Scanner", o())
-	createButton(tab, "Print All Teams (F9)", o(), function()
+	uiBuilder.createSectionLabel(tab, "Workspace Scanner", o())
+	uiBuilder.createButton(tab, "Print All Teams (F9)", o(), function()
 		print("=== TEAMS ===")
 		pcall(function()
 			for _, team in ipairs(game:GetService("Teams"):GetTeams()) do
@@ -4075,9 +4079,9 @@ do
 				print("  [" .. team.Name .. "] Color: " .. tostring(team.TeamColor) .. " | " .. count .. " players")
 			end
 		end)
-		notify("Teams", "Printed to F9")
+		helpers.notify("Teams", "Printed to F9")
 	end)
-	createButton(tab, "Print All Sounds (F9)", o(), function()
+	uiBuilder.createButton(tab, "Print All Sounds (F9)", o(), function()
 		print("=== SOUNDS IN WORKSPACE ===")
 		local count = 0
 		pcall(function()
@@ -4089,9 +4093,9 @@ do
 			end
 		end)
 		print("=== " .. count .. " SOUNDS ===")
-		notify("Sounds", count .. " sounds found - F9")
+		helpers.notify("Sounds", count .. " sounds found - F9")
 	end)
-	createButton(tab, "Print Leaderstats (F9)", o(), function()
+	uiBuilder.createButton(tab, "Print Leaderstats (F9)", o(), function()
 		print("=== YOUR LEADERSTATS ===")
 		pcall(function()
 			local ls = LocalPlayer:FindFirstChild("leaderstats")
@@ -4103,13 +4107,13 @@ do
 				print("  No leaderstats found")
 			end
 		end)
-		notify("Stats", "Printed to F9")
+		helpers.notify("Stats", "Printed to F9")
 	end)
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Fun", o())
-	createButton(tab, "Seizure Mode (Flash Colors)", o(), function()
+	uiBuilder.createSectionLabel(tab, "Fun", o())
+	uiBuilder.createButton(tab, "Seizure Mode (Flash Colors)", o(), function()
 		task.spawn(function()
 			local Lighting = game:GetService("Lighting")
 			for i = 1, 30 do
@@ -4121,7 +4125,7 @@ do
 			Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
 		end)
 	end)
-	createButton(tab, "Tiny Character", o(), function()
+	uiBuilder.createButton(tab, "Tiny Character", o(), function()
 		pcall(function()
 			local char = LocalPlayer.Character
 			if char then
@@ -4131,12 +4135,12 @@ do
 					hum.BodyDepthScale.Value = 0.5
 					hum.BodyWidthScale.Value = 0.5
 					hum.BodyHeightScale.Value = 0.5
-					notify("Fun", "Tiny mode!")
+					helpers.notify("Fun", "Tiny mode!")
 				end
 			end
 		end)
 	end)
-	createButton(tab, "Giant Character", o(), function()
+	uiBuilder.createButton(tab, "Giant Character", o(), function()
 		pcall(function()
 			local char = LocalPlayer.Character
 			if char then
@@ -4146,12 +4150,12 @@ do
 					hum.BodyDepthScale.Value = 3
 					hum.BodyWidthScale.Value = 3
 					hum.BodyHeightScale.Value = 3
-					notify("Fun", "Giant mode!")
+					helpers.notify("Fun", "Giant mode!")
 				end
 			end
 		end)
 	end)
-	createButton(tab, "Normal Size", o(), function()
+	uiBuilder.createButton(tab, "Normal Size", o(), function()
 		pcall(function()
 			local char = LocalPlayer.Character
 			if char then
@@ -4161,14 +4165,14 @@ do
 					hum.BodyDepthScale.Value = 1
 					hum.BodyWidthScale.Value = 1
 					hum.BodyHeightScale.Value = 1
-					notify("Fun", "Normal size restored")
+					helpers.notify("Fun", "Normal size restored")
 				end
 			end
 		end)
 	end)
-	createButton(tab, "Dance (Emote)", o(), function()
+	uiBuilder.createButton(tab, "Dance (Emote)", o(), function()
 		pcall(function()
-			local hum = getHumanoid()
+			local hum = helpers.getHumanoid()
 			if hum then
 				local anim = Instance.new("Animation")
 				anim.AnimationId = "rbxassetid://507771019"
@@ -4186,27 +4190,27 @@ do
 	local n = 0
 	local function o() n = n + 1 return n end
 
-	createSectionLabel(tab, "Keybinds", o())
-	createInfoLabel(tab, "Right Shift = Toggle GUI window", o())
-	createInfoLabel(tab, "GUI is draggable (drag title bar)", o())
+	uiBuilder.createSectionLabel(tab, "Keybinds", o())
+	uiBuilder.createInfoLabel(tab, "Right Shift = Toggle GUI window", o())
+	uiBuilder.createInfoLabel(tab, "GUI is draggable (drag title bar)", o())
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Stealth Configuration", o())
-	createInfoLabel(tab, "Adjust cooldowns to balance stealth vs. effectiveness", o())
-	createSlider(tab, "Silent Aim Cooldown (x0.1s)", 1, 20, math.floor(aimState.silentAimCooldown * 10), o(), function(val)
+	uiBuilder.createSectionLabel(tab, "Stealth Configuration", o())
+	uiBuilder.createInfoLabel(tab, "Adjust cooldowns to balance stealth vs. effectiveness", o())
+	uiBuilder.createSlider(tab, "Silent Aim Cooldown (x0.1s)", 1, 20, math.floor(aimState.silentAimCooldown * 10), o(), function(val)
 		aimState.silentAimCooldown = val / 10
 	end)
-	createSlider(tab, "Wallbang Cooldown (x0.1s)", 1, 20, math.floor(aimState.wallbangCooldown * 10), o(), function(val)
+	uiBuilder.createSlider(tab, "Wallbang Cooldown (x0.1s)", 1, 20, math.floor(aimState.wallbangCooldown * 10), o(), function(val)
 		aimState.wallbangCooldown = val / 10
 	end)
-	createSlider(tab, "Kill All Delay (x0.1s)", 1, 10, math.floor(combatState.killAllDelay * 10), o(), function(val)
+	uiBuilder.createSlider(tab, "Kill All Delay (x0.1s)", 1, 10, math.floor(combatState.killAllDelay * 10), o(), function(val)
 		combatState.killAllDelay = val / 10
 	end)
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Server Info", o())
+	uiBuilder.createSectionLabel(tab, "Server Info", o())
 	local placeLabel = Instance.new("TextLabel")
 	placeLabel.Size = UDim2.new(1, 0, 0, 16)
 	placeLabel.BackgroundTransparency = 1
@@ -4260,17 +4264,17 @@ do
 		end
 	end)
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "Server Actions", o())
-	createButton(tab, "Rejoin Server", o(), function()
-		notify("Rejoin", "Teleporting...")
+	uiBuilder.createSectionLabel(tab, "Server Actions", o())
+	uiBuilder.createButton(tab, "Rejoin Server", o(), function()
+		helpers.notify("Rejoin", "Teleporting...")
 		pcall(function()
 			TeleportService:Teleport(game.PlaceId, LocalPlayer)
 		end)
 	end)
-	createButton(tab, "Server Hop (Random Server)", o(), function()
-		notify("Server Hop", "Finding new server...")
+	uiBuilder.createButton(tab, "Server Hop (Random Server)", o(), function()
+		helpers.notify("Server Hop", "Finding new server...")
 		task.spawn(function()
 			pcall(function()
 				local HttpService = game:GetService("HttpService")
@@ -4284,17 +4288,17 @@ do
 						end
 					end
 				end
-				notify("Error", "No available servers found")
+				helpers.notify("Error", "No available servers found")
 			end)
 		end)
 	end)
-	createToggle(tab, "Auto-Rejoin on Kick", o(), function(on)
+	uiBuilder.createToggle(tab, "Auto-Rejoin on Kick", o(), function(on)
 		miscState.autoRejoinActive = on
 		if on then
-			notify("Auto-Rejoin", "Will rejoin if kicked")
+			helpers.notify("Auto-Rejoin", "Will rejoin if kicked")
 		end
 	end)
-	createInfoLabel(tab, "Auto-rejoin attempts to reconnect when kicked", o())
+	uiBuilder.createInfoLabel(tab, "Auto-rejoin attempts to reconnect when kicked", o())
 
 	-- Setup auto-rejoin hooks
 	pcall(function()
@@ -4306,12 +4310,12 @@ do
 		end)
 	end)
 
-	createSpacer(tab, o())
+	uiBuilder.createSpacer(tab, o())
 
-	createSectionLabel(tab, "About", o())
-	createInfoLabel(tab, "Synapse X The Revival - NBTF Hub v4.0", o())
-	createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
-	createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
+	uiBuilder.createSectionLabel(tab, "About", o())
+	uiBuilder.createInfoLabel(tab, "Synapse X The Revival - NBTF Hub v4.0", o())
+	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
+	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
 
 -- ===================== MINIMIZE / TOGGLE =====================
@@ -4329,7 +4333,7 @@ toggleBtn.TextSize = 14
 toggleBtn.Visible = isMobile
 toggleBtn.BackgroundTransparency = isMobile and 0.3 or 0
 toggleBtn.Parent = screenGui
-addCorner(toggleBtn, 25)
+uiBuilder.addCorner(toggleBtn, 25)
 
 if isMobile then
 	local _tDragDist = 0
@@ -4390,8 +4394,8 @@ LocalPlayer.CharacterAdded:Connect(function()
 	if moveState.noclipActive then stopNoclip() task.wait(0.3) startNoclip() end
 	if moveState.godModeActive then stopGodMode() task.wait(0.3) startGodMode() end
 	if miscState.antiRagdollActive then stopAntiRagdoll() task.wait(0.3) startAntiRagdoll() end
-	if combatState.infAmmoActive then modGuns() end
-	if combatState.noRecoilActive then modGuns() end
+	if combatState.infAmmoActive then actions.modGuns() end
+	if combatState.noRecoilActive then actions.modGuns() end
 	if moveState.bunnyHopActive then stopBunnyHop() task.wait(0.1) startBunnyHop() end
 	if combatState.antiAimActive then stopAntiAim() task.wait(0.1) startAntiAim() end
 	if playerState.invisibleActive then task.wait(0.5) startInvisible() end
@@ -4401,7 +4405,7 @@ end)
 setupAutoRespawn()
 
 -- ===================== STARTUP =====================
-notify("SX NBTF v4.0", "Loaded! Right Shift to toggle")
+helpers.notify("SX NBTF v4.0", "Loaded! Right Shift to toggle")
 print("[SX NBTF v4.0] Synapse X The Revival - NBTF Hub v4.0")
 print("[SX NBTF v4.0] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
 print("[SX NBTF v4.0] Uses WeaponsSystem.Network.WeaponHit for combat")
