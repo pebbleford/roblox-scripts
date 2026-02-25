@@ -1921,7 +1921,7 @@ local function startKillAll()
 				if player ~= LocalPlayer and player.Character then
 					local theirRoot = player.Character:FindFirstChild("HumanoidRootPart")
 					local theirHum = player.Character:FindFirstChildOfClass("Humanoid")
-					if theirRoot and theirHum and theirHum.Health > 0 then
+					if theirRoot and theirHum and theirHum.Health > 0 and theirHum:GetState() ~= Enum.HumanoidStateType.Dead then
 						myRoot.CFrame = theirRoot.CFrame
 						_wait(0.05)
 					end
