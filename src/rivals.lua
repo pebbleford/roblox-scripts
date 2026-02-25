@@ -6,7 +6,7 @@ if not keyOk or not keySystem or not keySystem.validate() then return end
 -- ================================================================
 -- Synapse X The Revival - RIVALS Hub
 -- Dedicated admin for RIVALS FPS
--- v1.2
+-- v1.4
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -49,7 +49,7 @@ local silentAimEnabled = false
 local triggerBotEnabled = false
 local aimbotKey = Enum.UserInputType.MouseButton2  -- Right click to aim
 local aimbotFOV = 200
-local aimbotSmoothing = 5
+local aimbotSmoothing = 2
 local aimbotAimPart = "Head"  -- "Head", "HumanoidRootPart", "Torso"
 local aimbotMaxDist = 300
 local aimbotWallCheck = true
@@ -80,16 +80,38 @@ local hitboxExpandEnabled = false
 
 -- Fun
 local flingEnabled = false
+local walkFlingEnabled = false
 local spinEnabled = false
+local seizureEnabled = false
+local headlessEnabled = false
 local emoteActive = false
+
+-- Combat (new)
+local autoFireEnabled = false
+local killAuraEnabled = false
+
+-- ESP (new)
+local noFogEnabled = false
+local chamsEnabled = false
+
+-- Player (new)
+local godEnabled = false
+local invisibleEnabled = false
+local antiAfkEnabled = false
+local bunnyHopEnabled = false
+local spectating = false
+local selectedPlayer = nil
 
 -- Values
 local flySpeed = 80
 local speedValue = 100
 local flingPower = 99999
+local walkFlingPower = 10000
 local jumpPowerValue = 50
 local cameraFOV = 90
 local hitboxSize = 10
+local killAuraRange = 15
+local gravityValue = 196.2
 
 -- Connections
 local aimbotConnection = nil
@@ -116,6 +138,22 @@ local flingConnection2 = nil
 local hitboxConnection = nil
 local emoteTracks = {}
 local emoteConnection = nil
+local autoFireConnection = nil
+local killAuraConnection = nil
+local noFogOrigFogStart = nil
+local noFogOrigFogEnd = nil
+local chamsObjects = {}
+local chamsCharConnections = {}
+local chamsPlayerAddedConnection = nil
+local godConnection = nil
+local savedTransparencies = {}
+local antiAfkConnection = nil
+local bunnyHopConnection = nil
+local walkFlingThread = nil
+local walkFlingProps = {}
+local walkFlingConnection = nil
+local seizureConnection = nil
+local headlessSavedParts = {}
 local windowVisible = true
 local activeTab = "Main"
 local logLines = {}
@@ -272,7 +310,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 40, 1, 0)
 versionLabel.Position = UDim2.new(0, 130, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v1.2"
+versionLabel.Text = "v1.4"
 versionLabel.TextColor3 = COLORS.accent
 versionLabel.Font = Enum.Font.Gotham
 versionLabel.TextSize = 10
@@ -754,6 +792,31 @@ local function isTargetVisible(targetPart)
 	return false
 end
 
+-- Team mode detection: only filter teammates if there are 2+ teams with players
+local function isActualTeamMode()
+	local ok, result = pcall(function()
+		local teamsWithPlayers = 0
+		for _, team in ipairs(Teams:GetTeams()) do
+			if #team:GetPlayers() > 0 then
+				teamsWithPlayers = teamsWithPlayers + 1
+			end
+		end
+		return teamsWithPlayers >= 2
+	end)
+	return ok and result
+end
+
+local function shouldSkipTeammate(player)
+	if not teamCheck then return false end
+	local myTeam = LocalPlayer.Team
+	local theirTeam = player.Team
+	if not myTeam or not theirTeam then return false end
+	if myTeam == theirTeam then
+		return isActualTeamMode()
+	end
+	return false
+end
+
 local function getClosestPlayerInFOV()
 	local cam = workspace.CurrentCamera
 	local closest = nil
@@ -762,11 +825,7 @@ local function getClosestPlayerInFOV()
 
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player ~= LocalPlayer and player.Character then
-			-- Team check
-			local skipTeam = false
-			if teamCheck and player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then
-				skipTeam = true
-			end
+			local skipTeam = shouldSkipTeammate(player)
 
 			if not skipTeam and isPlayerInMatch(player) then
 				local character = player.Character
@@ -818,14 +877,25 @@ local function startAimbot()
 			local targetPos = target.Position
 			local camPos = cam.CFrame.Position
 
-			-- Method 1: mousemoverel (most reliable in FPS games - moves actual mouse)
+			-- mousemoverel (most reliable in FPS games - moves actual mouse)
 			local screenPos = cam:WorldToViewportPoint(targetPos)
 			local screenCenter = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
 			local delta = Vector2.new(screenPos.X - screenCenter.X, screenPos.Y - screenCenter.Y)
 
-			-- Apply smoothing (lower = snappier)
-			local moveX = delta.X / aimbotSmoothing
-			local moveY = delta.Y / aimbotSmoothing
+			-- Apply smoothing with sensitivity multiplier
+			-- Mouse sensitivity in Roblox means 1 pixel of mousemoverel != 1 pixel on screen
+			-- Multiply by 1.5 to compensate for typical sensitivity scaling
+			local sensitivity = 1.5
+			local moveX = (delta.X / aimbotSmoothing) * sensitivity
+			local moveY = (delta.Y / aimbotSmoothing) * sensitivity
+
+			-- Minimum movement threshold: prevents aimbot from stalling when close to target
+			if math.abs(moveX) < 1 and math.abs(delta.X) > 1 then
+				moveX = delta.X > 0 and 1 or -1
+			end
+			if math.abs(moveY) < 1 and math.abs(delta.Y) > 1 then
+				moveY = delta.Y > 0 and 1 or -1
+			end
 
 			-- Use mousemoverel if available (works on most executors)
 			if mousemoverel then
@@ -902,12 +972,7 @@ local function startTriggerBot()
 				if targetModel then
 					local player = Players:GetPlayerFromCharacter(targetModel)
 					if player and player ~= LocalPlayer then
-						-- Team check
-						local skipTeam = false
-						if teamCheck and player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then
-							skipTeam = true
-						end
-						if not skipTeam then
+						if not shouldSkipTeammate(player) then
 							-- Check if alive
 							local hum = targetModel:FindFirstChildOfClass("Humanoid")
 							if hum and hum.Health > 0 then
@@ -956,10 +1021,7 @@ local function enableESP()
 			if not root then return end
 
 			-- Determine color based on team
-			local isEnemy = true
-			if teamCheck and player.Team and LocalPlayer.Team then
-				isEnemy = player.Team ~= LocalPlayer.Team
-			end
+			local isEnemy = not shouldSkipTeammate(player)
 			local espColor = isEnemy and Color3.fromRGB(255, 50, 50) or Color3.fromRGB(50, 255, 50)
 
 			-- Highlight (chams)
@@ -1224,11 +1286,7 @@ local function startHitboxExpand()
 		pcall(function()
 			for _, player in ipairs(Players:GetPlayers()) do
 				if player ~= LocalPlayer and player.Character then
-					local skipTeam = false
-					if teamCheck and player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then
-						skipTeam = true
-					end
-					if not skipTeam then
+					if not shouldSkipTeammate(player) then
 						local head = player.Character:FindFirstChild("Head")
 						if head and head:IsA("BasePart") then
 							head.Size = Vector3.new(hitboxSize, hitboxSize, hitboxSize)
@@ -1623,6 +1681,446 @@ local function playJerkEmote()
 	end)
 end
 
+-- ===================== KILL AURA =====================
+local function startKillAura()
+	killAuraConnection = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			local character = LocalPlayer.Character
+			if not character then return end
+			local myHRP = character:FindFirstChild("HumanoidRootPart")
+			if not myHRP then return end
+			for _, player in ipairs(Players:GetPlayers()) do
+				if player ~= LocalPlayer then
+					if not shouldSkipTeammate(player) then
+						local theirChar = player.Character
+						if theirChar then
+							local theirHRP = theirChar:FindFirstChild("HumanoidRootPart")
+							if theirHRP and (myHRP.Position - theirHRP.Position).Magnitude <= killAuraRange then
+								local direction = (theirHRP.Position - myHRP.Position)
+								direction = direction.Magnitude > 0.1 and direction.Unit or Vector3.new(0, 1, 0)
+								for _, part in ipairs(theirChar:GetDescendants()) do
+									if part:IsA("BasePart") and not part.Anchored then
+										part.Velocity = direction * 200 + Vector3.new(0, 100, 0)
+									end
+								end
+							end
+						end
+					end
+				end
+			end
+		end)
+	end)
+	addLog("[KILL AURA] ON - Range: " .. killAuraRange, COLORS.success)
+end
+
+local function stopKillAura()
+	if killAuraConnection then killAuraConnection:Disconnect() killAuraConnection = nil end
+	addLog("[KILL AURA] OFF", COLORS.error)
+end
+
+-- ===================== AUTO FIRE =====================
+local function startAutoFire()
+	autoFireConnection = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			if not autoFireEnabled then return end
+			local character = LocalPlayer.Character
+			if not character then return end
+			local tool = character:FindFirstChildOfClass("Tool")
+			if not tool then return end
+			pcall(function() mouse1click() end)
+		end)
+	end)
+	addLog("[AUTO FIRE] ON - Equip weapon!", COLORS.success)
+end
+
+local function stopAutoFire()
+	if autoFireConnection then autoFireConnection:Disconnect() autoFireConnection = nil end
+	addLog("[AUTO FIRE] OFF", COLORS.error)
+end
+
+-- ===================== NO FOG =====================
+local function startNoFog()
+	noFogOrigFogStart = Lighting.FogStart
+	noFogOrigFogEnd = Lighting.FogEnd
+	Lighting.FogStart = 999999
+	Lighting.FogEnd = 9999999
+	addLog("[NO FOG] ON", COLORS.success)
+end
+
+local function stopNoFog()
+	if noFogOrigFogStart then Lighting.FogStart = noFogOrigFogStart end
+	if noFogOrigFogEnd then Lighting.FogEnd = noFogOrigFogEnd end
+	addLog("[NO FOG] OFF", COLORS.error)
+end
+
+-- ===================== CHAMS =====================
+local function enableChams()
+	local function addPlayerChams(player)
+		if player == LocalPlayer then return end
+		local function updateChams()
+			if chamsObjects[player] then
+				for _, obj in pairs(chamsObjects[player]) do
+					pcall(function()
+						if typeof(obj) == "RBXScriptConnection" then obj:Disconnect()
+						else obj:Destroy() end
+					end)
+				end
+			end
+			chamsObjects[player] = {}
+			local character = player.Character
+			if not character then return end
+			local humanoid = character:FindFirstChildOfClass("Humanoid")
+			if not humanoid or humanoid.Health <= 0 then return end
+
+			local isEnemy = not shouldSkipTeammate(player)
+			local fillColor = isEnemy and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(0, 255, 0)
+			local outlineColor = isEnemy and Color3.fromRGB(255, 200, 200) or Color3.fromRGB(200, 255, 200)
+
+			local hl = Instance.new("Highlight")
+			hl.Name = "SXChams"
+			hl.FillColor = fillColor
+			hl.OutlineColor = outlineColor
+			hl.FillTransparency = 0.3
+			hl.OutlineTransparency = 0
+			hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+			hl.Adornee = character
+			hl.Parent = character
+			table.insert(chamsObjects[player], hl)
+		end
+		updateChams()
+		local conn = player.CharacterAdded:Connect(function()
+			_wait(1)
+			if chamsEnabled then updateChams() end
+		end)
+		table.insert(chamsCharConnections, conn)
+	end
+
+	for _, player in ipairs(Players:GetPlayers()) do addPlayerChams(player) end
+	chamsPlayerAddedConnection = Players.PlayerAdded:Connect(function(player)
+		_wait(2)
+		if chamsEnabled then addPlayerChams(player) end
+	end)
+	addLog("[CHAMS] ON", COLORS.success)
+end
+
+local function disableChams()
+	if chamsPlayerAddedConnection then chamsPlayerAddedConnection:Disconnect() chamsPlayerAddedConnection = nil end
+	for _, conn in ipairs(chamsCharConnections) do pcall(function() conn:Disconnect() end) end
+	chamsCharConnections = {}
+	for player, objects in pairs(chamsObjects) do
+		for _, obj in pairs(objects) do
+			pcall(function()
+				if typeof(obj) == "RBXScriptConnection" then obj:Disconnect()
+				else obj:Destroy() end
+			end)
+		end
+	end
+	chamsObjects = {}
+	addLog("[CHAMS] OFF", COLORS.error)
+end
+
+-- ===================== GOD MODE =====================
+local function startGod()
+	godConnection = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			local character = LocalPlayer.Character
+			if not character then return end
+			local humanoid = character:FindFirstChildOfClass("Humanoid")
+			if humanoid then
+				humanoid.MaxHealth = math.huge
+				humanoid.Health = math.huge
+			end
+		end)
+	end)
+	addLog("[GOD] ON (client-side)", COLORS.success)
+end
+
+local function stopGod()
+	if godConnection then godConnection:Disconnect() godConnection = nil end
+	pcall(function()
+		local character = LocalPlayer.Character
+		if character then
+			local humanoid = character:FindFirstChildOfClass("Humanoid")
+			if humanoid then humanoid.MaxHealth = 100 humanoid.Health = 100 end
+		end
+	end)
+	addLog("[GOD] OFF", COLORS.error)
+end
+
+-- ===================== INVISIBLE =====================
+local function startInvisible()
+	pcall(function()
+		local character = LocalPlayer.Character
+		if not character then return end
+		savedTransparencies = {}
+		for _, part in ipairs(character:GetDescendants()) do
+			if part:IsA("BasePart") then
+				savedTransparencies[part] = part.Transparency
+				part.Transparency = 1
+			elseif part:IsA("Decal") or part:IsA("Texture") then
+				savedTransparencies[part] = part.Transparency
+				part.Transparency = 1
+			end
+		end
+		for _, acc in ipairs(character:GetChildren()) do
+			if acc:IsA("Accessory") then
+				local handle = acc:FindFirstChild("Handle")
+				if handle then savedTransparencies[handle] = handle.Transparency handle.Transparency = 1 end
+			end
+		end
+	end)
+	addLog("[INVISIBLE] ON (client-side)", COLORS.success)
+end
+
+local function stopInvisible()
+	pcall(function()
+		for part, transparency in pairs(savedTransparencies) do
+			if part and part.Parent then part.Transparency = transparency end
+		end
+		savedTransparencies = {}
+	end)
+	addLog("[INVISIBLE] OFF", COLORS.error)
+end
+
+-- ===================== ANTI-AFK =====================
+local function startAntiAfk()
+	pcall(function()
+		local VirtualUser = game:GetService("VirtualUser")
+		antiAfkConnection = LocalPlayer.Idled:Connect(function()
+			VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+			_wait(1)
+			VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+		end)
+	end)
+	addLog("[ANTI-AFK] ON", COLORS.success)
+end
+
+local function stopAntiAfk()
+	if antiAfkConnection then antiAfkConnection:Disconnect() antiAfkConnection = nil end
+	addLog("[ANTI-AFK] OFF", COLORS.error)
+end
+
+-- ===================== BUNNY HOP =====================
+local function startBunnyHop()
+	bunnyHopConnection = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			if not bunnyHopEnabled then return end
+			local character = LocalPlayer.Character
+			if not character then return end
+			local humanoid = character:FindFirstChildOfClass("Humanoid")
+			if not humanoid then return end
+			if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+				local state = humanoid:GetState()
+				if state == Enum.HumanoidStateType.Running or state == Enum.HumanoidStateType.RunningNoPhysics then
+					humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+				end
+			end
+		end)
+	end)
+	addLog("[BHOP] ON - Hold W to auto-jump", COLORS.success)
+end
+
+local function stopBunnyHop()
+	if bunnyHopConnection then bunnyHopConnection:Disconnect() bunnyHopConnection = nil end
+	addLog("[BHOP] OFF", COLORS.error)
+end
+
+-- ===================== GRAVITY =====================
+local function setGravity(value)
+	pcall(function() workspace.Gravity = value end)
+end
+
+-- ===================== TELEPORT TO PLAYER =====================
+local function teleportToPlayer(targetPlayer)
+	pcall(function()
+		local myChar = LocalPlayer.Character
+		local theirChar = targetPlayer.Character
+		if myChar and theirChar then
+			local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+			local theirHRP = theirChar:FindFirstChild("HumanoidRootPart")
+			if myHRP and theirHRP then
+				myHRP.CFrame = theirHRP.CFrame * CFrame.new(0, 0, -5)
+				addLog("[TP] Teleported to " .. targetPlayer.DisplayName, COLORS.success)
+			end
+		end
+	end)
+end
+
+-- ===================== SPECTATE =====================
+local function spectatePlayer(targetPlayer)
+	pcall(function()
+		if targetPlayer and targetPlayer.Character then
+			local humanoid = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
+			if humanoid then
+				workspace.CurrentCamera.CameraSubject = humanoid
+				spectating = true
+				addLog("[SPECTATE] Watching " .. targetPlayer.DisplayName, COLORS.success)
+			end
+		end
+	end)
+end
+
+local function unspectate()
+	pcall(function()
+		local myChar = LocalPlayer.Character
+		if myChar then
+			local humanoid = myChar:FindFirstChildOfClass("Humanoid")
+			if humanoid then workspace.CurrentCamera.CameraSubject = humanoid end
+		end
+		spectating = false
+		addLog("[SPECTATE] Stopped", COLORS.error)
+	end)
+end
+
+-- ===================== WALK FLING =====================
+local function startWalkFling()
+	local ok, err = pcall(function()
+		local character = LocalPlayer.Character
+		if not character then return end
+		local root = character:FindFirstChild("HumanoidRootPart")
+		if not root then return end
+
+		-- Set density to 100
+		walkFlingProps = {}
+		for _, part in ipairs(character:GetDescendants()) do
+			if part:IsA("BasePart") then
+				walkFlingProps[part] = part.CustomPhysicalProperties
+				part.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
+			end
+		end
+
+		-- Heartbeat: velocity spikes using AssemblyLinearVelocity
+		walkFlingConnection = RunService.Heartbeat:Connect(function()
+			pcall(function()
+				local char = LocalPlayer.Character
+				if not char then return end
+				local rt = char:FindFirstChild("HumanoidRootPart")
+				if not rt then return end
+				local hum = char:FindFirstChildOfClass("Humanoid")
+				if not hum then return end
+				local moveDir = hum.MoveDirection
+				if moveDir.Magnitude > 0.1 then
+					rt.AssemblyLinearVelocity = moveDir.Unit * walkFlingPower + Vector3.new(0, 0, 0)
+				end
+			end)
+		end)
+
+		addLog("[WALK FLING] ON - Walk into players!", COLORS.success)
+	end)
+	if not ok then
+		addLog("[WALK FLING] Error: " .. tostring(err), COLORS.error)
+	end
+end
+
+local function stopWalkFling()
+	if walkFlingConnection then walkFlingConnection:Disconnect() walkFlingConnection = nil end
+	local character = LocalPlayer.Character
+	if character then
+		for _, part in ipairs(character:GetDescendants()) do
+			if part:IsA("BasePart") then
+				if walkFlingProps[part] then
+					part.CustomPhysicalProperties = walkFlingProps[part]
+				else
+					part.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
+				end
+			end
+		end
+		for _, part in ipairs(character:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.Velocity = Vector3.new(0, 0, 0)
+			end
+		end
+	end
+	walkFlingProps = {}
+	addLog("[WALK FLING] OFF", COLORS.error)
+end
+
+-- ===================== SEIZURE =====================
+local function startSeizure()
+	seizureConnection = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			local character = LocalPlayer.Character
+			if not character then return end
+			local hrp = character:FindFirstChild("HumanoidRootPart")
+			if hrp then
+				hrp.CFrame = hrp.CFrame * CFrame.Angles(
+					math.rad(math.random(-30, 30)),
+					math.rad(math.random(-30, 30)),
+					math.rad(math.random(-30, 30))
+				)
+			end
+			for _, part in ipairs(character:GetDescendants()) do
+				if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+					part.BrickColor = BrickColor.Random()
+				end
+			end
+		end)
+	end)
+	addLog("[SEIZURE] ON", COLORS.success)
+end
+
+local function stopSeizure()
+	if seizureConnection then seizureConnection:Disconnect() seizureConnection = nil end
+	addLog("[SEIZURE] OFF", COLORS.error)
+end
+
+-- ===================== HEADLESS =====================
+local function startHeadless()
+	pcall(function()
+		local character = LocalPlayer.Character
+		if not character then return end
+		local head = character:FindFirstChild("Head")
+		if not head then return end
+		headlessSavedParts = {}
+		headlessSavedParts.headTransparency = head.Transparency
+		head.Transparency = 1
+		for _, child in ipairs(head:GetChildren()) do
+			if child:IsA("Decal") then
+				headlessSavedParts[child] = child.Transparency
+				child.Transparency = 1
+			elseif child:IsA("SpecialMesh") then
+				headlessSavedParts[child] = child.Scale
+				child.Scale = Vector3.new(0, 0, 0)
+			end
+		end
+		for _, acc in ipairs(character:GetChildren()) do
+			if acc:IsA("Accessory") then
+				local handle = acc:FindFirstChild("Handle")
+				if handle then
+					local att = handle:FindFirstChildOfClass("Attachment")
+					if att and (att.Name == "HatAttachment" or att.Name == "HairAttachment" or att.Name == "FaceFrontAttachment" or att.Name == "FaceCenterAttachment") then
+						headlessSavedParts[handle] = handle.Transparency
+						handle.Transparency = 1
+					end
+				end
+			end
+		end
+	end)
+	addLog("[HEADLESS] ON", COLORS.success)
+end
+
+local function stopHeadless()
+	pcall(function()
+		local character = LocalPlayer.Character
+		if not character then return end
+		local head = character:FindFirstChild("Head")
+		if head and headlessSavedParts.headTransparency then
+			head.Transparency = headlessSavedParts.headTransparency
+		end
+		for obj, val in pairs(headlessSavedParts) do
+			if obj ~= "headTransparency" and typeof(obj) ~= "string" and obj and obj.Parent then
+				if typeof(val) == "Vector3" then
+					obj.Scale = val
+				elseif typeof(val) == "number" then
+					obj.Transparency = val
+				end
+			end
+		end
+		headlessSavedParts = {}
+	end)
+	addLog("[HEADLESS] OFF", COLORS.error)
+end
+
 -- ===================== REJOIN / SERVER HOP =====================
 local function rejoinServer()
 	addLog("[REJOIN] Rejoining...", COLORS.accent)
@@ -1658,7 +2156,7 @@ do
 	local tab = tabFrames["Main"]
 
 	createSectionLabel(tab, "Info", 1)
-	createInfoLabel(tab, "RIVALS Hub v1.2", 2)
+	createInfoLabel(tab, "RIVALS Hub v1.4", 2)
 	createInfoLabel(tab, "SX The Revival", 3)
 
 	local spacer = Instance.new("Frame")
@@ -1758,16 +2256,60 @@ do
 		triggerBotEnabled = on
 		if on then startTriggerBot() else stopTriggerBot() end
 	end)
+	createToggle(tab, "Auto Fire", 12, function(on)
+		autoFireEnabled = on
+		if on then startAutoFire() else stopAutoFire() end
+	end)
 
 	local spacer2 = Instance.new("Frame")
 	spacer2.Size = UDim2.new(1, 0, 0, 4)
 	spacer2.BackgroundTransparency = 1
-	spacer2.LayoutOrder = 12
+	spacer2.LayoutOrder = 13
 	spacer2.Parent = tab
 
-	createSectionLabel(tab, "Visual", 13)
+	createSectionLabel(tab, "Aim Part", 14)
 
-	createToggle(tab, "FOV Circle", 14, function(on)
+	local aimPartLabel = createInfoLabel(tab, "Current: " .. aimbotAimPart, 15)
+
+	createActionButton(tab, "Aim: Head", 16, function()
+		aimbotAimPart = "Head"
+		aimPartLabel.Text = "Current: Head"
+		addLog("[AIM PART] Head", COLORS.success)
+	end)
+	createActionButton(tab, "Aim: Torso", 17, function()
+		aimbotAimPart = "HumanoidRootPart"
+		aimPartLabel.Text = "Current: HumanoidRootPart"
+		addLog("[AIM PART] Torso", COLORS.success)
+	end)
+	createActionButton(tab, "Aim: Random", 18, function()
+		aimbotAimPart = (math.random(1, 2) == 1) and "Head" or "HumanoidRootPart"
+		aimPartLabel.Text = "Current: " .. aimbotAimPart
+		addLog("[AIM PART] Random -> " .. aimbotAimPart, COLORS.success)
+	end)
+
+	local spacer3 = Instance.new("Frame")
+	spacer3.Size = UDim2.new(1, 0, 0, 4)
+	spacer3.BackgroundTransparency = 1
+	spacer3.LayoutOrder = 19
+	spacer3.Parent = tab
+
+	createSectionLabel(tab, "Kill Zone", 20)
+
+	createToggle(tab, "Kill Aura", 21, function(on)
+		killAuraEnabled = on
+		if on then startKillAura() else stopKillAura() end
+	end)
+	createSlider(tab, "Kill Aura Range", 5, 30, killAuraRange, 22, function(val) killAuraRange = val end)
+
+	local spacer4 = Instance.new("Frame")
+	spacer4.Size = UDim2.new(1, 0, 0, 4)
+	spacer4.BackgroundTransparency = 1
+	spacer4.LayoutOrder = 23
+	spacer4.Parent = tab
+
+	createSectionLabel(tab, "Visual", 24)
+
+	createToggle(tab, "FOV Circle", 25, function(on)
 		fovCircleEnabled = on
 		if on then createFOVCircle() else destroyFOVCircle() end
 	end)
@@ -1818,6 +2360,23 @@ do
 	createToggle(tab, "Fullbright", 8, function(on)
 		fullbrightEnabled = on
 		if on then startFullbright() else stopFullbright() end
+	end)
+	createToggle(tab, "No Fog", 9, function(on)
+		noFogEnabled = on
+		if on then startNoFog() else stopNoFog() end
+	end)
+
+	local spacer2 = Instance.new("Frame")
+	spacer2.Size = UDim2.new(1, 0, 0, 4)
+	spacer2.BackgroundTransparency = 1
+	spacer2.LayoutOrder = 10
+	spacer2.Parent = tab
+
+	createSectionLabel(tab, "Chams", 11)
+
+	createToggle(tab, "Chams (Through Walls)", 12, function(on)
+		chamsEnabled = on
+		if on then enableChams() else disableChams() end
 	end)
 end
 
@@ -1900,18 +2459,147 @@ do
 		jumpPowerValue = val
 		setJumpPower(val)
 	end)
+	createToggle(tab, "Bunny Hop", 9, function(on)
+		bunnyHopEnabled = on
+		if on then startBunnyHop() else stopBunnyHop() end
+	end)
 
 	local spacer = Instance.new("Frame")
 	spacer.Size = UDim2.new(1, 0, 0, 4)
 	spacer.BackgroundTransparency = 1
-	spacer.LayoutOrder = 9
+	spacer.LayoutOrder = 10
 	spacer.Parent = tab
 
-	createSectionLabel(tab, "Camera", 10)
+	createSectionLabel(tab, "Survival", 11)
 
-	createSlider(tab, "Camera FOV", 50, 120, cameraFOV, 11, function(val)
+	createToggle(tab, "God Mode", 12, function(on)
+		godEnabled = on
+		if on then startGod() else stopGod() end
+	end)
+	createToggle(tab, "Invisible", 13, function(on)
+		invisibleEnabled = on
+		if on then startInvisible() else stopInvisible() end
+	end)
+	createToggle(tab, "Anti-AFK", 14, function(on)
+		antiAfkEnabled = on
+		if on then startAntiAfk() else stopAntiAfk() end
+	end)
+
+	local spacer2 = Instance.new("Frame")
+	spacer2.Size = UDim2.new(1, 0, 0, 4)
+	spacer2.BackgroundTransparency = 1
+	spacer2.LayoutOrder = 15
+	spacer2.Parent = tab
+
+	createSectionLabel(tab, "Physics", 16)
+
+	createSlider(tab, "Gravity", 0, 1000, 196, 17, function(val)
+		gravityValue = val
+		setGravity(val)
+	end)
+
+	local spacer3 = Instance.new("Frame")
+	spacer3.Size = UDim2.new(1, 0, 0, 4)
+	spacer3.BackgroundTransparency = 1
+	spacer3.LayoutOrder = 18
+	spacer3.Parent = tab
+
+	createSectionLabel(tab, "Camera", 19)
+
+	createSlider(tab, "Camera FOV", 50, 120, cameraFOV, 20, function(val)
 		cameraFOV = val
 		setGameFOV(val)
+	end)
+
+	local spacer4 = Instance.new("Frame")
+	spacer4.Size = UDim2.new(1, 0, 0, 4)
+	spacer4.BackgroundTransparency = 1
+	spacer4.LayoutOrder = 21
+	spacer4.Parent = tab
+
+	createSectionLabel(tab, "Player Target", 22)
+
+	local selectedPlayerLabel = createInfoLabel(tab, "Selected: None", 23)
+
+	createActionButton(tab, "Teleport to Player", 24, function()
+		if selectedPlayer then teleportToPlayer(selectedPlayer)
+		else addLog("[TP] No player selected!", COLORS.error) end
+	end)
+	createActionButton(tab, "Spectate Player", 25, function()
+		if selectedPlayer then spectatePlayer(selectedPlayer)
+		else addLog("[SPECTATE] No player selected!", COLORS.error) end
+	end)
+	createActionButton(tab, "Unspectate", 26, function()
+		unspectate()
+	end)
+
+	local spacer5 = Instance.new("Frame")
+	spacer5.Size = UDim2.new(1, 0, 0, 4)
+	spacer5.BackgroundTransparency = 1
+	spacer5.LayoutOrder = 27
+	spacer5.Parent = tab
+
+	createSectionLabel(tab, "Player List", 28)
+
+	-- Player list container
+	local playerListFrame = Instance.new("Frame")
+	playerListFrame.Size = UDim2.new(1, 0, 0, 0)
+	playerListFrame.BackgroundTransparency = 1
+	playerListFrame.AutomaticSize = Enum.AutomaticSize.Y
+	playerListFrame.LayoutOrder = 29
+	playerListFrame.Parent = tab
+
+	local playerListLayout = Instance.new("UIListLayout")
+	playerListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	playerListLayout.Padding = UDim.new(0, 3)
+	playerListLayout.Parent = playerListFrame
+
+	local function refreshPlayerList()
+		for _, child in ipairs(playerListFrame:GetChildren()) do
+			if child:IsA("TextButton") then child:Destroy() end
+		end
+		local order = 0
+		for _, player in ipairs(Players:GetPlayers()) do
+			if player ~= LocalPlayer then
+				order = order + 1
+				local btn = Instance.new("TextButton")
+				btn.Size = UDim2.new(1, 0, 0, 26)
+				btn.BackgroundColor3 = COLORS.tabBg
+				btn.Text = player.DisplayName .. " (@" .. player.Name .. ")"
+				btn.TextColor3 = COLORS.textPrimary
+				btn.Font = Enum.Font.Gotham
+				btn.TextSize = 11
+				btn.TextTruncate = Enum.TextTruncate.AtEnd
+				btn.LayoutOrder = order
+				btn.Parent = playerListFrame
+				addCorner(btn, 4)
+				btn.MouseEnter:Connect(function() btn.BackgroundColor3 = COLORS.bgSecondary end)
+				btn.MouseLeave:Connect(function()
+					btn.BackgroundColor3 = (selectedPlayer == player) and COLORS.accentDark or COLORS.tabBg
+				end)
+				btn.MouseButton1Click:Connect(function()
+					selectedPlayer = player
+					selectedPlayerLabel.Text = "Selected: " .. player.DisplayName
+					addLog("[SELECT] " .. player.DisplayName, COLORS.accent)
+					-- Update button colors
+					for _, c in ipairs(playerListFrame:GetChildren()) do
+						if c:IsA("TextButton") then c.BackgroundColor3 = COLORS.tabBg end
+					end
+					btn.BackgroundColor3 = COLORS.accentDark
+				end)
+			end
+		end
+	end
+
+	refreshPlayerList()
+	Players.PlayerAdded:Connect(function() _wait(1) refreshPlayerList() end)
+	Players.PlayerRemoving:Connect(function(player)
+		if selectedPlayer == player then
+			selectedPlayer = nil
+			selectedPlayerLabel.Text = "Selected: None"
+		end
+		_wait(0.5)
+		refreshPlayerList()
 	end)
 end
 
@@ -1923,45 +2611,80 @@ do
 
 	createSectionLabel(tab, "Fling", 1)
 
-	createToggle(tab, "Spin Fling", 2, function(on)
+	local spinFlingToggle = createToggle(tab, "Spin Fling", 2, function(on)
+		if on and walkFlingEnabled then
+			walkFlingEnabled = false
+			stopWalkFling()
+		end
 		flingEnabled = on
 		if on then startFling() else stopFling() end
 	end)
 	createSlider(tab, "Fling Power", 1000, 99999, flingPower, 3, function(val) flingPower = val end)
+	local walkFlingToggle = createToggle(tab, "Walk Fling", 4, function(on)
+		if on and flingEnabled then
+			flingEnabled = false
+			stopFling()
+		end
+		walkFlingEnabled = on
+		if on then startWalkFling() else stopWalkFling() end
+	end)
+	createSlider(tab, "Walk Fling Power", 1000, 50000, walkFlingPower, 5, function(val) walkFlingPower = val end)
 
 	local spacer = Instance.new("Frame")
 	spacer.Size = UDim2.new(1, 0, 0, 4)
 	spacer.BackgroundTransparency = 1
-	spacer.LayoutOrder = 4
+	spacer.LayoutOrder = 6
 	spacer.Parent = tab
 
-	createSectionLabel(tab, "Visual", 5)
+	createSectionLabel(tab, "Visual", 7)
 
-	createToggle(tab, "Spin", 6, function(on)
+	createToggle(tab, "Spin", 8, function(on)
 		spinEnabled = on
 		if on then startSpin() else stopSpin() end
+	end)
+	createToggle(tab, "Seizure", 9, function(on)
+		seizureEnabled = on
+		if on then startSeizure() else stopSeizure() end
 	end)
 
 	local spacer2 = Instance.new("Frame")
 	spacer2.Size = UDim2.new(1, 0, 0, 4)
 	spacer2.BackgroundTransparency = 1
-	spacer2.LayoutOrder = 7
+	spacer2.LayoutOrder = 10
 	spacer2.Parent = tab
 
-	createSectionLabel(tab, "Emotes", 8)
+	createSectionLabel(tab, "Character", 11)
 
-	createActionButton(tab, "Emote 1", 9, function()
+	createActionButton(tab, "Headless", 12, function()
+		if headlessEnabled then
+			headlessEnabled = false
+			stopHeadless()
+		else
+			headlessEnabled = true
+			startHeadless()
+		end
+	end)
+
+	local spacer3 = Instance.new("Frame")
+	spacer3.Size = UDim2.new(1, 0, 0, 4)
+	spacer3.BackgroundTransparency = 1
+	spacer3.LayoutOrder = 13
+	spacer3.Parent = tab
+
+	createSectionLabel(tab, "Emotes", 14)
+
+	createActionButton(tab, "Emote 1", 15, function()
 		playJerkEmote()
 	end)
-	createActionButton(tab, "Dance", 10, function()
+	createActionButton(tab, "Dance", 16, function()
 		playEmote(507771019, 1, 10)
 		addLog("[EMOTE] Dance!", COLORS.success)
 	end)
-	createActionButton(tab, "Dab", 11, function()
+	createActionButton(tab, "Dab", 17, function()
 		playEmote(183412246, 1, 3)
 		addLog("[EMOTE] Dab!", COLORS.success)
 	end)
-	createActionButton(tab, "Stop Emote", 12, function()
+	createActionButton(tab, "Stop Emote", 18, function()
 		stopEmote()
 		addLog("[EMOTE] Stopped", COLORS.error)
 	end)
@@ -2038,6 +2761,63 @@ commands["unfling"] = function() flingEnabled = false stopFling() end
 commands["spin"] = function() spinEnabled = true startSpin() end
 commands["unspin"] = function() spinEnabled = false stopSpin() end
 
+-- Combat (new)
+commands["autofire"] = function() autoFireEnabled = true startAutoFire() end
+commands["unautofire"] = function() autoFireEnabled = false stopAutoFire() end
+commands["killaura"] = function() killAuraEnabled = true startKillAura() end
+commands["unkillaura"] = function() killAuraEnabled = false stopKillAura() end
+commands["aimpart"] = function(args)
+	local part = args[1] and args[1]:lower()
+	if part == "head" then aimbotAimPart = "Head"
+	elseif part == "torso" or part == "body" then aimbotAimPart = "HumanoidRootPart"
+	elseif part == "random" then aimbotAimPart = (math.random(1, 2) == 1) and "Head" or "HumanoidRootPart"
+	else addLog("[CMD] Usage: ;aimpart head/torso/random", COLORS.error) return end
+	addLog("[AIM PART] Set to " .. aimbotAimPart, COLORS.success)
+end
+
+-- ESP (new)
+commands["nofog"] = function() noFogEnabled = true startNoFog() end
+commands["unnofog"] = function() noFogEnabled = false stopNoFog() end
+commands["chams"] = function() chamsEnabled = true enableChams() end
+commands["unchams"] = function() chamsEnabled = false disableChams() end
+
+-- Player (new)
+commands["god"] = function() godEnabled = true startGod() end
+commands["ungod"] = function() godEnabled = false stopGod() end
+commands["invisible"] = function() invisibleEnabled = true startInvisible() end
+commands["uninvisible"] = function() invisibleEnabled = false stopInvisible() end
+commands["antiafk"] = function() antiAfkEnabled = true startAntiAfk() end
+commands["unantiafk"] = function() antiAfkEnabled = false stopAntiAfk() end
+commands["bhop"] = function() bunnyHopEnabled = true startBunnyHop() end
+commands["unbhop"] = function() bunnyHopEnabled = false stopBunnyHop() end
+commands["gravity"] = function(args)
+	local v = tonumber(args[1])
+	if v then gravityValue = v setGravity(v) addLog("[GRAVITY] Set to " .. v, COLORS.success)
+	else addLog("[CMD] Usage: ;gravity [value]", COLORS.error) end
+end
+commands["tp"] = function(args)
+	if not args[1] then addLog("[CMD] Usage: ;tp <player>", COLORS.error) return end
+	local target = findPlayer(args[1])
+	if target then teleportToPlayer(target) else addLog("[CMD] Player not found: " .. args[1], COLORS.error) end
+end
+commands["spectate"] = function(args)
+	if not args[1] then addLog("[CMD] Usage: ;spectate <player>", COLORS.error) return end
+	local target = findPlayer(args[1])
+	if target then spectatePlayer(target) else addLog("[CMD] Player not found: " .. args[1], COLORS.error) end
+end
+commands["unspectate"] = function() unspectate() end
+
+-- Fun (new)
+commands["walkfling"] = function()
+	if flingEnabled then flingEnabled = false stopFling() end
+	walkFlingEnabled = true startWalkFling()
+end
+commands["unwalkfling"] = function() walkFlingEnabled = false stopWalkFling() end
+commands["seizure"] = function() seizureEnabled = true startSeizure() end
+commands["unseizure"] = function() seizureEnabled = false stopSeizure() end
+commands["headless"] = function() headlessEnabled = true startHeadless() end
+commands["unheadless"] = function() headlessEnabled = false stopHeadless() end
+
 -- Emotes
 commands["emote1"] = function() playJerkEmote() end
 commands["dance"] = function() playEmote(507771019, 1, 10) addLog("[EMOTE] Dance!", COLORS.success) end
@@ -2051,23 +2831,29 @@ commands["serverhop"] = function() serverHop() end
 -- Help
 commands["cmds"] = function()
 	addLog("--- RIVALS Hub Commands ---", COLORS.accent)
-	addLog(";aimbot / ;unaimbot (hold RMB)", COLORS.textSecondary)
-	addLog(";silentaim / ;unsilentaim", COLORS.textSecondary)
-	addLog(";triggerbot / ;untriggerbot", COLORS.textSecondary)
-	addLog(";esp / ;unesp", COLORS.textSecondary)
-	addLog(";norecoil / ;unnorecoil", COLORS.textSecondary)
-	addLog(";nospread / ;unnospread", COLORS.textSecondary)
-	addLog(";rapidfire / ;unrapidfire", COLORS.textSecondary)
+	addLog("-- Combat --", COLORS.accent)
+	addLog(";aimbot / ;unaimbot    ;aimpart head/torso/random", COLORS.textSecondary)
+	addLog(";silentaim / ;unsilentaim    ;triggerbot / ;untriggerbot", COLORS.textSecondary)
+	addLog(";autofire / ;unautofire    ;killaura / ;unkillaura", COLORS.textSecondary)
+	addLog("-- ESP --", COLORS.accent)
+	addLog(";esp / ;unesp    ;chams / ;unchams", COLORS.textSecondary)
+	addLog(";fullbright / ;unfullbright    ;nofog / ;unnofog", COLORS.textSecondary)
+	addLog("-- Gun Mods --", COLORS.accent)
+	addLog(";norecoil    ;nospread    ;rapidfire", COLORS.textSecondary)
 	addLog(";hitbox [size] / ;unhitbox", COLORS.textSecondary)
-	addLog(";fullbright / ;unfullbright", COLORS.textSecondary)
-	addLog(";fov [value]", COLORS.textSecondary)
-	addLog(";fly / ;unfly    ;noclip / ;unnoclip", COLORS.textSecondary)
-	addLog(";speed [val] / ;unspeed", COLORS.textSecondary)
-	addLog(";infjump / ;uninfjump", COLORS.textSecondary)
-	addLog(";fling / ;unfling    ;spin / ;unspin", COLORS.textSecondary)
+	addLog("-- Player --", COLORS.accent)
+	addLog(";fly / ;unfly    ;noclip / ;unnoclip    ;bhop / ;unbhop", COLORS.textSecondary)
+	addLog(";speed [val] / ;unspeed    ;infjump / ;uninfjump", COLORS.textSecondary)
+	addLog(";god / ;ungod    ;invisible / ;uninvisible", COLORS.textSecondary)
+	addLog(";antiafk / ;unantiafk    ;gravity [val]    ;fov [val]", COLORS.textSecondary)
+	addLog(";tp <player>    ;spectate <player> / ;unspectate", COLORS.textSecondary)
+	addLog("-- Fun --", COLORS.accent)
+	addLog(";fling / ;unfling    ;walkfling / ;unwalkfling", COLORS.textSecondary)
+	addLog(";spin / ;unspin    ;seizure / ;unseizure", COLORS.textSecondary)
+	addLog(";headless / ;unheadless", COLORS.textSecondary)
 	addLog(";emote1  ;dance  ;dab  ;stopemote", COLORS.textSecondary)
-	addLog(";rejoin  ;serverhop", COLORS.textSecondary)
-	addLog(";cmds (this list)", COLORS.textSecondary)
+	addLog("-- Utility --", COLORS.accent)
+	addLog(";rejoin  ;serverhop  ;cmds", COLORS.textSecondary)
 end
 
 local function processCommand(input)
@@ -2115,6 +2901,16 @@ Players.PlayerRemoving:Connect(function(player)
 			end)
 		end
 		espObjects[player] = nil
+	end
+	-- Clean up Chams for leaving players
+	if chamsObjects[player] then
+		for _, obj in pairs(chamsObjects[player]) do
+			pcall(function()
+				if typeof(obj) == "RBXScriptConnection" then obj:Disconnect()
+				else obj:Destroy() end
+			end)
+		end
+		chamsObjects[player] = nil
 	end
 end)
 
@@ -2213,10 +3009,90 @@ LocalPlayer.CharacterAdded:Connect(function()
 		_wait(0.2)
 		startFullbright()
 	end
+
+	-- Re-enable no fog
+	if noFogEnabled then
+		_wait(0.1)
+		startNoFog()
+	end
+
+	-- Re-enable god mode
+	if godEnabled then
+		if godConnection then godConnection:Disconnect() godConnection = nil end
+		_wait(0.1)
+		startGod()
+	end
+
+	-- Re-enable invisible
+	if invisibleEnabled then
+		savedTransparencies = {}
+		_wait(0.3)
+		startInvisible()
+	end
+
+	-- Re-enable bunny hop
+	if bunnyHopEnabled then
+		if bunnyHopConnection then bunnyHopConnection:Disconnect() bunnyHopConnection = nil end
+		_wait(0.1)
+		startBunnyHop()
+	end
+
+	-- Re-enable walk fling
+	if walkFlingEnabled then
+		stopWalkFling()
+		_wait(0.5)
+		startWalkFling()
+	end
+
+	-- Re-enable kill aura
+	if killAuraEnabled then
+		if killAuraConnection then killAuraConnection:Disconnect() killAuraConnection = nil end
+		_wait(0.1)
+		startKillAura()
+	end
+
+	-- Re-enable auto fire
+	if autoFireEnabled then
+		if autoFireConnection then autoFireConnection:Disconnect() autoFireConnection = nil end
+		_wait(0.1)
+		startAutoFire()
+	end
+
+	-- Re-enable chams
+	if chamsEnabled then
+		disableChams()
+		_wait(0.5)
+		enableChams()
+	end
+
+	-- Re-enable headless
+	if headlessEnabled then
+		headlessSavedParts = {}
+		_wait(0.3)
+		startHeadless()
+	end
+
+	-- Re-apply gravity
+	if gravityValue ~= 196.2 then
+		_wait(0.1)
+		setGravity(gravityValue)
+	end
+
+	-- Re-enable seizure
+	if seizureEnabled then
+		if seizureConnection then seizureConnection:Disconnect() seizureConnection = nil end
+		_wait(0.1)
+		startSeizure()
+	end
+
+	-- Unspectate on death
+	if spectating then
+		unspectate()
+	end
 end)
 
 -- ===================== STARTUP =====================
-addLog("RIVALS Hub v1.2", COLORS.accent)
+addLog("RIVALS Hub v1.4", COLORS.accent)
 addLog("Type ;cmds for command list", COLORS.textSecondary)
 addLog("Use Right Shift to toggle GUI", COLORS.textSecondary)
-print("[RIVALS Hub] v1.2 loaded")
+print("[RIVALS Hub] v1.4 loaded")

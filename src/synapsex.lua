@@ -97,6 +97,7 @@ local carFlingOrigProps = {}
 local carSpeedConnection = nil
 local carSpeedOrigMaxSpeed = nil
 local carSpeedOrigTorque = nil
+local godConnection = nil
 local emoteTracks = {}
 local emoteConnection = nil
 local selectedPlayer = nil
@@ -253,7 +254,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 40, 1, 0)
 versionLabel.Position = UDim2.new(0, 200, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v2.2"
+versionLabel.Text = "v2.3"
 versionLabel.TextColor3 = COLORS.accent
 versionLabel.Font = Enum.Font.Gotham
 versionLabel.TextSize = 10
@@ -1725,17 +1726,22 @@ end
 
 -- ===================== GOD MODE LOGIC =====================
 local function startGod()
-	pcall(function()
-		local character = LocalPlayer.Character
-		if character then
+	godConnection = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			local character = LocalPlayer.Character
+			if not character then return end
 			local humanoid = character:FindFirstChildOfClass("Humanoid")
-			if humanoid then humanoid.MaxHealth = math.huge humanoid.Health = math.huge end
-		end
+			if humanoid then
+				humanoid.MaxHealth = math.huge
+				humanoid.Health = math.huge
+			end
+		end)
 	end)
-	addLog("[GOD] ON", COLORS.success)
+	addLog("[GOD] ON (client-side)", COLORS.success)
 end
 
 local function stopGod()
+	if godConnection then godConnection:Disconnect() godConnection = nil end
 	pcall(function()
 		local character = LocalPlayer.Character
 		if character then
@@ -2117,7 +2123,7 @@ do
 	local tab = tabFrames["Main"]
 
 	createSectionLabel(tab, "Welcome", 1)
-	createInfoLabel(tab, "Synapse X - The Revival v2.2", 2)
+	createInfoLabel(tab, "Synapse X - The Revival v2.3", 2)
 	createInfoLabel(tab, "Player: " .. LocalPlayer.DisplayName .. " (@" .. LocalPlayer.Name .. ")", 3)
 
 	local spacer = Instance.new("Frame")
@@ -2755,13 +2761,16 @@ LocalPlayer.CharacterAdded:Connect(function()
 	spinBAV = nil
 	savedPhysProps = {}
 	if speedEnabled then _wait(0.3) startSpeed() end
-	if godEnabled then _wait(0.3) startGod() end
+	if godEnabled then
+		if godConnection then godConnection:Disconnect() godConnection = nil end
+		_wait(0.3) startGod()
+	end
 	if jumpPowerValue ~= 50 then _wait(0.3) setJumpPower(jumpPowerValue) end
 end)
 
 -- ===================== STARTUP =====================
-addLog("Synapse X - The Revival v2.2", COLORS.accent)
+addLog("Synapse X - The Revival v2.3", COLORS.accent)
 addLog("Executor + Admin loaded", COLORS.success)
 addLog("Type ;cmds in chat for commands", COLORS.textSecondary)
 addLog("Press Right Shift to toggle window", COLORS.textSecondary)
-print("[Synapse X] The Revival v2.2 loaded")
+print("[Synapse X] The Revival v2.3 loaded")
