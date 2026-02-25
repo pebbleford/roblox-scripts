@@ -1822,10 +1822,24 @@ local function addCorner(inst, radius)
 	return c
 end
 
+-- ===================== MOBILE / RESIZE DETECTION =====================
+local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled and not UserInputService.MouseEnabled
+local screenSize = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1920, 1080)
+local ORIG_W = 560
+local ORIG_H = 460
+local windowW = ORIG_W
+local windowH = ORIG_H
+if isMobile then
+	windowW = math.min(math.floor(screenSize.X * 0.92), ORIG_W)
+	windowH = math.min(math.floor(screenSize.Y * 0.7), ORIG_H)
+	if windowW < 320 then windowW = 320 end
+	if windowH < 280 then windowH = 280 end
+end
+
 -- ===================== MAIN FRAME =====================
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 560, 0, 460)
-mainFrame.Position = UDim2.new(0.5, -280, 0.5, -230)
+mainFrame.Size = UDim2.new(0, windowW, 0, windowH)
+mainFrame.Position = UDim2.new(0.5, -math.floor(windowW / 2), 0.5, -math.floor(windowH / 2))
 mainFrame.BackgroundColor3 = COLORS.bg
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
@@ -1837,6 +1851,70 @@ local borderStroke = Instance.new("UIStroke")
 borderStroke.Color = COLORS.border
 borderStroke.Thickness = 1
 borderStroke.Parent = mainFrame
+
+-- ===================== RESIZE HANDLE =====================
+local MIN_W = isMobile and 300 or 400
+local MIN_H = isMobile and 250 or 300
+local MAX_W = math.min(math.floor(screenSize.X * 0.95), 900)
+local MAX_H = math.min(math.floor(screenSize.Y * 0.85), 700)
+
+local resizeHandle = Instance.new("TextButton")
+resizeHandle.Name = "ResizeHandle"
+resizeHandle.Size = UDim2.new(0, 20, 0, 20)
+resizeHandle.Position = UDim2.new(1, -20, 1, -20)
+resizeHandle.BackgroundTransparency = 1
+resizeHandle.Text = ""
+resizeHandle.ZIndex = 10
+resizeHandle.Parent = mainFrame
+
+local _rl1 = Instance.new("Frame")
+_rl1.Size = UDim2.new(0, 14, 0, 2)
+_rl1.Position = UDim2.new(0, 3, 1, -7)
+_rl1.Rotation = -45
+_rl1.BackgroundColor3 = COLORS.textDim
+_rl1.BorderSizePixel = 0
+_rl1.ZIndex = 10
+_rl1.Parent = resizeHandle
+
+local _rl2 = Instance.new("Frame")
+_rl2.Size = UDim2.new(0, 8, 0, 2)
+_rl2.Position = UDim2.new(0, 9, 1, -5)
+_rl2.Rotation = -45
+_rl2.BackgroundColor3 = COLORS.textDim
+_rl2.BorderSizePixel = 0
+_rl2.ZIndex = 10
+_rl2.Parent = resizeHandle
+
+do
+	local resizing = false
+	local resizeStart, startSize
+
+	resizeHandle.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			resizing = true
+			resizeStart = input.Position
+			startSize = mainFrame.AbsoluteSize
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					resizing = false
+				end
+			end)
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			local delta = input.Position - resizeStart
+			local newW = startSize.X + delta.X
+			local newH = startSize.Y + delta.Y
+			if newW < MIN_W then newW = MIN_W end
+			if newW > MAX_W then newW = MAX_W end
+			if newH < MIN_H then newH = MIN_H end
+			if newH > MAX_H then newH = MAX_H end
+			mainFrame.Size = UDim2.new(0, newW, 0, newH)
+		end
+	end)
+end
 
 -- Title bar
 local titleBar = Instance.new("Frame")
@@ -1911,7 +1989,7 @@ local tabFrames = {}
 
 for i, name in ipairs(tabNames) do
 	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(0, 80, 1, 0)
+	btn.Size = UDim2.new(1 / #tabNames, 0, 1, 0)
 	btn.BackgroundTransparency = 1
 	btn.Text = name
 	btn.TextColor3 = COLORS.textSecondary
@@ -2749,13 +2827,63 @@ do
 end
 
 -- ===================== MINIMIZE / TOGGLE =====================
+
+-- ===================== MOBILE TOGGLE BUTTON =====================
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Name = "ToggleBtn"
+toggleBtn.Size = UDim2.new(0, 50, 0, 50)
+toggleBtn.Position = UDim2.new(1, -60, 0.5, -25)
+toggleBtn.BackgroundColor3 = COLORS.accent
+toggleBtn.Text = "EL"
+toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.TextSize = 14
+toggleBtn.Visible = isMobile
+toggleBtn.BackgroundTransparency = isMobile and 0.3 or 0
+toggleBtn.Parent = screenGui
+addCorner(toggleBtn, 25)
+
+if isMobile then
+	local _tDragDist = 0
+	do
+		local tDragging = false
+		local tDragStart, tStartPos
+
+		toggleBtn.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.Touch then
+				tDragging = true
+				tDragStart = input.Position
+				tStartPos = toggleBtn.Position
+				_tDragDist = 0
+				input.Changed:Connect(function()
+					if input.UserInputState == Enum.UserInputState.End then tDragging = false end
+				end)
+			end
+		end)
+
+		UserInputService.InputChanged:Connect(function(input)
+			if tDragging and input.UserInputType == Enum.UserInputType.Touch then
+				local delta = input.Position - tDragStart
+				_tDragDist = math.abs(delta.X) + math.abs(delta.Y)
+				toggleBtn.Position = UDim2.new(tStartPos.X.Scale, tStartPos.X.Offset + delta.X, tStartPos.Y.Scale, tStartPos.Y.Offset + delta.Y)
+			end
+		end)
+	end
+
+	toggleBtn.MouseButton1Click:Connect(function()
+		if _tDragDist < 10 then
+			mainFrame.Visible = not mainFrame.Visible
+		end
+	end)
+end
+
 local contentVisible = true
 minimizeBtn.MouseButton1Click:Connect(function()
 	contentVisible = not contentVisible
 	for _, frame in pairs(tabFrames) do frame.Visible = contentVisible and frame == tabFrames[activeTab] end
 	tabBar.Visible = contentVisible
 	accentLine.Visible = contentVisible
-	mainFrame.Size = contentVisible and UDim2.new(0, 560, 0, 460) or UDim2.new(0, 560, 0, 32)
+	do local curW = mainFrame.AbsoluteSize.X; mainFrame.Size = contentVisible and UDim2.new(0, curW, 0, windowH) or UDim2.new(0, curW, 0, 32) end
 	minimizeBtn.Text = contentVisible and "-" or "+"
 end)
 

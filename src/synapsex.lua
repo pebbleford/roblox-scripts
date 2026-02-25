@@ -113,6 +113,20 @@ local FILL_TRANSPARENCY = 0.5
 local OUTLINE_TRANSPARENCY = 0
 local REFRESH_INTERVAL = 5
 
+-- ===================== MOBILE / RESIZE DETECTION =====================
+local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled and not UserInputService.MouseEnabled
+local screenSize = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1920, 1080)
+local ORIG_W = 600
+local ORIG_H = 420
+local windowW = ORIG_W
+local windowH = ORIG_H
+if isMobile then
+	windowW = math.min(math.floor(screenSize.X * 0.92), ORIG_W)
+	windowH = math.min(math.floor(screenSize.Y * 0.7), ORIG_H)
+	if windowW < 320 then windowW = 320 end
+	if windowH < 280 then windowH = 280 end
+end
+
 -- ===================== SCREEN GUI =====================
 -- Kill old instance if re-executing
 pcall(function()
@@ -174,14 +188,78 @@ end
 -- ===================== MAIN WINDOW =====================
 local mainWindow = Instance.new("Frame")
 mainWindow.Name = "MainWindow"
-mainWindow.Size = UDim2.new(0, 600, 0, 420)
-mainWindow.Position = UDim2.new(0.5, -300, 0.5, -210)
+mainWindow.Size = UDim2.new(0, windowW, 0, windowH)
+mainWindow.Position = UDim2.new(0.5, -math.floor(windowW / 2), 0.5, -math.floor(windowH / 2))
 mainWindow.BackgroundColor3 = COLORS.bg
 mainWindow.BorderSizePixel = 0
 mainWindow.Active = true
 mainWindow.Parent = screenGui
 addCorner(mainWindow, 8)
 addStroke(mainWindow, COLORS.border, 2)
+
+-- ===================== RESIZE HANDLE =====================
+local MIN_W = isMobile and 300 or 400
+local MIN_H = isMobile and 250 or 300
+local MAX_W = math.min(math.floor(screenSize.X * 0.95), 900)
+local MAX_H = math.min(math.floor(screenSize.Y * 0.85), 700)
+
+local resizeHandle = Instance.new("TextButton")
+resizeHandle.Name = "ResizeHandle"
+resizeHandle.Size = UDim2.new(0, 20, 0, 20)
+resizeHandle.Position = UDim2.new(1, -20, 1, -20)
+resizeHandle.BackgroundTransparency = 1
+resizeHandle.Text = ""
+resizeHandle.ZIndex = 10
+resizeHandle.Parent = mainWindow
+
+local _rl1 = Instance.new("Frame")
+_rl1.Size = UDim2.new(0, 14, 0, 2)
+_rl1.Position = UDim2.new(0, 3, 1, -7)
+_rl1.Rotation = -45
+_rl1.BackgroundColor3 = COLORS.textDim
+_rl1.BorderSizePixel = 0
+_rl1.ZIndex = 10
+_rl1.Parent = resizeHandle
+
+local _rl2 = Instance.new("Frame")
+_rl2.Size = UDim2.new(0, 8, 0, 2)
+_rl2.Position = UDim2.new(0, 9, 1, -5)
+_rl2.Rotation = -45
+_rl2.BackgroundColor3 = COLORS.textDim
+_rl2.BorderSizePixel = 0
+_rl2.ZIndex = 10
+_rl2.Parent = resizeHandle
+
+do
+	local resizing = false
+	local resizeStart, startSize
+
+	resizeHandle.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			resizing = true
+			resizeStart = input.Position
+			startSize = mainWindow.AbsoluteSize
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					resizing = false
+				end
+			end)
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			local delta = input.Position - resizeStart
+			local newW = startSize.X + delta.X
+			local newH = startSize.Y + delta.Y
+			if newW < MIN_W then newW = MIN_W end
+			if newW > MAX_W then newW = MAX_W end
+			if newH < MIN_H then newH = MIN_H end
+			if newH > MAX_H then newH = MAX_H end
+			mainWindow.Size = UDim2.new(0, newW, 0, newH)
+		end
+	end)
+end
 
 -- Shadow effect (outer glow)
 local shadow = Instance.new("ImageLabel")
@@ -342,7 +420,7 @@ tabBarLayout.Parent = tabBar
 for i, tabName in ipairs(tabNames) do
 	local tabBtn = Instance.new("TextButton")
 	tabBtn.Name = tabName .. "Tab"
-	tabBtn.Size = UDim2.new(0, 86, 1, 0)
+	tabBtn.Size = UDim2.new(1 / #tabNames, 0, 1, 0)
 	tabBtn.BackgroundColor3 = COLORS.bg
 	tabBtn.BackgroundTransparency = (tabName == "Execute") and 0 or 1
 	tabBtn.Text = tabName
@@ -390,16 +468,23 @@ toggleBtn.Parent = screenGui
 addCorner(toggleBtn, 22)
 addStroke(toggleBtn, COLORS.accentDark, 2)
 
+if isMobile then
+	toggleBtn.Visible = true
+	toggleBtn.Size = UDim2.new(0, 50, 0, 50)
+	toggleBtn.Position = UDim2.new(1, -60, 0.5, -25)
+	toggleBtn.BackgroundTransparency = 0.3
+end
+
 -- ===================== BUTTON LOGIC =====================
 minimizeBtn.MouseButton1Click:Connect(function()
 	mainWindow.Visible = false
-	toggleBtn.Visible = true
+	if not isMobile then toggleBtn.Visible = true end
 	windowVisible = false
 end)
 
 closeBtn.MouseButton1Click:Connect(function()
 	mainWindow.Visible = false
-	toggleBtn.Visible = true
+	if not isMobile then toggleBtn.Visible = true end
 	windowVisible = false
 end)
 
