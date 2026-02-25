@@ -59,6 +59,7 @@ local carNoclipEnabled = false
 local carFlingEnabled = false
 local carSpeedEnabled = false
 local emoteActive = false
+local antiFlingEnabled = false
 
 local flingPower = 99999
 local walkFlingPower = 10000
@@ -94,6 +95,8 @@ local carNoclipConnection = nil
 local carFlingConnection = nil
 local carFlingBAV = nil
 local carFlingOrigProps = {}
+local antiFlingConnection = nil
+local antiFlingLastPos = nil
 local carSpeedConnection = nil
 local carSpeedOrigMaxSpeed = nil
 local carSpeedOrigTorque = nil
@@ -1346,6 +1349,63 @@ local function stopFly()
 	if bodyGyro then pcall(function() bodyGyro:Destroy() end) bodyGyro = nil end
 	if bodyVelocity then pcall(function() bodyVelocity:Destroy() end) bodyVelocity = nil end
 	addLog("[FLY] OFF", COLORS.error)
+end
+
+-- ===================== ANTI FLING LOGIC =====================
+local FLING_VEL_THRESHOLD = 120
+local FLING_ANGULAR_THRESHOLD = 50
+
+local function startAntiFling()
+	if antiFlingConnection then antiFlingConnection:Disconnect() antiFlingConnection = nil end
+	antiFlingLastPos = nil
+	antiFlingConnection = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			local character = LocalPlayer.Character
+			if not character then return end
+			local hrp = character:FindFirstChild("HumanoidRootPart")
+			if not hrp then return end
+
+			-- Save safe position periodically
+			local vel = hrp.AssemblyLinearVelocity
+			local angVel = hrp.AssemblyAngularVelocity
+			local speed = vel.Magnitude
+			local angSpeed = angVel.Magnitude
+
+			if speed < FLING_VEL_THRESHOLD and angSpeed < FLING_ANGULAR_THRESHOLD then
+				antiFlingLastPos = hrp.CFrame
+			end
+
+			-- Detect fling: abnormally high velocity or angular velocity
+			if speed > FLING_VEL_THRESHOLD or angSpeed > FLING_ANGULAR_THRESHOLD then
+				-- Zero out all velocity
+				hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+				hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+				hrp.Velocity = Vector3.new(0, 0, 0)
+				hrp.RotVelocity = Vector3.new(0, 0, 0)
+
+				-- Teleport back to last safe position
+				if antiFlingLastPos then
+					hrp.CFrame = antiFlingLastPos
+				end
+
+				-- Remove any BodyMovers someone may have inserted
+				for _, obj in ipairs(hrp:GetChildren()) do
+					if obj:IsA("BodyAngularVelocity") or obj:IsA("BodyVelocity") or obj:IsA("BodyForce") or obj:IsA("BodyThrust") then
+						if obj.Name ~= "FlyGyro" and obj.Name ~= "FlyVelocity" then
+							obj:Destroy()
+						end
+					end
+				end
+			end
+		end)
+	end)
+	addLog("[ANTI FLING] ON", COLORS.success)
+end
+
+local function stopAntiFling()
+	if antiFlingConnection then antiFlingConnection:Disconnect() antiFlingConnection = nil end
+	antiFlingLastPos = nil
+	addLog("[ANTI FLING] OFF", COLORS.error)
 end
 
 -- ===================== NOCLIP LOGIC =====================
@@ -2670,7 +2730,11 @@ do
 		noclipEnabled = on
 		if on then startNoclip() else stopNoclip() end
 	end)
-	createToggle(tab, "Car Noclip (Sit First)", 12, function(on)
+	createToggle(tab, "Anti Fling", 12, function(on)
+		antiFlingEnabled = on
+		if on then startAntiFling() else stopAntiFling() end
+	end)
+	createToggle(tab, "Car Noclip (Sit First)", 13, function(on)
 		carNoclipEnabled = on
 		if on then startCarNoclip() else stopCarNoclip() end
 	end)
@@ -2678,24 +2742,24 @@ do
 	local spacer2 = Instance.new("Frame")
 	spacer2.Size = UDim2.new(1, 0, 0, 4)
 	spacer2.BackgroundTransparency = 1
-	spacer2.LayoutOrder = 13
+	spacer2.LayoutOrder = 14
 	spacer2.Parent = tab
 
-	createSectionLabel(tab, "Jumping", 15)
-	createToggle(tab, "Infinite Jump", 16, function(on)
+	createSectionLabel(tab, "Jumping", 16)
+	createToggle(tab, "Infinite Jump", 17, function(on)
 		infJumpEnabled = on
 		if on then startInfJump() else stopInfJump() end
 	end)
-	createSlider(tab, "Jump Power", 10, 500, jumpPowerValue, 17, function(val) jumpPowerValue = val setJumpPower(val) end)
+	createSlider(tab, "Jump Power", 10, 500, jumpPowerValue, 18, function(val) jumpPowerValue = val setJumpPower(val) end)
 
 	local spacer3 = Instance.new("Frame")
 	spacer3.Size = UDim2.new(1, 0, 0, 4)
 	spacer3.BackgroundTransparency = 1
-	spacer3.LayoutOrder = 18
+	spacer3.LayoutOrder = 19
 	spacer3.Parent = tab
 
-	createSectionLabel(tab, "World", 19)
-	createSlider(tab, "Gravity", 0, 1000, math.floor(gravityValue), 20, function(val) gravityValue = val setGravity(val) end)
+	createSectionLabel(tab, "World", 20)
+	createSlider(tab, "Gravity", 0, 1000, math.floor(gravityValue), 21, function(val) gravityValue = val setGravity(val) end)
 end
 
 -- ===================== BUILD FUN TAB =====================
@@ -2792,6 +2856,8 @@ commands["speed"] = function(args) local v = tonumber(args[1]) if v then speedVa
 commands["unspeed"] = function() speedEnabled = false stopSpeed() end
 commands["noclip"] = function() noclipEnabled = true startNoclip() end
 commands["unnoclip"] = function() noclipEnabled = false stopNoclip() end
+commands["antifling"] = function() antiFlingEnabled = true startAntiFling() end
+commands["unantifling"] = function() antiFlingEnabled = false stopAntiFling() end
 commands["god"] = function() godEnabled = true startGod() end
 commands["ungod"] = function() godEnabled = false stopGod() end
 commands["tp"] = function(args)
@@ -2847,6 +2913,7 @@ commands["cmds"] = function()
 	addLog(";esp / ;unesp    ;fly / ;unfly", COLORS.textSecondary)
 	addLog(";speed [val] / ;unspeed", COLORS.textSecondary)
 	addLog(";noclip / ;unnoclip    ;god / ;ungod", COLORS.textSecondary)
+	addLog(";antifling / ;unantifling", COLORS.textSecondary)
 	addLog(";tp <player>    ;invisible / ;visible", COLORS.textSecondary)
 	addLog(";jp <val>    ;gravity <val>", COLORS.textSecondary)
 	addLog(";fling / ;unfling (spin fling)", COLORS.textSecondary)
@@ -2909,6 +2976,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 	spinBAV = nil
 	savedPhysProps = {}
 	if speedEnabled then _wait(0.3) startSpeed() end
+	if antiFlingEnabled then _wait(0.3) startAntiFling() end
 	if godEnabled then
 		if godConnection then godConnection:Disconnect() godConnection = nil end
 		_wait(0.3) startGod()
