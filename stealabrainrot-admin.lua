@@ -673,6 +673,19 @@ do
 	createButton(tab, ";inverse (Reverse Controls)", 31, function() fireAdminCommand("inverse") end)
 	createButton(tab, ";control (Possess Player)", 32, function() fireAdminCommand("control") end)
 	createInfoLabel(tab, "Fires at selected target above", 33)
+
+	local spacer5 = Instance.new("Frame")
+	spacer5.Size = UDim2.new(1, 0, 0, 8)
+	spacer5.BackgroundTransparency = 1
+	spacer5.LayoutOrder = 34
+	spacer5.Parent = tab
+
+	-- ===== SCRIPTS =====
+	createSectionLabel(tab, "Scripts", 35)
+	createButton(tab, "Load Steal a Brainrot Hub (Defense)", 36, function()
+		notify("Loading", "Loading SAB Defense Hub...")
+		loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/stealabrainrot.lua"))()
+	end)
 end
 
 -- ===================== MINIMIZE / TOGGLE =====================
