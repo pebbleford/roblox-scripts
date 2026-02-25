@@ -2324,7 +2324,7 @@ local function stopAntiVoid()
 	addLog("[ANTI-VOID] OFF", COLORS.error)
 end
 
--- ===================== WALK FLING LOGIC =====================
+-- ===================== WALK FLING LOGIC (Dinos Anim / Velocity Spike) =====================
 local function startWalkFling()
 	local ok, err = pcall(function()
 		local character = LocalPlayer.Character
@@ -2332,30 +2332,44 @@ local function startWalkFling()
 		local root = character:FindFirstChild("HumanoidRootPart")
 		if not root then return end
 
-		-- Heartbeat: high density + walk velocity = fling on collision
-		-- MM2 anti-cheat resets huge velocities, so we keep it moderate
-		flingState.walkFlingConnection = RunService.Heartbeat:Connect(function()
-			pcall(function()
-				local char = LocalPlayer.Character
-				if not char then return end
-				local rt = char:FindFirstChild("HumanoidRootPart")
-				if not rt then return end
-				local hum = char:FindFirstChildOfClass("Humanoid")
-				if not hum then return end
+		-- Enable noclip so we phase through while the spike happens
+		if not moveState.noclipEnabled then moveState.noclipEnabled = true startNoclip() end
 
-				-- Re-apply extreme density every frame (this is what flings people)
-				for _, part in ipairs(char:GetDescendants()) do
-					if part:IsA("BasePart") then
-						part.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
+		-- Velocity spike-and-restore loop (Dinos Anim technique)
+		-- Spike velocity for one physics tick, restore next frame
+		-- Server sees the spike → physics collision → fling
+		-- Anti-cheat sees normal velocity → no kick
+		flingState.walkFlingConnection = _spawn(function()
+			local movel = 0.1
+			while flingState.walkFlingEnabled do
+				RunService.Heartbeat:Wait()
+				local char = LocalPlayer.Character
+				if not char or not char.Parent then _wait(0.1) end
+				local rt = char and char:FindFirstChild("HumanoidRootPart")
+				if rt and rt.Parent then
+					local vel = rt.Velocity
+
+					-- SPIKE: massive velocity burst for one tick
+					rt.Velocity = vel * 10000 + Vector3.new(0, 10000, 0)
+
+					RunService.RenderStepped:Wait()
+					-- RESTORE: snap back to normal
+					char = LocalPlayer.Character
+					rt = char and char:FindFirstChild("HumanoidRootPart")
+					if rt and rt.Parent then
+						rt.Velocity = vel
+					end
+
+					RunService.Stepped:Wait()
+					-- MICRO-OSCILLATE: tiny bounce to keep physics alive
+					char = LocalPlayer.Character
+					rt = char and char:FindFirstChild("HumanoidRootPart")
+					if rt and rt.Parent then
+						rt.Velocity = vel + Vector3.new(0, movel, 0)
+						movel = movel * -1
 					end
 				end
-
-				local moveDir = hum.MoveDirection
-				if moveDir.Magnitude > 0.1 then
-					-- Moderate speed - high mass does the flinging, not high velocity
-					rt.AssemblyLinearVelocity = moveDir.Unit * 80 + Vector3.new(0, rt.AssemblyLinearVelocity.Y, 0)
-				end
-			end)
+			end
 		end)
 
 		addLog("[WALK FLING] ON - Walk into players!", COLORS.success)
@@ -2366,13 +2380,16 @@ local function startWalkFling()
 end
 
 local function stopWalkFling()
-	if flingState.walkFlingConnection then flingState.walkFlingConnection:Disconnect() flingState.walkFlingConnection = nil end
+	flingState.walkFlingEnabled = false
+	-- walkFlingConnection is a spawned thread, it will exit on its own
+	flingState.walkFlingConnection = nil
 	local character = LocalPlayer.Character
 	if character then
+		local V3 = Vector3.new(0, 0, 0)
 		for _, part in ipairs(character:GetDescendants()) do
 			if part:IsA("BasePart") then
-				part.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
-				part.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+				part.Velocity = V3
+				part.RotVelocity = V3
 			end
 		end
 	end
@@ -2464,8 +2481,33 @@ local function startFling()
 		local root = character:FindFirstChild("HumanoidRootPart")
 		if not root then return end
 
-		-- Heartbeat: high density + moderate spin = fling on collision
-		-- MM2 resets insane velocities, so we use mass-based flinging instead
+		-- Enable noclip
+		if not moveState.noclipEnabled then moveState.noclipEnabled = true startNoclip() end
+		_wait(0.1)
+
+		-- Set density to 100 on all parts + massless children
+		flingState.savedPhysProps = {}
+		for _, part in ipairs(character:GetDescendants()) do
+			if part:IsA("BasePart") then
+				flingState.savedPhysProps[part] = part.CustomPhysicalProperties
+				part.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
+				part.CanCollide = false
+				part.Massless = true
+				part.Velocity = Vector3.new(0, 0, 0)
+			end
+		end
+
+		-- Try BodyAngularVelocity first (most reliable fling method)
+		-- MM2 may remove it - if so, the Heartbeat loop below uses Assembly properties
+		pcall(function()
+			flingState.spinBAV = Instance.new("BodyAngularVelocity")
+			flingState.spinBAV.AngularVelocity = Vector3.new(0, 99999, 0)
+			flingState.spinBAV.MaxTorque = Vector3.new(0, math.huge, 0)
+			flingState.spinBAV.P = math.huge
+			flingState.spinBAV.Parent = root
+		end)
+
+		-- Heartbeat: re-apply density + pulse spin + fallback Assembly spin
 		flingState.flingConnection = RunService.Heartbeat:Connect(function()
 			pcall(function()
 				local char = LocalPlayer.Character
@@ -2473,28 +2515,32 @@ local function startFling()
 				local rt = char:FindFirstChild("HumanoidRootPart")
 				if not rt then return end
 
-				-- Re-apply extreme density every frame (server resets this)
-				-- High mass is what actually flings other players on contact
+				-- Re-apply density every frame (server resets this)
 				for _, part in ipairs(char:GetDescendants()) do
 					if part:IsA("BasePart") then
 						part.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
 					end
 				end
 
-				-- Moderate angular spin - enough to create chaotic collisions
-				-- but low enough that MM2 anti-cheat doesn't reset it
-				rt.AssemblyAngularVelocity = Vector3.new(
-					(math.random() - 0.5) * 80,
-					(math.random() - 0.5) * 80,
-					(math.random() - 0.5) * 80
-				)
-
-				-- Small velocity nudge based on move direction to approach targets
-				local hum = char:FindFirstChildOfClass("Humanoid")
-				if hum and hum.MoveDirection.Magnitude > 0.1 then
-					rt.AssemblyLinearVelocity = hum.MoveDirection.Unit * 60 + Vector3.new(0, rt.AssemblyLinearVelocity.Y, 0)
+				-- If BAV was removed by server, use Assembly properties
+				if not flingState.spinBAV or not flingState.spinBAV.Parent then
+					rt.AssemblyAngularVelocity = Vector3.new(0, 9999, 0)
 				end
 			end)
+		end)
+
+		-- Pulse spin on/off to create impulse spikes
+		flingState.flingConnection2 = _spawn(function()
+			while flingState.flingEnabled do
+				if flingState.spinBAV and flingState.spinBAV.Parent then
+					flingState.spinBAV.AngularVelocity = Vector3.new(0, 99999, 0)
+				end
+				_wait(0.2)
+				if flingState.spinBAV and flingState.spinBAV.Parent then
+					flingState.spinBAV.AngularVelocity = Vector3.new(0, 0, 0)
+				end
+				_wait(0.1)
+			end
 		end)
 
 		addLog("[SPIN FLING] ON - Walk into players!", COLORS.success)
@@ -2505,18 +2551,33 @@ local function startFling()
 end
 
 local function stopFling()
+	flingState.flingEnabled = false
 	if flingState.flingConnection then flingState.flingConnection:Disconnect() flingState.flingConnection = nil end
+	-- flingConnection2 is a spawned thread, exits when flingEnabled = false
+	flingState.flingConnection2 = nil
 
+	-- Remove BAV
+	if flingState.spinBAV then pcall(function() flingState.spinBAV:Destroy() end) flingState.spinBAV = nil end
+
+	-- Restore physics
 	local character = LocalPlayer.Character
 	if character then
 		for _, part in ipairs(character:GetDescendants()) do
 			if part:IsA("BasePart") then
-				part.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
+				if flingState.savedPhysProps[part] then
+					part.CustomPhysicalProperties = flingState.savedPhysProps[part]
+				else
+					part.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
+				end
+				part.Massless = false
+				part.Velocity = Vector3.new(0, 0, 0)
+				part.RotVelocity = Vector3.new(0, 0, 0)
 				part.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
 				part.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
 			end
 		end
 	end
+	flingState.savedPhysProps = {}
 
 	addLog("[SPIN FLING] OFF", COLORS.error)
 end
