@@ -13,6 +13,7 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TeleportService = game:GetService("TeleportService")
+local TweenService = game:GetService("TweenService")
 local Lighting = game:GetService("Lighting")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Teams = game:GetService("Teams")
@@ -1547,9 +1548,18 @@ local function stopFullbright()
 end
 
 -- ===================== AUTO COIN FARM =====================
+local function tweenToPosition(root, targetCFrame, speed)
+	local dist = (root.Position - targetCFrame.Position).Magnitude
+	local tweenTime = dist / speed
+	if tweenTime < 0.1 then tweenTime = 0.1 end
+	local tween = TweenService:Create(root, TweenInfo.new(tweenTime, Enum.EasingStyle.Linear), {CFrame = targetCFrame})
+	tween:Play()
+	return tween
+end
+
 local function startAutoCoinFarm()
-	coinsFarmed = 0
-	coinFarmThread = _spawn(function()
+	farmState.coinsFarmed = 0
+	farmState.coinFarmThread = _spawn(function()
 		while farmState.autoCoinFarmEnabled do
 			pcall(function()
 				local coins = getCoins()
@@ -1559,29 +1569,48 @@ local function startAutoCoinFarm()
 					return
 				end
 
+				-- Sort by distance so we walk to nearest first
+				local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+				if not root then return end
+				table.sort(coins, function(a, b)
+					return (a.Position - root.Position).Magnitude < (b.Position - root.Position).Magnitude
+				end)
+
 				for _, coin in ipairs(coins) do
 					if not farmState.autoCoinFarmEnabled then break end
 					pcall(function()
-						local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+						root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 						if root and coin and coin.Parent and coin.Transparency < 1 then
-							root.CFrame = coin.CFrame + Vector3.new(0, 2, 0)
-							coinsFarmed = farmState.coinsFarmed + 1
+							local targetCFrame = coin.CFrame + Vector3.new(0, 2, 0)
+							local tweenSpeed = math.max(60, 120 / farmState.farmSpeed)
+							local tween = tweenToPosition(root, targetCFrame, tweenSpeed)
+							-- Wait for tween to finish or coin to disappear
+							local start = tick()
+							local dist = (root.Position - targetCFrame.Position).Magnitude
+							local maxWait = (dist / tweenSpeed) + 1
+							while tween.PlaybackState == Enum.PlaybackState.Playing do
+								if not farmState.autoCoinFarmEnabled then tween:Cancel() return end
+								if not coin or not coin.Parent or coin.Transparency >= 1 then tween:Cancel() break end
+								if tick() - start > maxWait then tween:Cancel() break end
+								_wait(0.05)
+							end
+							farmState.coinsFarmed = farmState.coinsFarmed + 1
 							if uiState.coinCountLabel then
 								uiState.coinCountLabel.Text = "Coins Farmed: " .. farmState.coinsFarmed
 							end
 						end
 					end)
-					_wait(farmState.farmSpeed)
+					_wait(0.1)
 				end
 			end)
-			_wait(1)
+			_wait(0.5)
 		end
 	end)
-	addLog("[FARM] ON - Teleporting to coins (speed: " .. farmState.farmSpeed .. "s)", COLORS.success)
+	addLog("[FARM] ON - Tweening to coins (speed: " .. farmState.farmSpeed .. "s)", COLORS.success)
 end
 
 local function stopAutoCoinFarm()
-	autoCoinFarmEnabled = false
+	farmState.autoCoinFarmEnabled = false
 	addLog("[FARM] OFF - Farmed " .. farmState.coinsFarmed .. " coins", COLORS.error)
 end
 
