@@ -6,7 +6,7 @@ if not keyOk or not keySystem or not keySystem.validate() then return end
 -- ================================================================
 -- Synapse X The Revival - MM2 Hub
 -- Dedicated admin for Murder Mystery 2
--- v1.0
+-- v1.1
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -129,6 +129,58 @@ local emoteConnection = nil
 -- Auto Grab Gun
 local autoGrabGunEnabled = false
 local autoGrabConnection = nil
+
+-- Kill All (Murderer)
+local killAllEnabled = false
+local killAllConnection = nil
+
+-- Bring Gun
+-- (action function, no state toggle needed)
+
+-- X-Ray
+local xrayEnabled = false
+local xrayOrigTransparencies = {}
+
+-- Trapdoor ESP
+local trapdoorEspEnabled = false
+local trapdoorEspHighlights = {}
+
+-- Bring Coins
+local bringCoinsEnabled = false
+local bringCoinsConnection = nil
+
+-- Auto Collect All
+local autoCollectEnabled = false
+local autoCollectConnection = nil
+
+-- Bunny Hop
+local bunnyHopEnabled = false
+local bunnyHopConnection = nil
+
+-- Player Target
+local selectedPlayer = nil
+
+-- Gravity
+local gravityValue = 196
+
+-- Anti-Void
+local antiVoidEnabled = false
+local antiVoidConnection = nil
+local lastSafePos = nil
+
+-- Walk Fling
+local walkFlingEnabled = false
+local walkFlingPower = 10000
+local walkFlingProps = {}
+local walkFlingConnection = nil
+
+-- Headless
+local headlessEnabled = false
+local headlessSaved = {}
+
+-- Rainbow Character
+local rainbowEnabled = false
+local rainbowConnection = nil
 
 -- Fullbright saved values
 local origAmbient = nil
@@ -380,7 +432,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 40, 1, 0)
 versionLabel.Position = UDim2.new(0, 110, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v1.0"
+versionLabel.Text = "v1.1"
 versionLabel.TextColor3 = COLORS.accent
 versionLabel.Font = Enum.Font.Gotham
 versionLabel.TextSize = 10
@@ -1742,11 +1794,40 @@ local function setJumpPower(value)
 	end)
 end
 
--- ===================== INVISIBLE LOGIC =====================
+-- ===================== INVISIBLE LOGIC (FE Seat Trick) =====================
 local function startInvisible()
 	pcall(function()
 		local character = LocalPlayer.Character
 		if not character then return end
+		local hrp = character:FindFirstChild("HumanoidRootPart")
+		if not hrp then return end
+
+		local savedCF = hrp.CFrame
+		local savedChar = character
+
+		local seat = Instance.new("Seat")
+		seat.Size = Vector3.new(1, 1, 1)
+		seat.Transparency = 1
+		seat.CanCollide = false
+		seat.Anchored = true
+		seat.CFrame = savedCF
+		seat.Parent = workspace
+
+		local hum = character:FindFirstChildOfClass("Humanoid")
+		if hum then
+			seat:Sit(hum)
+			_wait(0.2)
+			LocalPlayer.Character = nil
+			_wait(0.1)
+			if hum then hum.Sit = false end
+			seat:Destroy()
+			_wait(0.1)
+			LocalPlayer.Character = savedChar
+			if hrp and hrp.Parent then hrp.CFrame = savedCF end
+		else
+			seat:Destroy()
+		end
+
 		savedTransparencies = {}
 		for _, part in ipairs(character:GetDescendants()) do
 			if part:IsA("BasePart") then
@@ -1764,7 +1845,7 @@ local function startInvisible()
 			end
 		end
 	end)
-	addLog("[INVISIBLE] ON", COLORS.success)
+	addLog("[INVISIBLE] ON (FE invisible)", COLORS.success)
 end
 
 local function stopInvisible()
@@ -1773,6 +1854,15 @@ local function stopInvisible()
 			if part and part.Parent then part.Transparency = transparency end
 		end
 		savedTransparencies = {}
+		local character = LocalPlayer.Character
+		if character then
+			local hum = character:FindFirstChildOfClass("Humanoid")
+			if hum then
+				hum.Health = 0
+				addLog("[INVISIBLE] OFF (respawning to restore)", COLORS.error)
+				return
+			end
+		end
 	end)
 	addLog("[INVISIBLE] OFF", COLORS.error)
 end
@@ -1782,6 +1872,479 @@ local function setCameraFOV(fov)
 	pcall(function()
 		workspace.CurrentCamera.FieldOfView = fov
 	end)
+end
+
+-- ===================== TP BEHIND PLAYER =====================
+local function tpBehindPlayer(targetName)
+	pcall(function()
+		local target = findPlayer(targetName)
+		if not target then
+			addLog("[TP BEHIND] Player not found: " .. targetName, COLORS.error)
+			return
+		end
+		local myChar = LocalPlayer.Character
+		if not myChar then return end
+		local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+		if not myRoot then return end
+		local theirChar = target.Character
+		if not theirChar then
+			addLog("[TP BEHIND] Target has no character!", COLORS.error)
+			return
+		end
+		local theirRoot = theirChar:FindFirstChild("HumanoidRootPart")
+		if not theirRoot then return end
+		myRoot.CFrame = theirRoot.CFrame * CFrame.new(0, 0, 5)
+		addLog("[TP BEHIND] Teleported behind " .. target.DisplayName, COLORS.success)
+	end)
+end
+
+-- ===================== KILL ALL (MURDERER) =====================
+local function startKillAll()
+	killAllConnection = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			if myRole ~= "Murderer" then return end
+			local myChar = LocalPlayer.Character
+			if not myChar then return end
+			local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+			if not myRoot then return end
+
+			-- Check if knife is equipped
+			local hasKnife = false
+			for _, child in ipairs(myChar:GetChildren()) do
+				if child:IsA("Tool") and (child.Name == "Knife" or child.Name:lower():find("knife")) then
+					hasKnife = true
+					break
+				end
+			end
+			if not hasKnife then return end
+
+			for _, player in ipairs(Players:GetPlayers()) do
+				if player ~= LocalPlayer and player.Character then
+					local theirRoot = player.Character:FindFirstChild("HumanoidRootPart")
+					local theirHum = player.Character:FindFirstChildOfClass("Humanoid")
+					if theirRoot and theirHum and theirHum.Health > 0 then
+						myRoot.CFrame = theirRoot.CFrame
+						_wait(0.05)
+					end
+				end
+			end
+		end)
+	end)
+	addLog("[KILL ALL] ON - Equip knife! (Murderer only)", COLORS.success)
+end
+
+local function stopKillAll()
+	if killAllConnection then killAllConnection:Disconnect() killAllConnection = nil end
+	addLog("[KILL ALL] OFF", COLORS.error)
+end
+
+-- ===================== BRING GUN =====================
+local function bringGun()
+	pcall(function()
+		local gun = findGunDrop()
+		if not gun then
+			addLog("[BRING GUN] No dropped gun found!", COLORS.error)
+			return
+		end
+
+		local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+		if not root then
+			addLog("[BRING GUN] No character found!", COLORS.error)
+			return
+		end
+
+		-- Find the gun's moveable part
+		local gunPart = nil
+		if gun:IsA("BasePart") then
+			gunPart = gun
+		elseif gun:IsA("Tool") then
+			gunPart = gun:FindFirstChild("Handle") or gun:FindFirstChildWhichIsA("BasePart")
+		elseif gun:IsA("Model") then
+			gunPart = gun.PrimaryPart or gun:FindFirstChildWhichIsA("BasePart")
+		end
+
+		if gunPart then
+			gunPart.CFrame = root.CFrame + Vector3.new(0, 2, 0)
+			-- If it's a model with SetPrimaryPartCFrame
+			if gun:IsA("Model") and gun.PrimaryPart then
+				pcall(function() gun:SetPrimaryPartCFrame(root.CFrame + Vector3.new(0, 2, 0)) end)
+			end
+			addLog("[BRING GUN] Gun brought to you!", COLORS.success)
+		else
+			addLog("[BRING GUN] Could not find gun part!", COLORS.error)
+		end
+	end)
+end
+
+-- ===================== X-RAY =====================
+local function startXRay()
+	xrayOrigTransparencies = {}
+	pcall(function()
+		for _, obj in ipairs(workspace:GetDescendants()) do
+			if obj:IsA("BasePart") and not obj:IsDescendantOf(LocalPlayer.Character or workspace) then
+				local isPlayerChar = false
+				for _, p in ipairs(Players:GetPlayers()) do
+					if p.Character and obj:IsDescendantOf(p.Character) then isPlayerChar = true break end
+				end
+				if not isPlayerChar and obj.Transparency < 0.7 then
+					xrayOrigTransparencies[obj] = obj.Transparency
+					obj.Transparency = 0.7
+				end
+			end
+		end
+	end)
+	addLog("[X-RAY] ON - See through walls", COLORS.success)
+end
+
+local function stopXRay()
+	pcall(function()
+		for part, transparency in pairs(xrayOrigTransparencies) do
+			if part and part.Parent then part.Transparency = transparency end
+		end
+		xrayOrigTransparencies = {}
+	end)
+	addLog("[X-RAY] OFF", COLORS.error)
+end
+
+-- ===================== TRAPDOOR ESP =====================
+local function clearTrapdoorEsp()
+	for _, hl in pairs(trapdoorEspHighlights) do pcall(function() hl:Destroy() end) end
+	trapdoorEspHighlights = {}
+end
+
+local function startTrapdoorEsp()
+	clearTrapdoorEsp()
+	pcall(function()
+		for _, obj in ipairs(workspace:GetDescendants()) do
+			if obj:IsA("BasePart") and (obj.Name == "Trap" or obj.Name == "Trapdoor" or obj.Name == "TrapDoor" or obj.Name:lower():find("trap")) then
+				local hl = Instance.new("Highlight")
+				hl.Name = "TrapdoorESP"
+				hl.FillColor = Color3.fromRGB(255, 100, 0)
+				hl.OutlineColor = Color3.fromRGB(255, 150, 50)
+				hl.FillTransparency = 0.3
+				hl.OutlineTransparency = 0
+				hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+				hl.Adornee = obj
+				hl.Parent = obj
+				table.insert(trapdoorEspHighlights, hl)
+			end
+		end
+	end)
+	addLog("[TRAPDOOR ESP] ON - Orange highlight on traps (" .. #trapdoorEspHighlights .. " found)", COLORS.success)
+end
+
+local function stopTrapdoorEsp()
+	clearTrapdoorEsp()
+	addLog("[TRAPDOOR ESP] OFF", COLORS.error)
+end
+
+-- ===================== BRING COINS =====================
+local function startBringCoins()
+	bringCoinsConnection = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+			if not root then return end
+			local coins = getCoins()
+			for _, coin in ipairs(coins) do
+				if coin and coin.Parent and coin.Transparency < 1 then
+					coin.CFrame = root.CFrame
+					-- Fire touch interest if available
+					if firetouchinterest then
+						pcall(function()
+							firetouchinterest(root, coin, 0)
+							_wait()
+							firetouchinterest(root, coin, 1)
+						end)
+					end
+				end
+			end
+		end)
+	end)
+	addLog("[BRING COINS] ON - Coins teleporting to you", COLORS.success)
+end
+
+local function stopBringCoins()
+	if bringCoinsConnection then bringCoinsConnection:Disconnect() bringCoinsConnection = nil end
+	addLog("[BRING COINS] OFF", COLORS.error)
+end
+
+-- ===================== AUTO COLLECT ALL =====================
+local function startAutoCollect()
+	autoCollectConnection = _spawn(function()
+		while autoCollectEnabled do
+			pcall(function()
+				local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+				if not root then return end
+				local coins = getCoins()
+				for _, coin in ipairs(coins) do
+					if not autoCollectEnabled then break end
+					if coin and coin.Parent and coin.Transparency < 1 then
+						if firetouchinterest then
+							pcall(function()
+								firetouchinterest(root, coin, 0)
+								firetouchinterest(root, coin, 1)
+							end)
+						else
+							local savedCF = root.CFrame
+							root.CFrame = coin.CFrame
+							_wait(0.05)
+							root.CFrame = savedCF
+						end
+					end
+				end
+			end)
+			_wait(0.3)
+		end
+	end)
+	addLog("[AUTO COLLECT] ON - Collecting all coins rapidly", COLORS.success)
+end
+
+local function stopAutoCollect()
+	autoCollectEnabled = false
+	addLog("[AUTO COLLECT] OFF", COLORS.error)
+end
+
+-- ===================== BUNNY HOP =====================
+local function startBunnyHop()
+	bunnyHopConnection = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			local character = LocalPlayer.Character
+			if not character then return end
+			local humanoid = character:FindFirstChildOfClass("Humanoid")
+			if not humanoid then return end
+			if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+				humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+			end
+		end)
+	end)
+	addLog("[BHOP] ON - Auto-jump while moving forward", COLORS.success)
+end
+
+local function stopBunnyHop()
+	if bunnyHopConnection then bunnyHopConnection:Disconnect() bunnyHopConnection = nil end
+	addLog("[BHOP] OFF", COLORS.error)
+end
+
+-- ===================== TELEPORT TO PLAYER =====================
+local function tpToPlayer(target)
+	pcall(function()
+		if not target then
+			addLog("[TP] No player selected!", COLORS.error)
+			return
+		end
+		local myChar = LocalPlayer.Character
+		if not myChar then return end
+		local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+		if not myRoot then return end
+		local theirChar = target.Character
+		if not theirChar then
+			addLog("[TP] Target has no character!", COLORS.error)
+			return
+		end
+		local theirRoot = theirChar:FindFirstChild("HumanoidRootPart")
+		if not theirRoot then return end
+		myRoot.CFrame = theirRoot.CFrame + Vector3.new(0, 3, 0)
+		addLog("[TP] Teleported to " .. target.DisplayName, COLORS.success)
+	end)
+end
+
+-- ===================== SPECTATE / UNSPECTATE =====================
+local function spectatePlayer(target)
+	pcall(function()
+		if not target then
+			addLog("[SPECTATE] No player selected!", COLORS.error)
+			return
+		end
+		local theirChar = target.Character
+		if not theirChar then
+			addLog("[SPECTATE] Target has no character!", COLORS.error)
+			return
+		end
+		workspace.CurrentCamera.CameraSubject = theirChar:FindFirstChildOfClass("Humanoid")
+		addLog("[SPECTATE] Spectating " .. target.DisplayName, COLORS.success)
+	end)
+end
+
+local function unspectate()
+	pcall(function()
+		local myChar = LocalPlayer.Character
+		if myChar then
+			workspace.CurrentCamera.CameraSubject = myChar:FindFirstChildOfClass("Humanoid")
+		end
+	end)
+	addLog("[SPECTATE] Stopped spectating", COLORS.error)
+end
+
+-- ===================== GRAVITY MODIFIER =====================
+local function setGravity(value)
+	pcall(function()
+		workspace.Gravity = value
+	end)
+	addLog("[GRAVITY] Set to " .. value, COLORS.success)
+end
+
+-- ===================== ANTI-VOID =====================
+local function startAntiVoid()
+	lastSafePos = nil
+	antiVoidConnection = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			local char = LocalPlayer.Character
+			if not char then return end
+			local hrp = char:FindFirstChild("HumanoidRootPart")
+			if not hrp then return end
+			if hrp.Position.Y > -50 then
+				lastSafePos = hrp.CFrame
+			elseif lastSafePos then
+				hrp.CFrame = lastSafePos
+			end
+		end)
+	end)
+	addLog("[ANTI-VOID] ON - Preventing void deaths", COLORS.success)
+end
+
+local function stopAntiVoid()
+	if antiVoidConnection then antiVoidConnection:Disconnect() antiVoidConnection = nil end
+	lastSafePos = nil
+	addLog("[ANTI-VOID] OFF", COLORS.error)
+end
+
+-- ===================== WALK FLING LOGIC =====================
+local function startWalkFling()
+	local ok, err = pcall(function()
+		local character = LocalPlayer.Character
+		if not character then return end
+		local root = character:FindFirstChild("HumanoidRootPart")
+		if not root then return end
+
+		-- Set density to 100
+		walkFlingProps = {}
+		for _, part in ipairs(character:GetDescendants()) do
+			if part:IsA("BasePart") then
+				walkFlingProps[part] = part.CustomPhysicalProperties
+				part.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
+			end
+		end
+
+		-- Heartbeat: velocity spikes using AssemblyLinearVelocity
+		walkFlingConnection = RunService.Heartbeat:Connect(function()
+			pcall(function()
+				local char = LocalPlayer.Character
+				if not char then return end
+				local rt = char:FindFirstChild("HumanoidRootPart")
+				if not rt then return end
+				local hum = char:FindFirstChildOfClass("Humanoid")
+				if not hum then return end
+				local moveDir = hum.MoveDirection
+				if moveDir.Magnitude > 0.1 then
+					rt.AssemblyLinearVelocity = moveDir.Unit * walkFlingPower + Vector3.new(0, 0, 0)
+				end
+			end)
+		end)
+
+		addLog("[WALK FLING] ON - Walk into players!", COLORS.success)
+	end)
+	if not ok then
+		addLog("[WALK FLING] Error: " .. tostring(err), COLORS.error)
+	end
+end
+
+local function stopWalkFling()
+	if walkFlingConnection then walkFlingConnection:Disconnect() walkFlingConnection = nil end
+	local character = LocalPlayer.Character
+	if character then
+		for _, part in ipairs(character:GetDescendants()) do
+			if part:IsA("BasePart") then
+				if walkFlingProps[part] then
+					part.CustomPhysicalProperties = walkFlingProps[part]
+				else
+					part.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
+				end
+			end
+		end
+		for _, part in ipairs(character:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.Velocity = Vector3.new(0, 0, 0)
+			end
+		end
+	end
+	walkFlingProps = {}
+	addLog("[WALK FLING] OFF", COLORS.error)
+end
+
+-- ===================== HEADLESS =====================
+local function startHeadless()
+	pcall(function()
+		local character = LocalPlayer.Character
+		if not character then return end
+		headlessSaved = {}
+
+		-- Hide head mesh
+		local head = character:FindFirstChild("Head")
+		if head then
+			for _, child in ipairs(head:GetChildren()) do
+				if child:IsA("SpecialMesh") then
+					headlessSaved[child] = {Scale = child.Scale}
+					child.Scale = Vector3.new(0, 0, 0)
+				elseif child:IsA("Decal") then
+					headlessSaved[child] = {Transparency = child.Transparency}
+					child.Transparency = 1
+				end
+			end
+			headlessSaved[head] = {Transparency = head.Transparency}
+			head.Transparency = 1
+		end
+
+		-- Hide hat accessories
+		for _, acc in ipairs(character:GetChildren()) do
+			if acc:IsA("Accessory") then
+				local handle = acc:FindFirstChild("Handle")
+				if handle then
+					headlessSaved[handle] = {Transparency = handle.Transparency}
+					handle.Transparency = 1
+				end
+			end
+		end
+	end)
+	addLog("[HEADLESS] ON", COLORS.success)
+end
+
+local function stopHeadless()
+	pcall(function()
+		for obj, props in pairs(headlessSaved) do
+			if obj and obj.Parent then
+				for prop, val in pairs(props) do
+					pcall(function() obj[prop] = val end)
+				end
+			end
+		end
+		headlessSaved = {}
+	end)
+	addLog("[HEADLESS] OFF", COLORS.error)
+end
+
+-- ===================== RAINBOW CHARACTER =====================
+local function startRainbow()
+	local hueOffset = 0
+	rainbowConnection = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			local character = LocalPlayer.Character
+			if not character then return end
+			hueOffset = hueOffset + 0.005
+			if hueOffset > 1 then hueOffset = 0 end
+			local color = Color3.fromHSV(hueOffset, 1, 1)
+			for _, part in ipairs(character:GetDescendants()) do
+				if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+					part.Color = color
+				end
+			end
+		end)
+	end)
+	addLog("[RAINBOW] ON - Cycling colors", COLORS.success)
+end
+
+local function stopRainbow()
+	if rainbowConnection then rainbowConnection:Disconnect() rainbowConnection = nil end
+	addLog("[RAINBOW] OFF", COLORS.error)
 end
 
 -- ===================== SPIN FLING LOGIC =====================
@@ -2056,7 +2619,7 @@ do
 	local tab = tabFrames["Main"]
 
 	createSectionLabel(tab, "Info", 1)
-	createInfoLabel(tab, "MM2 Hub v1.0", 2)
+	createInfoLabel(tab, "MM2 Hub v1.1", 2)
 	createInfoLabel(tab, "SX The Revival", 3)
 
 	local spacer = Instance.new("Frame")
@@ -2169,7 +2732,10 @@ do
 	createActionButton(tab, "Grab Dropped Gun", 10, function()
 		grabDroppedGun()
 	end)
-	createToggle(tab, "Auto Grab Gun", 11, function(on)
+	createActionButton(tab, "Bring Gun To You", 11, function()
+		bringGun()
+	end)
+	createToggle(tab, "Auto Grab Gun", 12, function(on)
 		autoGrabGunEnabled = on
 		if on then startAutoGrabGun() else stopAutoGrabGun() end
 	end)
@@ -2177,12 +2743,63 @@ do
 	local spacer3 = Instance.new("Frame")
 	spacer3.Size = UDim2.new(1, 0, 0, 4)
 	spacer3.BackgroundTransparency = 1
-	spacer3.LayoutOrder = 12
+	spacer3.LayoutOrder = 13
 	spacer3.Parent = tab
 
-	createSectionLabel(tab, "Info", 13)
-	createInfoLabel(tab, "Auto Shoot only works as Sheriff", 14)
-	createInfoLabel(tab, "Equip gun first for Auto Shoot", 15)
+	createSectionLabel(tab, "Murderer Tools", 14)
+
+	createToggle(tab, "Kill All (Murderer)", 15, function(on)
+		killAllEnabled = on
+		if on then
+			if not roleCheckEnabled then startRoleCheck() end
+			startKillAll()
+		else
+			stopKillAll()
+		end
+	end)
+
+	local spacer4 = Instance.new("Frame")
+	spacer4.Size = UDim2.new(1, 0, 0, 4)
+	spacer4.BackgroundTransparency = 1
+	spacer4.LayoutOrder = 16
+	spacer4.Parent = tab
+
+	createSectionLabel(tab, "TP Behind", 17)
+
+	-- TP Behind player name input
+	local tpBehindInput = Instance.new("TextBox")
+	tpBehindInput.Size = UDim2.new(1, 0, 0, 30)
+	tpBehindInput.BackgroundColor3 = COLORS.tabBg
+	tpBehindInput.Text = ""
+	tpBehindInput.PlaceholderText = "Enter player name..."
+	tpBehindInput.TextColor3 = COLORS.textPrimary
+	tpBehindInput.PlaceholderColor3 = COLORS.textDim
+	tpBehindInput.Font = Enum.Font.Gotham
+	tpBehindInput.TextSize = 12
+	tpBehindInput.LayoutOrder = 18
+	tpBehindInput.ClearTextOnFocus = false
+	tpBehindInput.Parent = tab
+	addCorner(tpBehindInput, 5)
+
+	createActionButton(tab, "TP Behind Player", 19, function()
+		local name = tpBehindInput.Text
+		if name and name ~= "" then
+			tpBehindPlayer(name)
+		else
+			addLog("[TP BEHIND] Enter a player name first!", COLORS.error)
+		end
+	end)
+
+	local spacer5 = Instance.new("Frame")
+	spacer5.Size = UDim2.new(1, 0, 0, 4)
+	spacer5.BackgroundTransparency = 1
+	spacer5.LayoutOrder = 20
+	spacer5.Parent = tab
+
+	createSectionLabel(tab, "Info", 21)
+	createInfoLabel(tab, "Auto Shoot only works as Sheriff", 22)
+	createInfoLabel(tab, "Kill All only works as Murderer with knife equipped", 23)
+	createInfoLabel(tab, "Bring Gun teleports gun to you", 24)
 end
 
 -- =====================================================================
@@ -2243,30 +2860,40 @@ do
 		coinEspEnabled = on
 		if on then enableCoinEsp() else disableCoinEsp() end
 	end)
+	createToggle(tab, "Trapdoor ESP", 10, function(on)
+		trapdoorEspEnabled = on
+		if on then startTrapdoorEsp() else stopTrapdoorEsp() end
+	end)
 
 	local spacer2 = Instance.new("Frame")
 	spacer2.Size = UDim2.new(1, 0, 0, 4)
 	spacer2.BackgroundTransparency = 1
-	spacer2.LayoutOrder = 10
+	spacer2.LayoutOrder = 11
 	spacer2.Parent = tab
 
-	createSectionLabel(tab, "World", 11)
+	createSectionLabel(tab, "World", 12)
 
-	createToggle(tab, "Fullbright", 12, function(on)
+	createToggle(tab, "Fullbright", 13, function(on)
 		fullbrightEnabled = on
 		if on then startFullbright() else stopFullbright() end
+	end)
+	createToggle(tab, "X-Ray", 14, function(on)
+		xrayEnabled = on
+		if on then startXRay() else stopXRay() end
 	end)
 
 	local spacer3 = Instance.new("Frame")
 	spacer3.Size = UDim2.new(1, 0, 0, 4)
 	spacer3.BackgroundTransparency = 1
-	spacer3.LayoutOrder = 13
+	spacer3.LayoutOrder = 15
 	spacer3.Parent = tab
 
-	createSectionLabel(tab, "Info", 14)
-	createInfoLabel(tab, "ESP colors: Red=Murderer, Blue=Sheriff, Green=Innocent", 15)
-	createInfoLabel(tab, "Gun ESP: Yellow highlight on dropped guns", 16)
-	createInfoLabel(tab, "Coin ESP: Gold highlight on collectible coins", 17)
+	createSectionLabel(tab, "Info", 16)
+	createInfoLabel(tab, "ESP colors: Red=Murderer, Blue=Sheriff, Green=Innocent", 17)
+	createInfoLabel(tab, "Gun ESP: Yellow highlight on dropped guns", 18)
+	createInfoLabel(tab, "Coin ESP: Gold highlight on collectible coins", 19)
+	createInfoLabel(tab, "X-Ray: See through walls (0.7 transparency)", 20)
+	createInfoLabel(tab, "Trapdoor ESP: Orange highlight on trap parts", 21)
 end
 
 -- =====================================================================
@@ -2285,16 +2912,24 @@ do
 		farmSpeed = val / 10
 	end)
 	coinCountLabel = createInfoLabel(tab, "Coins Farmed: 0", 4)
+	createToggle(tab, "Bring Coins To You", 5, function(on)
+		bringCoinsEnabled = on
+		if on then startBringCoins() else stopBringCoins() end
+	end)
+	createToggle(tab, "Auto Collect All", 6, function(on)
+		autoCollectEnabled = on
+		if on then startAutoCollect() else stopAutoCollect() end
+	end)
 
 	local spacer = Instance.new("Frame")
 	spacer.Size = UDim2.new(1, 0, 0, 4)
 	spacer.BackgroundTransparency = 1
-	spacer.LayoutOrder = 5
+	spacer.LayoutOrder = 7
 	spacer.Parent = tab
 
-	createSectionLabel(tab, "XP", 6)
+	createSectionLabel(tab, "XP", 8)
 
-	createToggle(tab, "Anti-AFK", 7, function(on)
+	createToggle(tab, "Anti-AFK", 9, function(on)
 		antiAfkEnabled = on
 		if on then startAntiAfk() else stopAntiAfk() end
 	end)
@@ -2302,12 +2937,14 @@ do
 	local spacer2 = Instance.new("Frame")
 	spacer2.Size = UDim2.new(1, 0, 0, 4)
 	spacer2.BackgroundTransparency = 1
-	spacer2.LayoutOrder = 8
+	spacer2.LayoutOrder = 10
 	spacer2.Parent = tab
 
-	createSectionLabel(tab, "Info", 9)
-	createInfoLabel(tab, "Auto Coin Farm teleports to each coin", 10)
-	createInfoLabel(tab, "Anti-AFK prevents idle kick", 11)
+	createSectionLabel(tab, "Info", 11)
+	createInfoLabel(tab, "Auto Coin Farm teleports to each coin", 12)
+	createInfoLabel(tab, "Bring Coins teleports coins to you", 13)
+	createInfoLabel(tab, "Auto Collect fires touch events on coins", 14)
+	createInfoLabel(tab, "Anti-AFK prevents idle kick", 15)
 end
 
 -- =====================================================================
@@ -2351,35 +2988,166 @@ do
 		jumpPowerValue = val
 		setJumpPower(val)
 	end)
+	createToggle(tab, "Bunny Hop", 9, function(on)
+		bunnyHopEnabled = on
+		if on then startBunnyHop() else stopBunnyHop() end
+	end)
 
 	local spacer = Instance.new("Frame")
 	spacer.Size = UDim2.new(1, 0, 0, 4)
 	spacer.BackgroundTransparency = 1
-	spacer.LayoutOrder = 9
+	spacer.LayoutOrder = 10
 	spacer.Parent = tab
 
-	createSectionLabel(tab, "Survival", 10)
+	createSectionLabel(tab, "Survival", 11)
 
-	createToggle(tab, "God Mode", 11, function(on)
+	createToggle(tab, "God Mode", 12, function(on)
 		godEnabled = on
 		if on then startGod() else stopGod() end
 	end)
-	createToggle(tab, "Invisible", 12, function(on)
+	createToggle(tab, "Invisible", 13, function(on)
 		invisibleEnabled = on
 		if on then startInvisible() else stopInvisible() end
+	end)
+	createToggle(tab, "Anti-Void", 14, function(on)
+		antiVoidEnabled = on
+		if on then startAntiVoid() else stopAntiVoid() end
 	end)
 
 	local spacer2 = Instance.new("Frame")
 	spacer2.Size = UDim2.new(1, 0, 0, 4)
 	spacer2.BackgroundTransparency = 1
-	spacer2.LayoutOrder = 13
+	spacer2.LayoutOrder = 15
 	spacer2.Parent = tab
 
-	createSectionLabel(tab, "Camera", 14)
+	createSectionLabel(tab, "Camera", 16)
 
-	createSlider(tab, "Camera FOV", 50, 120, cameraFOV, 15, function(val)
+	createSlider(tab, "Camera FOV", 50, 120, cameraFOV, 17, function(val)
 		cameraFOV = val
 		setCameraFOV(val)
+	end)
+
+	local spacer3 = Instance.new("Frame")
+	spacer3.Size = UDim2.new(1, 0, 0, 4)
+	spacer3.BackgroundTransparency = 1
+	spacer3.LayoutOrder = 18
+	spacer3.Parent = tab
+
+	createSectionLabel(tab, "World", 19)
+
+	createSlider(tab, "Gravity", 0, 1000, gravityValue, 20, function(val)
+		gravityValue = val
+		setGravity(val)
+	end)
+
+	local spacer4 = Instance.new("Frame")
+	spacer4.Size = UDim2.new(1, 0, 0, 4)
+	spacer4.BackgroundTransparency = 1
+	spacer4.LayoutOrder = 21
+	spacer4.Parent = tab
+
+	createSectionLabel(tab, "Player Target", 22)
+	local selectedPlayerLabel = createInfoLabel(tab, "Selected: None", 23)
+
+	createActionButton(tab, "Teleport to Player", 24, function()
+		if selectedPlayer then
+			tpToPlayer(selectedPlayer)
+		else
+			addLog("[TP] No player selected!", COLORS.error)
+		end
+	end)
+	createActionButton(tab, "Spectate Player", 25, function()
+		if selectedPlayer then
+			spectatePlayer(selectedPlayer)
+		else
+			addLog("[SPECTATE] No player selected!", COLORS.error)
+		end
+	end)
+	createActionButton(tab, "Unspectate", 26, function()
+		unspectate()
+	end)
+
+	-- Player list frame
+	local playerListFrame = Instance.new("Frame")
+	playerListFrame.Size = UDim2.new(1, 0, 0, 150)
+	playerListFrame.BackgroundColor3 = COLORS.bgSecondary
+	playerListFrame.BorderSizePixel = 0
+	playerListFrame.LayoutOrder = 27
+	playerListFrame.Parent = tab
+	addCorner(playerListFrame, 5)
+	addStroke(playerListFrame, COLORS.border, 1)
+
+	local playerListScroll = Instance.new("ScrollingFrame")
+	playerListScroll.Size = UDim2.new(1, -8, 1, -8)
+	playerListScroll.Position = UDim2.new(0, 4, 0, 4)
+	playerListScroll.BackgroundTransparency = 1
+	playerListScroll.BorderSizePixel = 0
+	playerListScroll.ScrollBarThickness = 3
+	playerListScroll.ScrollBarImageColor3 = COLORS.accent
+	playerListScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+	playerListScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	playerListScroll.Parent = playerListFrame
+
+	local playerListLayout = Instance.new("UIListLayout")
+	playerListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	playerListLayout.Padding = UDim.new(0, 3)
+	playerListLayout.Parent = playerListScroll
+
+	local function refreshPlayerList()
+		for _, child in ipairs(playerListScroll:GetChildren()) do
+			if child:IsA("TextButton") then child:Destroy() end
+		end
+		local order = 0
+		for _, player in ipairs(Players:GetPlayers()) do
+			if player ~= LocalPlayer then
+				order = order + 1
+				local pBtn = Instance.new("TextButton")
+				pBtn.Size = UDim2.new(1, 0, 0, 24)
+				pBtn.BackgroundColor3 = COLORS.tabBg
+				pBtn.Text = player.DisplayName .. " (@" .. player.Name .. ")"
+				pBtn.TextColor3 = COLORS.textPrimary
+				pBtn.Font = Enum.Font.Gotham
+				pBtn.TextSize = 11
+				pBtn.TextXAlignment = Enum.TextXAlignment.Left
+				pBtn.LayoutOrder = order
+				pBtn.Parent = playerListScroll
+				addCorner(pBtn, 4)
+
+				local padBtn = Instance.new("UIPadding")
+				padBtn.PaddingLeft = UDim.new(0, 6)
+				padBtn.Parent = pBtn
+
+				pBtn.MouseButton1Click:Connect(function()
+					selectedPlayer = player
+					selectedPlayerLabel.Text = "Selected: " .. player.DisplayName
+					addLog("[TARGET] Selected: " .. player.DisplayName, COLORS.accent)
+					-- Highlight selected button
+					for _, child in ipairs(playerListScroll:GetChildren()) do
+						if child:IsA("TextButton") then
+							child.BackgroundColor3 = COLORS.tabBg
+						end
+					end
+					pBtn.BackgroundColor3 = COLORS.accent
+				end)
+			end
+		end
+	end
+
+	refreshPlayerList()
+	createActionButton(tab, "Refresh Player List", 28, function()
+		refreshPlayerList()
+		addLog("[PLAYERS] List refreshed", COLORS.accent)
+	end)
+
+	-- Auto-refresh when players join/leave
+	Players.PlayerAdded:Connect(function() _wait(0.5) refreshPlayerList() end)
+	Players.PlayerRemoving:Connect(function(player)
+		if selectedPlayer == player then
+			selectedPlayer = nil
+			selectedPlayerLabel.Text = "Selected: None"
+		end
+		_wait(0.5)
+		refreshPlayerList()
 	end)
 end
 
@@ -2391,49 +3159,71 @@ do
 
 	createSectionLabel(tab, "Fling", 1)
 
-	createToggle(tab, "Spin Fling", 2, function(on)
+	local spinFlingToggle = createToggle(tab, "Spin Fling", 2, function(on)
+		if on and walkFlingEnabled then
+			walkFlingEnabled = false
+			stopWalkFling()
+		end
 		flingEnabled = on
 		if on then startFling() else stopFling() end
 	end)
 	createSlider(tab, "Fling Power", 1000, 99999, flingPower, 3, function(val) flingPower = val end)
+	local walkFlingToggle = createToggle(tab, "Walk Fling", 4, function(on)
+		if on and flingEnabled then
+			flingEnabled = false
+			stopFling()
+			spinFlingToggle.setVisualState(false)
+		end
+		walkFlingEnabled = on
+		if on then startWalkFling() else stopWalkFling() end
+	end)
+	createSlider(tab, "Walk Fling Power", 1000, 50000, walkFlingPower, 5, function(val) walkFlingPower = val end)
 
 	local spacer = Instance.new("Frame")
 	spacer.Size = UDim2.new(1, 0, 0, 4)
 	spacer.BackgroundTransparency = 1
-	spacer.LayoutOrder = 4
+	spacer.LayoutOrder = 6
 	spacer.Parent = tab
 
-	createSectionLabel(tab, "Visual", 5)
+	createSectionLabel(tab, "Visual", 7)
 
-	createToggle(tab, "Spin", 6, function(on)
+	createToggle(tab, "Spin", 8, function(on)
 		spinEnabled = on
 		if on then startSpin() else stopSpin() end
 	end)
-	createToggle(tab, "Seizure", 7, function(on)
+	createToggle(tab, "Seizure", 9, function(on)
 		seizureEnabled = on
 		if on then startSeizure() else stopSeizure() end
+	end)
+	createToggle(tab, "Headless", 10, function(on)
+		headlessEnabled = on
+		if on then startHeadless() else stopHeadless() end
+	end)
+	createToggle(tab, "Rainbow Character", 11, function(on)
+		rainbowEnabled = on
+		if on then startRainbow() else stopRainbow() end
 	end)
 
 	local spacer2 = Instance.new("Frame")
 	spacer2.Size = UDim2.new(1, 0, 0, 4)
 	spacer2.BackgroundTransparency = 1
-	spacer2.LayoutOrder = 8
+	spacer2.LayoutOrder = 12
 	spacer2.Parent = tab
 
-	createSectionLabel(tab, "Emotes", 9)
+	createSectionLabel(tab, "Emotes", 13)
 
-	createActionButton(tab, "Emote 1", 10, function()
+	createActionButton(tab, "Emote 1", 14, function()
 		playJerkEmote()
 	end)
-	createActionButton(tab, "Dance", 11, function()
+	createActionButton(tab, "Dance", 15, function()
 		playEmote(507771019, 1, 10)
 		addLog("[EMOTE] Dance!", COLORS.success)
 	end)
-	createActionButton(tab, "Dab", 12, function()
+	createActionButton(tab, "Dab", 16, function()
 		playEmote(183412246, 1, 3)
 		addLog("[EMOTE] Dab!", COLORS.success)
 	end)
-	createActionButton(tab, "Stop Emote", 13, function()
+	createActionButton(tab, "Stop Emote", 17, function()
 		stopEmote()
 		addLog("[EMOTE] Stopped", COLORS.error)
 	end)
@@ -2452,8 +3242,15 @@ commands["unalert"] = function() murdererAlertEnabled = false stopMurdererAlert(
 commands["autoshoot"] = function() autoShootMurdererEnabled = true if not roleCheckEnabled then startRoleCheck() end startAutoShootMurderer() end
 commands["unautoshoot"] = function() autoShootMurdererEnabled = false stopAutoShootMurderer() end
 commands["grabgun"] = function() grabDroppedGun() end
+commands["bringgun"] = function() bringGun() end
 commands["autograb"] = function() autoGrabGunEnabled = true startAutoGrabGun() end
 commands["unautograb"] = function() autoGrabGunEnabled = false stopAutoGrabGun() end
+commands["tpbehind"] = function(args)
+	local name = args[1]
+	if name then tpBehindPlayer(name) else addLog("[TP BEHIND] Usage: ;tpbehind <player>", COLORS.error) end
+end
+commands["killall"] = function() killAllEnabled = true if not roleCheckEnabled then startRoleCheck() end startKillAll() end
+commands["unkillall"] = function() killAllEnabled = false stopKillAll() end
 
 -- ESP
 commands["esp"] = function() espEnabled = true if not roleCheckEnabled then startRoleCheck() end enablePlayerEsp() end
@@ -2464,12 +3261,20 @@ commands["coinesp"] = function() coinEspEnabled = true enableCoinEsp() end
 commands["uncoinesp"] = function() coinEspEnabled = false disableCoinEsp() end
 commands["fullbright"] = function() fullbrightEnabled = true startFullbright() end
 commands["unfullbright"] = function() fullbrightEnabled = false stopFullbright() end
+commands["xray"] = function() xrayEnabled = true startXRay() end
+commands["unxray"] = function() xrayEnabled = false stopXRay() end
+commands["trapdooresp"] = function() trapdoorEspEnabled = true startTrapdoorEsp() end
+commands["untrapdooresp"] = function() trapdoorEspEnabled = false stopTrapdoorEsp() end
 
 -- Farming
 commands["coinfarm"] = function() autoCoinFarmEnabled = true startAutoCoinFarm() end
 commands["uncoinfarm"] = function() autoCoinFarmEnabled = false stopAutoCoinFarm() end
 commands["antiafk"] = function() antiAfkEnabled = true startAntiAfk() end
 commands["unantiafk"] = function() antiAfkEnabled = false stopAntiAfk() end
+commands["bringcoins"] = function() bringCoinsEnabled = true startBringCoins() end
+commands["unbringcoins"] = function() bringCoinsEnabled = false stopBringCoins() end
+commands["autocollect"] = function() autoCollectEnabled = true startAutoCollect() end
+commands["unautocollect"] = function() autoCollectEnabled = false stopAutoCollect() end
 
 -- Player
 commands["fly"] = function() flyEnabled = true startFly() end
@@ -2499,14 +3304,52 @@ commands["fov"] = function(args)
 		addLog("[FOV] Usage: ;fov [50-120]", COLORS.error)
 	end
 end
+commands["bhop"] = function() bunnyHopEnabled = true startBunnyHop() end
+commands["unbhop"] = function() bunnyHopEnabled = false stopBunnyHop() end
+commands["tp"] = function(args)
+	local name = args[1]
+	if name then
+		local target = findPlayer(name)
+		if target then tpToPlayer(target) else addLog("[TP] Player not found: " .. name, COLORS.error) end
+	else
+		addLog("[TP] Usage: ;tp <player>", COLORS.error)
+	end
+end
+commands["spectate"] = function(args)
+	local name = args[1]
+	if name then
+		local target = findPlayer(name)
+		if target then spectatePlayer(target) else addLog("[SPECTATE] Player not found: " .. name, COLORS.error) end
+	else
+		addLog("[SPECTATE] Usage: ;spectate <player>", COLORS.error)
+	end
+end
+commands["unspectate"] = function() unspectate() end
+commands["gravity"] = function(args)
+	local v = tonumber(args[1])
+	if v then
+		gravityValue = v
+		setGravity(v)
+	else
+		addLog("[GRAVITY] Usage: ;gravity <0-1000>", COLORS.error)
+	end
+end
+commands["antivoid"] = function() antiVoidEnabled = true startAntiVoid() end
+commands["unantivoid"] = function() antiVoidEnabled = false stopAntiVoid() end
 
 -- Fun
 commands["fling"] = function() flingEnabled = true startFling() end
 commands["unfling"] = function() flingEnabled = false stopFling() end
+commands["walkfling"] = function() walkFlingEnabled = true startWalkFling() end
+commands["unwalkfling"] = function() walkFlingEnabled = false stopWalkFling() end
 commands["spin"] = function() spinEnabled = true startSpin() end
 commands["unspin"] = function() spinEnabled = false stopSpin() end
 commands["seizure"] = function() seizureEnabled = true startSeizure() end
 commands["unseizure"] = function() seizureEnabled = false stopSeizure() end
+commands["headless"] = function() headlessEnabled = true startHeadless() end
+commands["unheadless"] = function() headlessEnabled = false stopHeadless() end
+commands["rainbow"] = function() rainbowEnabled = true startRainbow() end
+commands["unrainbow"] = function() rainbowEnabled = false stopRainbow() end
 commands["emote1"] = function() playJerkEmote() end
 commands["dance"] = function() playEmote(507771019, 1, 10) addLog("[EMOTE] Dance!", COLORS.success) end
 commands["dab"] = function() playEmote(183412246, 1, 3) addLog("[EMOTE] Dab!", COLORS.success) end
@@ -2518,26 +3361,33 @@ commands["serverhop"] = function() serverHop() end
 
 -- Help
 commands["cmds"] = function()
-	addLog("--- MM2 Hub Commands ---", COLORS.accent)
+	addLog("--- MM2 Hub v1.1 Commands ---", COLORS.accent)
 	addLog("-- Combat --", COLORS.accent)
 	addLog(";murderesp / ;unmurderesp", COLORS.textSecondary)
 	addLog(";alert / ;unalert (murderer proximity)", COLORS.textSecondary)
 	addLog(";autoshoot / ;unautoshoot (sheriff only)", COLORS.textSecondary)
-	addLog(";grabgun    ;autograb / ;unautograb", COLORS.textSecondary)
+	addLog(";grabgun    ;bringgun    ;autograb / ;unautograb", COLORS.textSecondary)
+	addLog(";tpbehind <player>", COLORS.textSecondary)
+	addLog(";killall / ;unkillall (murderer only)", COLORS.textSecondary)
 	addLog("-- ESP --", COLORS.accent)
 	addLog(";esp / ;unesp (role-colored ESP)", COLORS.textSecondary)
 	addLog(";gunesp / ;ungunesp    ;coinesp / ;uncoinesp", COLORS.textSecondary)
 	addLog(";fullbright / ;unfullbright", COLORS.textSecondary)
+	addLog(";xray / ;unxray    ;trapdooresp / ;untrapdooresp", COLORS.textSecondary)
 	addLog("-- Farming --", COLORS.accent)
 	addLog(";coinfarm / ;uncoinfarm    ;antiafk / ;unantiafk", COLORS.textSecondary)
+	addLog(";bringcoins / ;unbringcoins    ;autocollect / ;unautocollect", COLORS.textSecondary)
 	addLog("-- Player --", COLORS.accent)
 	addLog(";fly / ;unfly    ;noclip / ;unnoclip", COLORS.textSecondary)
 	addLog(";speed [val] / ;unspeed    ;infjump / ;uninfjump", COLORS.textSecondary)
 	addLog(";god / ;ungod    ;invisible / ;uninvisible", COLORS.textSecondary)
-	addLog(";fov [val]", COLORS.textSecondary)
+	addLog(";fov [val]    ;bhop / ;unbhop", COLORS.textSecondary)
+	addLog(";tp <player>    ;spectate <player>    ;unspectate", COLORS.textSecondary)
+	addLog(";gravity <val>    ;antivoid / ;unantivoid", COLORS.textSecondary)
 	addLog("-- Fun --", COLORS.accent)
-	addLog(";fling / ;unfling    ;spin / ;unspin", COLORS.textSecondary)
-	addLog(";seizure / ;unseizure", COLORS.textSecondary)
+	addLog(";fling / ;unfling    ;walkfling / ;unwalkfling", COLORS.textSecondary)
+	addLog(";spin / ;unspin    ;seizure / ;unseizure", COLORS.textSecondary)
+	addLog(";headless / ;unheadless    ;rainbow / ;unrainbow", COLORS.textSecondary)
 	addLog(";emote1  ;dance  ;dab  ;stopemote", COLORS.textSecondary)
 	addLog("-- Utility --", COLORS.accent)
 	addLog(";rejoin    ;serverhop    ;cmds", COLORS.textSecondary)
@@ -2709,14 +3559,80 @@ LocalPlayer.CharacterAdded:Connect(function()
 		_wait(0.5)
 		startAutoCoinFarm()
 	end
+
+	-- Re-enable kill all
+	if killAllEnabled then
+		stopKillAll()
+		_wait(0.3)
+		startKillAll()
+	end
+
+	-- Re-enable bunny hop
+	if bunnyHopEnabled then
+		stopBunnyHop()
+		_wait(0.2)
+		startBunnyHop()
+	end
+
+	-- Re-enable anti-void
+	if antiVoidEnabled then
+		stopAntiVoid()
+		_wait(0.2)
+		startAntiVoid()
+	end
+
+	-- Re-enable walk fling
+	if walkFlingEnabled then
+		stopWalkFling()
+		_wait(0.3)
+		startWalkFling()
+	end
+
+	-- Re-enable headless
+	if headlessEnabled then
+		_wait(0.5)
+		startHeadless()
+	end
+
+	-- Re-enable rainbow
+	if rainbowEnabled then
+		stopRainbow()
+		_wait(0.2)
+		startRainbow()
+	end
+
+	-- Re-enable bring coins
+	if bringCoinsEnabled then
+		stopBringCoins()
+		_wait(0.3)
+		startBringCoins()
+	end
+
+	-- Re-enable auto collect
+	if autoCollectEnabled then
+		_wait(0.3)
+		startAutoCollect()
+	end
+
+	-- Re-enable trapdoor ESP
+	if trapdoorEspEnabled then
+		_wait(0.3)
+		startTrapdoorEsp()
+	end
+
+	-- Re-enable gravity
+	if gravityValue ~= 196 then
+		_wait(0.2)
+		setGravity(gravityValue)
+	end
 end)
 
 -- ===================== STARTUP =====================
 -- Start role check automatically so role label updates
 startRoleCheck()
 
-addLog("MM2 Hub v1.0", COLORS.accent)
+addLog("MM2 Hub v1.1", COLORS.accent)
 addLog("Type ;cmds for command list", COLORS.textSecondary)
 addLog("Use Right Shift to toggle GUI", COLORS.textSecondary)
 addLog("Role detection active - scanning every 0.5s", COLORS.textSecondary)
-print("[MM2 Hub] v1.0 loaded")
+print("[MM2 Hub] v1.1 loaded")

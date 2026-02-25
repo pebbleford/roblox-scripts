@@ -1813,6 +1813,43 @@ local function startInvisible()
 	pcall(function()
 		local character = LocalPlayer.Character
 		if not character then return end
+		local hrp = character:FindFirstChild("HumanoidRootPart")
+		if not hrp then return end
+
+		-- FE Invisible: disconnect character from player so server stops
+		-- replicating your position to other clients
+		local savedCF = hrp.CFrame
+		local savedChar = character
+
+		-- Create temp seat for the sit-unsit trick
+		local seat = Instance.new("Seat")
+		seat.Size = Vector3.new(1, 1, 1)
+		seat.Transparency = 1
+		seat.CanCollide = false
+		seat.Anchored = true
+		seat.CFrame = savedCF
+		seat.Parent = workspace
+
+		local hum = character:FindFirstChildOfClass("Humanoid")
+		if hum then
+			seat:Sit(hum)
+			_wait(0.2)
+			-- Disconnect character from player
+			LocalPlayer.Character = nil
+			_wait(0.1)
+			-- Unsit and destroy seat
+			if hum then hum.Sit = false end
+			seat:Destroy()
+			_wait(0.1)
+			-- Reassign character so we keep local control
+			LocalPlayer.Character = savedChar
+			-- Restore position
+			if hrp and hrp.Parent then hrp.CFrame = savedCF end
+		else
+			seat:Destroy()
+		end
+
+		-- Also apply client-side transparency so WE can't see ourselves
 		savedTransparencies = {}
 		for _, part in ipairs(character:GetDescendants()) do
 			if part:IsA("BasePart") then
@@ -1830,15 +1867,27 @@ local function startInvisible()
 			end
 		end
 	end)
-	addLog("[INVISIBLE] ON", COLORS.success)
+	addLog("[INVISIBLE] ON (FE invisible)", COLORS.success)
 end
 
 local function stopInvisible()
+	-- Undo requires respawn to fully restore server-side visibility
 	pcall(function()
+		-- Restore client transparency first
 		for part, transparency in pairs(savedTransparencies) do
 			if part and part.Parent then part.Transparency = transparency end
 		end
 		savedTransparencies = {}
+		-- Respawn to restore server replication
+		local character = LocalPlayer.Character
+		if character then
+			local hum = character:FindFirstChildOfClass("Humanoid")
+			if hum then
+				hum.Health = 0
+				addLog("[INVISIBLE] OFF (respawning to restore)", COLORS.error)
+				return
+			end
+		end
 	end)
 	addLog("[INVISIBLE] OFF", COLORS.error)
 end

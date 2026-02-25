@@ -1303,6 +1303,35 @@ local function startInvisible()
 	pcall(function()
 		local character = LocalPlayer.Character
 		if not character then return end
+		local hrp = character:FindFirstChild("HumanoidRootPart")
+		if not hrp then return end
+
+		local savedCF = hrp.CFrame
+		local savedChar = character
+
+		local seat = Instance.new("Seat")
+		seat.Size = Vector3.new(1, 1, 1)
+		seat.Transparency = 1
+		seat.CanCollide = false
+		seat.Anchored = true
+		seat.CFrame = savedCF
+		seat.Parent = workspace
+
+		local hum = character:FindFirstChildOfClass("Humanoid")
+		if hum then
+			seat:Sit(hum)
+			_wait(0.2)
+			LocalPlayer.Character = nil
+			_wait(0.1)
+			if hum then hum.Sit = false end
+			seat:Destroy()
+			_wait(0.1)
+			LocalPlayer.Character = savedChar
+			if hrp and hrp.Parent then hrp.CFrame = savedCF end
+		else
+			seat:Destroy()
+		end
+
 		savedTransparencies = {}
 		for _, part in ipairs(character:GetDescendants()) do
 			if part:IsA("BasePart") then
@@ -1320,7 +1349,7 @@ local function startInvisible()
 			end
 		end
 	end)
-	addLog("[INVISIBLE] ON", COLORS.success)
+	addLog("[INVISIBLE] ON (FE invisible)", COLORS.success)
 end
 
 local function stopInvisible()
@@ -1329,6 +1358,15 @@ local function stopInvisible()
 			if part and part.Parent then part.Transparency = transparency end
 		end
 		savedTransparencies = {}
+		local character = LocalPlayer.Character
+		if character then
+			local hum = character:FindFirstChildOfClass("Humanoid")
+			if hum then
+				hum.Health = 0
+				addLog("[INVISIBLE] OFF (respawning to restore)", COLORS.error)
+				return
+			end
+		end
 	end)
 	addLog("[INVISIBLE] OFF", COLORS.error)
 end
