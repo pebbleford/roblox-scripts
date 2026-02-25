@@ -1004,11 +1004,12 @@ end
 local function startAutoShootMurderer()
 	combatState.autoShootConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
-			-- Only works when local player is sheriff
 			if roleState.myRole ~= "Sheriff" then return end
 			if not roleState.murdererPlayer then return end
 			local theirChar = roleState.murdererPlayer.Character
 			if not theirChar then return end
+			local theirHum = theirChar:FindFirstChildOfClass("Humanoid")
+			if theirHum and theirHum.Health <= 0 then return end
 			local theirHead = theirChar:FindFirstChild("Head") or theirChar:FindFirstChild("HumanoidRootPart")
 			if not theirHead then return end
 
@@ -1017,73 +1018,108 @@ local function startAutoShootMurderer()
 			local myRoot = myChar:FindFirstChild("HumanoidRootPart")
 			if not myRoot then return end
 
-			-- Check if we have the gun equipped
-			local hasGun = false
+			-- Find equipped gun tool
+			local gunTool = nil
 			for _, child in ipairs(myChar:GetChildren()) do
 				if child:IsA("Tool") and (child.Name == "Gun" or child.Name == "Revolver" or child.Name:lower():find("gun") or child.Name:lower():find("revolver")) then
-					hasGun = true
+					gunTool = child
 					break
 				end
 			end
-			if not hasGun then return end
+			if not gunTool then return end
 
-			-- Check distance
-			local dist = (myRoot.Position - theirHead.Position).Magnitude
-			if dist > 300 then return end
-
-			-- Aim at murderer using mousemoverel
+			-- Snap camera to look directly at murderer's head
 			local cam = workspace.CurrentCamera
-			local screenPos, onScreen = cam:WorldToViewportPoint(theirHead.Position)
-			if not onScreen then return end
+			cam.CFrame = CFrame.new(cam.CFrame.Position, theirHead.Position)
 
-			local screenCenter = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
-			local delta = Vector2.new(screenPos.X - screenCenter.X, screenPos.Y - screenCenter.Y)
-
-			local sensitivity = 1.5
-			local moveX = (delta.X / combatState.aimSmoothing) * sensitivity
-			local moveY = (delta.Y / combatState.aimSmoothing) * sensitivity
-
-			-- Minimum movement threshold
-			if math.abs(moveX) < 1 and math.abs(delta.X) > 1 then
-				moveX = delta.X > 0 and 1 or -1
-			end
-			if math.abs(moveY) < 1 and math.abs(delta.Y) > 1 then
-				moveY = delta.Y > 0 and 1 or -1
-			end
-
-			-- Use mousemoverel if available
-			if mousemoverel then
-				mousemoverel(moveX, moveY)
-			else
-				-- Fallback: direct CFrame set
-				local currentCF = cam.CFrame
-				local targetCF = CFrame.new(cam.CFrame.Position, theirHead.Position)
-				cam.CFrame = currentCF:Lerp(targetCF, 1 / combatState.aimSmoothing)
-			end
-
-			-- Auto fire when close to crosshair
-			if math.abs(delta.X) < 15 and math.abs(delta.Y) < 15 then
-				pcall(function()
-					if mouse1click then
-						mouse1click()
-					end
-					-- Also try tool activation
-					for _, child in ipairs(myChar:GetChildren()) do
-						if child:IsA("Tool") then
-							pcall(function() child:Activate() end)
-							break
-						end
-					end
-				end)
-			end
+			-- Fire the gun via tool activation
+			pcall(function() gunTool:Activate() end)
 		end)
 	end)
-	addLog("[AUTO SHOOT] ON - Auto-targeting murderer (Sheriff only)", COLORS.success)
+	addLog("[AUTO SHOOT] ON - Snapping aim at murderer (Sheriff only)", COLORS.success)
 end
 
 local function stopAutoShootMurderer()
 	if combatState.autoShootConnection then combatState.autoShootConnection:Disconnect() combatState.autoShootConnection = nil end
 	addLog("[AUTO SHOOT] OFF", COLORS.error)
+end
+
+-- ===================== TP KILL MURDERER =====================
+local function tpKillMurderer()
+	pcall(function()
+		if roleState.myRole ~= "Sheriff" then
+			addLog("[TP KILL] You must be Sheriff!", COLORS.error)
+			return
+		end
+		if not roleState.murdererPlayer then
+			addLog("[TP KILL] No murderer detected!", COLORS.error)
+			return
+		end
+		local theirChar = roleState.murdererPlayer.Character
+		if not theirChar then
+			addLog("[TP KILL] Murderer has no character!", COLORS.error)
+			return
+		end
+		local theirHum = theirChar:FindFirstChildOfClass("Humanoid")
+		if theirHum and theirHum.Health <= 0 then
+			addLog("[TP KILL] Murderer is already dead!", COLORS.error)
+			return
+		end
+		local theirRoot = theirChar:FindFirstChild("HumanoidRootPart")
+		local theirHead = theirChar:FindFirstChild("Head") or theirRoot
+		if not theirRoot or not theirHead then return end
+
+		local myChar = LocalPlayer.Character
+		if not myChar then return end
+		local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+		if not myRoot then return end
+
+		-- Find gun in backpack or equipped
+		local gunTool = nil
+		for _, child in ipairs(myChar:GetChildren()) do
+			if child:IsA("Tool") and (child.Name == "Gun" or child.Name == "Revolver" or child.Name:lower():find("gun") or child.Name:lower():find("revolver")) then
+				gunTool = child
+				break
+			end
+		end
+		if not gunTool then
+			local backpack = LocalPlayer:FindFirstChild("Backpack")
+			if backpack then
+				for _, child in ipairs(backpack:GetChildren()) do
+					if child:IsA("Tool") and (child.Name == "Gun" or child.Name == "Revolver" or child.Name:lower():find("gun") or child.Name:lower():find("revolver")) then
+						gunTool = child
+						break
+					end
+				end
+			end
+		end
+		if not gunTool then
+			addLog("[TP KILL] No gun found!", COLORS.error)
+			return
+		end
+
+		-- Equip gun if in backpack
+		if gunTool.Parent ~= myChar then
+			local hum = myChar:FindFirstChildOfClass("Humanoid")
+			if hum then hum:EquipTool(gunTool) end
+			_wait(0.1)
+		end
+
+		-- TP behind murderer
+		local behindCF = theirRoot.CFrame * CFrame.new(0, 0, 5)
+		myRoot.CFrame = behindCF
+
+		-- Snap camera and fire
+		_wait(0.05)
+		local cam = workspace.CurrentCamera
+		cam.CFrame = CFrame.new(cam.CFrame.Position, theirHead.Position)
+		_wait(0.05)
+		pcall(function() gunTool:Activate() end)
+		_wait(0.1)
+		pcall(function() gunTool:Activate() end)
+
+		addLog("[TP KILL] Shot at " .. roleState.murdererPlayer.DisplayName, COLORS.success)
+	end)
 end
 
 -- ===================== GRAB DROPPED GUN =====================
@@ -2671,8 +2707,9 @@ do
 			stopAutoShootMurderer()
 		end
 	end)
-	createSlider(tab, "Aim Smoothing", 1, 10, combatState.aimSmoothing, 7, function(val)
-		combatState.aimSmoothing = val
+	createActionButton(tab, "TP Kill Murderer", 7, function()
+		if not roleState.roleCheckEnabled then startRoleCheck() end
+		tpKillMurderer()
 	end)
 
 	local spacer2 = Instance.new("Frame")
@@ -3194,6 +3231,7 @@ commands["unmurderesp"] = function() combatState.murdererEspEnabled = false disa
 commands["alert"] = function() combatState.murdererAlertEnabled = true if not roleState.roleCheckEnabled then startRoleCheck() end startMurdererAlert() end
 commands["unalert"] = function() combatState.murdererAlertEnabled = false stopMurdererAlert() end
 commands["autoshoot"] = function() combatState.autoShootMurdererEnabled = true if not roleState.roleCheckEnabled then startRoleCheck() end startAutoShootMurderer() end
+commands["tpkill"] = function() if not roleState.roleCheckEnabled then startRoleCheck() end tpKillMurderer() end
 commands["unautoshoot"] = function() combatState.autoShootMurdererEnabled = false stopAutoShootMurderer() end
 commands["grabgun"] = function() grabDroppedGun() end
 commands["bringgun"] = function() bringGun() end
