@@ -1973,6 +1973,87 @@ local function stopKillAll()
 	addLog("[KILL ALL] OFF", COLORS.error)
 end
 
+-- ===================== KILL SPECIFIC PLAYER (MURDERER) =====================
+local function killSpecificPlayer(targetName)
+	pcall(function()
+		if roleState.myRole ~= "Murderer" then
+			addLog("[KILL] You must be Murderer!", COLORS.error)
+			return
+		end
+		local target = findPlayer(targetName)
+		if not target then
+			addLog("[KILL] Player not found: " .. targetName, COLORS.error)
+			return
+		end
+		if target == LocalPlayer then
+			addLog("[KILL] Can't target yourself!", COLORS.error)
+			return
+		end
+		local theirChar = target.Character
+		if not theirChar then
+			addLog("[KILL] Target has no character!", COLORS.error)
+			return
+		end
+		local theirHum = theirChar:FindFirstChildOfClass("Humanoid")
+		if theirHum and (theirHum.Health <= 0 or theirHum:GetState() == Enum.HumanoidStateType.Dead) then
+			addLog("[KILL] " .. target.DisplayName .. " is already dead!", COLORS.error)
+			return
+		end
+		local theirRoot = theirChar:FindFirstChild("HumanoidRootPart")
+		if not theirRoot then return end
+
+		local myChar = LocalPlayer.Character
+		if not myChar then return end
+		local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+		if not myRoot then return end
+
+		-- Make sure knife is equipped
+		local hasKnife = false
+		for _, child in ipairs(myChar:GetChildren()) do
+			if child:IsA("Tool") and (child.Name == "Knife" or child.Name:lower():find("knife")) then
+				hasKnife = true
+				break
+			end
+		end
+		if not hasKnife then
+			local backpack = LocalPlayer:FindFirstChild("Backpack")
+			if backpack then
+				for _, child in ipairs(backpack:GetChildren()) do
+					if child:IsA("Tool") and (child.Name == "Knife" or child.Name:lower():find("knife")) then
+						local hum = myChar:FindFirstChildOfClass("Humanoid")
+						if hum then hum:EquipTool(child) end
+						hasKnife = true
+						_wait(0.1)
+						break
+					end
+				end
+			end
+		end
+		if not hasKnife then
+			addLog("[KILL] No knife found! Equip it first.", COLORS.error)
+			return
+		end
+
+		-- TP to target repeatedly until they die or we give up
+		addLog("[KILL] Targeting " .. target.DisplayName .. "...", COLORS.success)
+		for i = 1, 20 do
+			theirChar = target.Character
+			if not theirChar then break end
+			theirHum = theirChar:FindFirstChildOfClass("Humanoid")
+			if theirHum and (theirHum.Health <= 0 or theirHum:GetState() == Enum.HumanoidStateType.Dead) then
+				addLog("[KILL] " .. target.DisplayName .. " killed!", COLORS.success)
+				return
+			end
+			theirRoot = theirChar:FindFirstChild("HumanoidRootPart")
+			if not theirRoot then break end
+			myRoot = myChar:FindFirstChild("HumanoidRootPart")
+			if not myRoot then break end
+			myRoot.CFrame = theirRoot.CFrame
+			_wait(0.1)
+		end
+	end)
+end
+
 -- ===================== BRING GUN =====================
 local function bringGun()
 	pcall(function()
@@ -2749,13 +2830,37 @@ do
 		end
 	end)
 
+	local killInput = Instance.new("TextBox")
+	killInput.Size = UDim2.new(1, 0, 0, 30)
+	killInput.BackgroundColor3 = COLORS.tabBg
+	killInput.Text = ""
+	killInput.PlaceholderText = "Enter player name to kill..."
+	killInput.TextColor3 = COLORS.textPrimary
+	killInput.PlaceholderColor3 = COLORS.textDim
+	killInput.Font = Enum.Font.Gotham
+	killInput.TextSize = 12
+	killInput.LayoutOrder = 16
+	killInput.ClearTextOnFocus = false
+	killInput.Parent = tab
+	addCorner(killInput, 5)
+
+	createActionButton(tab, "Kill Player (Murderer)", 17, function()
+		local name = killInput.Text
+		if name and name ~= "" then
+			if not roleState.roleCheckEnabled then startRoleCheck() end
+			killSpecificPlayer(name)
+		else
+			addLog("[KILL] Enter a player name first!", COLORS.error)
+		end
+	end)
+
 	local spacer4 = Instance.new("Frame")
 	spacer4.Size = UDim2.new(1, 0, 0, 4)
 	spacer4.BackgroundTransparency = 1
-	spacer4.LayoutOrder = 16
+	spacer4.LayoutOrder = 18
 	spacer4.Parent = tab
 
-	createSectionLabel(tab, "TP Behind", 17)
+	createSectionLabel(tab, "TP Behind", 19)
 
 	-- TP Behind player name input
 	local tpBehindInput = Instance.new("TextBox")
@@ -2767,12 +2872,12 @@ do
 	tpBehindInput.PlaceholderColor3 = COLORS.textDim
 	tpBehindInput.Font = Enum.Font.Gotham
 	tpBehindInput.TextSize = 12
-	tpBehindInput.LayoutOrder = 18
+	tpBehindInput.LayoutOrder = 20
 	tpBehindInput.ClearTextOnFocus = false
 	tpBehindInput.Parent = tab
 	addCorner(tpBehindInput, 5)
 
-	createActionButton(tab, "TP Behind Player", 19, function()
+	createActionButton(tab, "TP Behind Player", 21, function()
 		local name = tpBehindInput.Text
 		if name and name ~= "" then
 			tpBehindPlayer(name)
@@ -2784,13 +2889,13 @@ do
 	local spacer5 = Instance.new("Frame")
 	spacer5.Size = UDim2.new(1, 0, 0, 4)
 	spacer5.BackgroundTransparency = 1
-	spacer5.LayoutOrder = 20
+	spacer5.LayoutOrder = 22
 	spacer5.Parent = tab
 
-	createSectionLabel(tab, "Info", 21)
-	createInfoLabel(tab, "Auto Shoot only works as Sheriff", 22)
-	createInfoLabel(tab, "Kill All only works as Murderer with knife equipped", 23)
-	createInfoLabel(tab, "Bring Gun teleports gun to you", 24)
+	createSectionLabel(tab, "Info", 23)
+	createInfoLabel(tab, "Auto Shoot only works as Sheriff", 24)
+	createInfoLabel(tab, "Kill All / Kill Player only work as Murderer", 25)
+	createInfoLabel(tab, "Bring Gun teleports gun to you", 26)
 end
 
 -- =====================================================================
@@ -3243,6 +3348,7 @@ commands["tpbehind"] = function(args)
 end
 commands["killall"] = function() miscState.killAllEnabled = true if not roleState.roleCheckEnabled then startRoleCheck() end startKillAll() end
 commands["unkillall"] = function() miscState.killAllEnabled = false stopKillAll() end
+commands["kill"] = function(args) if args and args ~= "" then if not roleState.roleCheckEnabled then startRoleCheck() end killSpecificPlayer(args) else addLog("[KILL] Usage: ;kill <player>", COLORS.error) end end
 
 -- ESP
 commands["esp"] = function() espState.espEnabled = true if not roleState.roleCheckEnabled then startRoleCheck() end enablePlayerEsp() end
