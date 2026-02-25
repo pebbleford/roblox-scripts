@@ -63,6 +63,10 @@ local NBTF_GUNS = {
 local NBTF_ZERO_VALUES = {"RecoilDecay", "RecoilMax", "RecoilMin", "ShotCooldown", "TotalRecoilMax", "MaxSpread", "MinSpread"}
 local NBTF_MAX_VALUES = {"AmmoCapacity", "AmmoReserves", "FullMagazineSize", "HitDamage", "MaxDistance"}
 
+local helpers = {}
+local actions = {}
+local uiBuilder = {}
+
 -- Find any gun in the player's backpack (respects aimState.selectedWeapon if set)
 function helpers.findGunInBackpack()
 	-- If a specific weapon is selected, try to find it first
@@ -320,10 +324,6 @@ local uiState = {
 
 
 -- Connections / refs
-
-local helpers = {}
-local actions = {}
-local uiBuilder = {}
 
 -- ===================== HELPERS =====================
 function helpers.getRoot()
