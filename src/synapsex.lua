@@ -3879,24 +3879,24 @@ F.startFreecam = function()
 		visualState.freecamWasAnchored = hrp.Anchored
 		hrp.Anchored = true
 	end
+	-- Init yaw/pitch from current camera orientation (YXZ order)
+	local rx, ry, _ = cam.CFrame:ToEulerAnglesYXZ()
+	visualState.freecamYaw = ry
+	visualState.freecamPitch = rx
 	visualState.freecamMouseConn = UserInputService.InputChanged:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseMovement then
 			local delta = input.Delta
-			visualState.freecamYaw = (visualState.freecamYaw or 0) - delta.X * 0.003
-			visualState.freecamPitch = math.clamp((visualState.freecamPitch or 0) - delta.Y * 0.003, -math.rad(89), math.rad(89))
+			visualState.freecamYaw = visualState.freecamYaw - delta.X * 0.004
+			visualState.freecamPitch = math.clamp(visualState.freecamPitch - delta.Y * 0.004, -math.rad(89), math.rad(89))
 		end
 	end)
-	-- Init yaw/pitch from current camera orientation
-	local _, ry, _ = cam.CFrame:ToEulerAnglesYXZ()
-	local rx, _, _ = cam.CFrame:ToEulerAnglesYXZ()
-	visualState.freecamYaw = ry
-	visualState.freecamPitch = rx
 	UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
 	visualState.freecamConnection = RunService.RenderStepped:Connect(function(dt)
 		pcall(function()
 			local speed = 50 * dt
 			if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then speed = speed * 3 end
-			local rot = CFrame.Angles(visualState.freecamPitch, visualState.freecamYaw, 0)
+			-- Yaw around world Y first, then pitch around local X (standard FPS camera)
+			local rot = CFrame.Angles(0, visualState.freecamYaw, 0) * CFrame.Angles(visualState.freecamPitch, 0, 0)
 			local move = Vector3.new(0, 0, 0)
 			if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + rot.LookVector end
 			if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - rot.LookVector end
