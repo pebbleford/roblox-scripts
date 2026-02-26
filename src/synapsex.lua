@@ -2523,26 +2523,8 @@ local function serverHop()
 	end)
 end
 
--- Forward declarations for functions defined after UI builder blocks
-local refreshPlayerList
-local isTargetVisible, isActualTeamMode, shouldSkipTeammate
-local processCommand, getClosestPlayerInFOV
-local startAimbot, stopAimbot, startTriggerBot, stopTriggerBot
-local startHitboxExpand, stopHitboxExpand, startAntiVoid, stopAntiVoid
-local startTracers, stopTracers, startFOVCircle, stopFOVCircle
-local startCrosshair, stopCrosshair, startClickTp, stopClickTp
-local startBunnyHop, stopBunnyHop, startFloat, stopFloat
-local startPlatform, stopPlatform, doLongJump, tpBehindPlayer
-local startFullbright, stopFullbright, startXray, stopXray
-local startFreecam, stopFreecam, startNoFog, stopNoFog
-local startFpsCounter, stopFpsCounter, startHeadless, stopHeadless
-local startRainbow, stopRainbow, tinyCharacter, giantCharacter
-local neonBody, glassBody, cloneIllusion, sitInAir
-local startOrbit, stopOrbit, startAttach, stopAttach
-local startFollow, stopFollow, startStare, stopStare
-local startAntiAfk, stopAntiAfk, startChatSpy, stopChatSpy
-local startJoinNotify, stopJoinNotify, startAutoRespawn, stopAutoRespawn
-local showPlayerInfo, unloadScript
+-- Functions table (avoids Luau 200 local variable limit)
+local F = {}
 
 -- ===================== BUILD MAIN TAB =====================
 do
@@ -2717,23 +2699,23 @@ do
 	createSectionLabel(tab, "Player Loops", 21)
 	createToggle(tab, "Orbit", 22, function(on)
 		playerState.orbitEnabled = on
-		if on then startOrbit() else stopOrbit() end
+		if on then F.startOrbit() else F.stopOrbit() end
 	end)
 	createSlider(tab, "Orbit Radius", 5, 50, playerState.orbitRadius, 23, function(val) playerState.orbitRadius = val end)
 	createToggle(tab, "Attach", 24, function(on)
 		playerState.attachEnabled = on
-		if on then startAttach() else stopAttach() end
+		if on then F.startAttach() else F.stopAttach() end
 	end)
 	createToggle(tab, "Follow", 25, function(on)
 		playerState.followEnabled = on
-		if on then startFollow() else stopFollow() end
+		if on then F.startFollow() else F.stopFollow() end
 	end)
 	createToggle(tab, "Stare", 26, function(on)
 		playerState.stareEnabled = on
-		if on then startStare() else stopStare() end
+		if on then F.startStare() else F.stopStare() end
 	end)
-	createActionButton(tab, "TP Behind", 27, function() tpBehindPlayer() end)
-	createActionButton(tab, "Player Info", 28, function() showPlayerInfo() end)
+	createActionButton(tab, "TP Behind", 27, function() F.tpBehindPlayer() end)
+	createActionButton(tab, "Player Info", 28, function() F.showPlayerInfo() end)
 
 	createSectionLabel(tab, "Player List", 10)
 
@@ -2750,7 +2732,7 @@ do
 	playerListLayout.Parent = playerListFrame
 end
 
-refreshPlayerList = function()
+F.refreshPlayerList = function()
 	for _, btn in pairs(playerButtons) do pcall(function() btn:Destroy() end) end
 	playerButtons = {}
 	local order = 0
@@ -2772,23 +2754,23 @@ refreshPlayerList = function()
 				playerState.selectedPlayer = player
 				selectedPlayerLabel.Text = "  " .. player.DisplayName .. " (@" .. player.Name .. ")"
 				selectedPlayerLabel.TextColor3 = COLORS.accent
-				refreshPlayerList()
+				F.refreshPlayerList()
 			end)
 			playerButtons[player] = btn
 		end
 	end
 end
 
-Players.PlayerAdded:Connect(function() _wait(0.5) refreshPlayerList() end)
+Players.PlayerAdded:Connect(function() _wait(0.5) F.refreshPlayerList() end)
 Players.PlayerRemoving:Connect(function(player)
 	if playerState.selectedPlayer == player then
 		playerState.selectedPlayer = nil
 		selectedPlayerLabel.Text = "  None selected"
 		selectedPlayerLabel.TextColor3 = COLORS.textSecondary
 	end
-	_wait(0.1) refreshPlayerList()
+	_wait(0.1) F.refreshPlayerList()
 end)
-refreshPlayerList()
+F.refreshPlayerList()
 
 -- ===================== BUILD SERVER TAB =====================
 do
@@ -2925,16 +2907,16 @@ do
 	createSectionLabel(tab, "Overlays", 31)
 	createToggle(tab, "Tracers", 32, function(on)
 		espState.tracersEnabled = on
-		if on then startTracers() else stopTracers() end
+		if on then F.startTracers() else F.stopTracers() end
 	end)
 	createToggle(tab, "FOV Circle", 33, function(on)
 		espState.fovCircleEnabled = on
-		if on then startFOVCircle() else stopFOVCircle() end
+		if on then F.startFOVCircle() else F.stopFOVCircle() end
 	end)
 	createSlider(tab, "FOV Radius", 50, 500, espState.fovRadius, 34, function(val) espState.fovRadius = val if espState.fovCircleFrame then espState.fovCircleFrame.Radius = val end end)
 	createToggle(tab, "Crosshair", 35, function(on)
 		espState.crosshairEnabled = on
-		if on then startCrosshair() else stopCrosshair() end
+		if on then F.startCrosshair() else F.stopCrosshair() end
 	end)
 end
 
@@ -3022,22 +3004,22 @@ do
 	createSectionLabel(tab, "Teleportation", 23)
 	createToggle(tab, "Click TP (Ctrl+Click)", 24, function(on)
 		moveState.clickTpEnabled = on
-		if on then startClickTp() else stopClickTp() end
+		if on then F.startClickTp() else F.stopClickTp() end
 	end)
 	createToggle(tab, "Bunny Hop (Hold W)", 25, function(on)
 		moveState.bunnyHopEnabled = on
-		if on then startBunnyHop() else stopBunnyHop() end
+		if on then F.startBunnyHop() else F.stopBunnyHop() end
 	end)
 	createToggle(tab, "Float", 26, function(on)
 		moveState.floatEnabled = on
-		if on then startFloat() else stopFloat() end
+		if on then F.startFloat() else F.stopFloat() end
 	end)
 	createToggle(tab, "Platform", 27, function(on)
 		moveState.platformEnabled = on
-		if on then startPlatform() else stopPlatform() end
+		if on then F.startPlatform() else F.stopPlatform() end
 	end)
-	createActionButton(tab, "Long Jump", 28, function() doLongJump() end)
-	createActionButton(tab, "TP Behind Selected", 29, function() tpBehindPlayer() end)
+	createActionButton(tab, "Long Jump", 28, function() F.doLongJump() end)
+	createActionButton(tab, "TP Behind Selected", 29, function() F.tpBehindPlayer() end)
 end
 
 -- ===================== BUILD FUN TAB =====================
@@ -3125,18 +3107,18 @@ do
 	createSectionLabel(tab, "Character Mods", 36)
 	createToggle(tab, "Headless", 37, function(on)
 		funState.headlessEnabled = on
-		if on then startHeadless() else stopHeadless() end
+		if on then F.startHeadless() else F.stopHeadless() end
 	end)
 	createToggle(tab, "Rainbow", 38, function(on)
 		funState.rainbowEnabled = on
-		if on then startRainbow() else stopRainbow() end
+		if on then F.startRainbow() else F.stopRainbow() end
 	end)
-	createActionButton(tab, "Tiny Character", 39, function() tinyCharacter() end)
-	createActionButton(tab, "Giant Character", 40, function() giantCharacter() end)
-	createActionButton(tab, "Neon Body", 41, function() neonBody() end)
-	createActionButton(tab, "Glass Body", 42, function() glassBody() end)
-	createActionButton(tab, "Clone Illusion", 43, function() cloneIllusion() end)
-	createActionButton(tab, "Sit in Air", 44, function() sitInAir() end)
+	createActionButton(tab, "Tiny Character", 39, function() F.tinyCharacter() end)
+	createActionButton(tab, "Giant Character", 40, function() F.giantCharacter() end)
+	createActionButton(tab, "Neon Body", 41, function() F.neonBody() end)
+	createActionButton(tab, "Glass Body", 42, function() F.glassBody() end)
+	createActionButton(tab, "Clone Illusion", 43, function() F.cloneIllusion() end)
+	createActionButton(tab, "Sit in Air", 44, function() F.sitInAir() end)
 		stopEmote()
 		addLog("[EMOTE] Stopped", COLORS.error)
 	end)
@@ -3150,7 +3132,7 @@ do
 	createSectionLabel(tab, "Aimbot", 1)
 	createToggle(tab, "Aimbot (Hold RMB/Q)", 2, function(on)
 		combatState.aimbotEnabled = on
-		if on then startAimbot() else stopAimbot() end
+		if on then F.startAimbot() else F.stopAimbot() end
 	end)
 	createSlider(tab, "Aim Smoothing", 1, 10, combatState.aimbotSmoothing, 3, function(val) combatState.aimbotSmoothing = val end)
 	createSlider(tab, "Aim FOV", 50, 500, combatState.aimbotFOV, 4, function(val) combatState.aimbotFOV = val end)
@@ -3166,14 +3148,14 @@ do
 	end)
 	createToggle(tab, "Triggerbot", 7, function(on)
 		combatState.triggerBotEnabled = on
-		if on then startTriggerBot() else stopTriggerBot() end
+		if on then F.startTriggerBot() else F.stopTriggerBot() end
 	end)
 
 	createSpacer(tab, 8)
 	createSectionLabel(tab, "Hitbox", 9)
 	createToggle(tab, "Hitbox Expander", 10, function(on)
 		combatState.hitboxEnabled = on
-		if on then startHitboxExpand() else stopHitboxExpand() end
+		if on then F.startHitboxExpand() else F.stopHitboxExpand() end
 	end)
 	createSlider(tab, "Hitbox Size", 1, 30, combatState.hitboxSize, 11, function(val) combatState.hitboxSize = val end)
 
@@ -3189,7 +3171,7 @@ do
 	end)
 	createToggle(tab, "Anti-Void", 16, function(on)
 		combatState.antiVoidEnabled = on
-		if on then startAntiVoid() else stopAntiVoid() end
+		if on then F.startAntiVoid() else F.stopAntiVoid() end
 	end)
 end
 
@@ -3201,11 +3183,11 @@ do
 	createSectionLabel(tab, "Lighting", 1)
 	createToggle(tab, "Fullbright", 2, function(on)
 		visualState.fullbrightEnabled = on
-		if on then startFullbright() else stopFullbright() end
+		if on then F.startFullbright() else F.stopFullbright() end
 	end)
 	createToggle(tab, "No Fog", 3, function(on)
 		visualState.noFogEnabled = on
-		if on then startNoFog() else stopNoFog() end
+		if on then F.startNoFog() else F.stopNoFog() end
 	end)
 	createSlider(tab, "Time of Day", 0, 24, 14, 4, function(val) pcall(function() Lighting.ClockTime = val end) end)
 	createSlider(tab, "Brightness", 0, 5, 1, 5, function(val) pcall(function() Lighting.Brightness = val end) end)
@@ -3214,7 +3196,7 @@ do
 	createSectionLabel(tab, "World", 7)
 	createToggle(tab, "X-Ray", 8, function(on)
 		visualState.xrayEnabled = on
-		if on then startXray() else stopXray() end
+		if on then F.startXray() else F.stopXray() end
 	end)
 
 	createSpacer(tab, 9)
@@ -3222,14 +3204,14 @@ do
 	createSlider(tab, "FOV", 30, 120, 70, 11, function(val) pcall(function() workspace.CurrentCamera.FieldOfView = val end) end)
 	createToggle(tab, "Freecam (WASD)", 12, function(on)
 		visualState.freecamEnabled = on
-		if on then startFreecam() else stopFreecam() end
+		if on then F.startFreecam() else F.stopFreecam() end
 	end)
 
 	createSpacer(tab, 13)
 	createSectionLabel(tab, "HUD", 14)
 	createToggle(tab, "FPS Counter", 15, function(on)
 		visualState.fpsCounterEnabled = on
-		if on then startFpsCounter() else stopFpsCounter() end
+		if on then F.startFpsCounter() else F.stopFpsCounter() end
 	end)
 end
 
@@ -3250,7 +3232,7 @@ do
 		pcall(function() screenGui:Destroy() end)
 	end)
 	createActionButton(tab, "Unload Script", 9, function()
-		unloadScript()
+		F.unloadScript()
 	end)
 
 	createSpacer(tab, 10)
@@ -3328,77 +3310,77 @@ commands["dab"] = function() playEmote(183412246, 1, 3) addLog("[EMOTE] Dab!", C
 commands["crouch"] = function() playEmote(182724289, 1, nil) addLog("[EMOTE] Crouch", COLORS.success) end
 commands["stopemote"] = function() stopEmote() addLog("[EMOTE] Stopped", COLORS.error) end
 
-commands["aimbot"] = function() combatState.aimbotEnabled = true startAimbot() end
-commands["unaimbot"] = function() combatState.aimbotEnabled = false stopAimbot() end
-commands["triggerbot"] = function() combatState.triggerBotEnabled = true startTriggerBot() end
-commands["untriggerbot"] = function() combatState.triggerBotEnabled = false stopTriggerBot() end
-commands["hitbox"] = function(args) local v = tonumber(args[1]) if v then combatState.hitboxSize = v end combatState.hitboxEnabled = true startHitboxExpand() end
-commands["unhitbox"] = function() combatState.hitboxEnabled = false stopHitboxExpand() end
-commands["antivoid"] = function() combatState.antiVoidEnabled = true startAntiVoid() end
-commands["unantivoid"] = function() combatState.antiVoidEnabled = false stopAntiVoid() end
-commands["tracers"] = function() espState.tracersEnabled = true startTracers() end
-commands["untracers"] = function() espState.tracersEnabled = false stopTracers() end
-commands["crosshair"] = function() espState.crosshairEnabled = true startCrosshair() end
-commands["uncrosshair"] = function() espState.crosshairEnabled = false stopCrosshair() end
-commands["clicktp"] = function() moveState.clickTpEnabled = true startClickTp() end
-commands["unclicktp"] = function() moveState.clickTpEnabled = false stopClickTp() end
-commands["bhop"] = function() moveState.bunnyHopEnabled = true startBunnyHop() end
-commands["unbhop"] = function() moveState.bunnyHopEnabled = false stopBunnyHop() end
-commands["float"] = function() moveState.floatEnabled = true startFloat() end
-commands["unfloat"] = function() moveState.floatEnabled = false stopFloat() end
-commands["platform"] = function() moveState.platformEnabled = true startPlatform() end
-commands["unplatform"] = function() moveState.platformEnabled = false stopPlatform() end
-commands["longjump"] = function() doLongJump() end
-commands["tpbehind"] = function() tpBehindPlayer() end
+commands["aimbot"] = function() combatState.aimbotEnabled = true F.startAimbot() end
+commands["unaimbot"] = function() combatState.aimbotEnabled = false F.stopAimbot() end
+commands["triggerbot"] = function() combatState.triggerBotEnabled = true F.startTriggerBot() end
+commands["untriggerbot"] = function() combatState.triggerBotEnabled = false F.stopTriggerBot() end
+commands["hitbox"] = function(args) local v = tonumber(args[1]) if v then combatState.hitboxSize = v end combatState.hitboxEnabled = true F.startHitboxExpand() end
+commands["unhitbox"] = function() combatState.hitboxEnabled = false F.stopHitboxExpand() end
+commands["antivoid"] = function() combatState.antiVoidEnabled = true F.startAntiVoid() end
+commands["unantivoid"] = function() combatState.antiVoidEnabled = false F.stopAntiVoid() end
+commands["tracers"] = function() espState.tracersEnabled = true F.startTracers() end
+commands["untracers"] = function() espState.tracersEnabled = false F.stopTracers() end
+commands["crosshair"] = function() espState.crosshairEnabled = true F.startCrosshair() end
+commands["uncrosshair"] = function() espState.crosshairEnabled = false F.stopCrosshair() end
+commands["clicktp"] = function() moveState.clickTpEnabled = true F.startClickTp() end
+commands["unclicktp"] = function() moveState.clickTpEnabled = false F.stopClickTp() end
+commands["bhop"] = function() moveState.bunnyHopEnabled = true F.startBunnyHop() end
+commands["unbhop"] = function() moveState.bunnyHopEnabled = false F.stopBunnyHop() end
+commands["float"] = function() moveState.floatEnabled = true F.startFloat() end
+commands["unfloat"] = function() moveState.floatEnabled = false F.stopFloat() end
+commands["platform"] = function() moveState.platformEnabled = true F.startPlatform() end
+commands["unplatform"] = function() moveState.platformEnabled = false F.stopPlatform() end
+commands["longjump"] = function() F.doLongJump() end
+commands["tpbehind"] = function() F.tpBehindPlayer() end
 commands["savepos"] = function(args) if not args[1] then return end moveState.savedPositions[args[1]] = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character.HumanoidRootPart.CFrame addLog("[WAYPOINT] Saved: " .. args[1], COLORS.success) end
 commands["loadpos"] = function(args) if not args[1] or not moveState.savedPositions[args[1]] then addLog("[WAYPOINT] Not found", COLORS.error) return end local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") if hrp then hrp.CFrame = moveState.savedPositions[args[1]] addLog("[WAYPOINT] Loaded: " .. args[1], COLORS.success) end end
 commands["listpos"] = function() addLog("--- Waypoints ---", COLORS.accent) for name in pairs(moveState.savedPositions) do addLog("  " .. name, COLORS.text) end end
-commands["fullbright"] = function() visualState.fullbrightEnabled = true startFullbright() end
-commands["unfullbright"] = function() visualState.fullbrightEnabled = false stopFullbright() end
-commands["xray"] = function() visualState.xrayEnabled = true startXray() end
-commands["unxray"] = function() visualState.xrayEnabled = false stopXray() end
+commands["fullbright"] = function() visualState.fullbrightEnabled = true F.startFullbright() end
+commands["unfullbright"] = function() visualState.fullbrightEnabled = false F.stopFullbright() end
+commands["xray"] = function() visualState.xrayEnabled = true F.startXray() end
+commands["unxray"] = function() visualState.xrayEnabled = false F.stopXray() end
 commands["fov"] = function(args) local v = tonumber(args[1]) if v then pcall(function() workspace.CurrentCamera.FieldOfView = v end) addLog("[FOV] Set to " .. v, COLORS.success) end end
-commands["freecam"] = function() visualState.freecamEnabled = true startFreecam() end
-commands["unfreecam"] = function() visualState.freecamEnabled = false stopFreecam() end
+commands["freecam"] = function() visualState.freecamEnabled = true F.startFreecam() end
+commands["unfreecam"] = function() visualState.freecamEnabled = false F.stopFreecam() end
 commands["time"] = function(args) local v = tonumber(args[1]) if v then pcall(function() Lighting.ClockTime = v end) addLog("[TIME] Set to " .. v, COLORS.success) end end
-commands["nofog"] = function() visualState.noFogEnabled = true startNoFog() end
-commands["unnofog"] = function() visualState.noFogEnabled = false stopNoFog() end
-commands["fps"] = function() visualState.fpsCounterEnabled = true startFpsCounter() end
-commands["unfps"] = function() visualState.fpsCounterEnabled = false stopFpsCounter() end
-commands["headless"] = function() funState.headlessEnabled = true startHeadless() end
-commands["unheadless"] = function() funState.headlessEnabled = false stopHeadless() end
-commands["rainbow"] = function() funState.rainbowEnabled = true startRainbow() end
-commands["unrainbow"] = function() funState.rainbowEnabled = false stopRainbow() end
-commands["tiny"] = function() tinyCharacter() end
-commands["giant"] = function() giantCharacter() end
-commands["neon"] = function() neonBody() end
-commands["glass"] = function() glassBody() end
-commands["clone"] = function() cloneIllusion() end
-commands["sitair"] = function() sitInAir() end
+commands["nofog"] = function() visualState.noFogEnabled = true F.startNoFog() end
+commands["unnofog"] = function() visualState.noFogEnabled = false F.stopNoFog() end
+commands["fps"] = function() visualState.fpsCounterEnabled = true F.startFpsCounter() end
+commands["unfps"] = function() visualState.fpsCounterEnabled = false F.stopFpsCounter() end
+commands["headless"] = function() funState.headlessEnabled = true F.startHeadless() end
+commands["unheadless"] = function() funState.headlessEnabled = false F.stopHeadless() end
+commands["rainbow"] = function() funState.rainbowEnabled = true F.startRainbow() end
+commands["unrainbow"] = function() funState.rainbowEnabled = false F.stopRainbow() end
+commands["tiny"] = function() F.tinyCharacter() end
+commands["giant"] = function() F.giantCharacter() end
+commands["neon"] = function() F.neonBody() end
+commands["glass"] = function() F.glassBody() end
+commands["clone"] = function() F.cloneIllusion() end
+commands["sitair"] = function() F.sitInAir() end
 commands["tpose"] = function() playEmote(5104377791) end
 commands["zombie"] = function() playEmote(616163682) end
 commands["wave"] = function() playEmote(507770239) end
 commands["point"] = function() playEmote(507770453) end
 commands["laugh"] = function() playEmote(507770818) end
-commands["antiafk"] = function() serverState.antiAfkEnabled = true startAntiAfk() end
-commands["unantiafk"] = function() serverState.antiAfkEnabled = false stopAntiAfk() end
-commands["chatspy"] = function() serverState.chatSpyEnabled = true startChatSpy() end
-commands["unchatspy"] = function() serverState.chatSpyEnabled = false stopChatSpy() end
-commands["joinnotify"] = function() serverState.joinNotifyEnabled = true startJoinNotify() end
-commands["unjoinnotify"] = function() serverState.joinNotifyEnabled = false stopJoinNotify() end
-commands["autorespawn"] = function() serverState.autoRespawnEnabled = true startAutoRespawn() end
-commands["unautorespawn"] = function() serverState.autoRespawnEnabled = false stopAutoRespawn() end
-commands["orbit"] = function() playerState.orbitEnabled = true startOrbit() end
-commands["unorbit"] = function() playerState.orbitEnabled = false stopOrbit() end
-commands["attach"] = function() playerState.attachEnabled = true startAttach() end
-commands["unattach"] = function() playerState.attachEnabled = false stopAttach() end
-commands["follow"] = function() playerState.followEnabled = true startFollow() end
-commands["unfollow"] = function() playerState.followEnabled = false stopFollow() end
-commands["stare"] = function() playerState.stareEnabled = true startStare() end
-commands["unstare"] = function() playerState.stareEnabled = false stopStare() end
-commands["playerinfo"] = function() showPlayerInfo() end
+commands["antiafk"] = function() serverState.antiAfkEnabled = true F.startAntiAfk() end
+commands["unantiafk"] = function() serverState.antiAfkEnabled = false F.stopAntiAfk() end
+commands["chatspy"] = function() serverState.chatSpyEnabled = true F.startChatSpy() end
+commands["unchatspy"] = function() serverState.chatSpyEnabled = false F.stopChatSpy() end
+commands["joinnotify"] = function() serverState.joinNotifyEnabled = true F.startJoinNotify() end
+commands["unjoinnotify"] = function() serverState.joinNotifyEnabled = false F.stopJoinNotify() end
+commands["autorespawn"] = function() serverState.autoRespawnEnabled = true F.startAutoRespawn() end
+commands["unautorespawn"] = function() serverState.autoRespawnEnabled = false F.stopAutoRespawn() end
+commands["orbit"] = function() playerState.orbitEnabled = true F.startOrbit() end
+commands["unorbit"] = function() playerState.orbitEnabled = false F.stopOrbit() end
+commands["attach"] = function() playerState.attachEnabled = true F.startAttach() end
+commands["unattach"] = function() playerState.attachEnabled = false F.stopAttach() end
+commands["follow"] = function() playerState.followEnabled = true F.startFollow() end
+commands["unfollow"] = function() playerState.followEnabled = false F.stopFollow() end
+commands["stare"] = function() playerState.stareEnabled = true F.startStare() end
+commands["unstare"] = function() playerState.stareEnabled = false F.stopStare() end
+commands["playerinfo"] = function() F.showPlayerInfo() end
 commands["panic"] = function() pcall(function() screenGui:Destroy() end) end
-commands["unload"] = function() unloadScript() end
+commands["unload"] = function() F.unloadScript() end
 
 commands["cmds"] = function()
 	addLog("--- v3.0 Commands (90+) ---", COLORS.accent)
@@ -3427,7 +3409,7 @@ commands["cmds"] = function()
 	addLog("Prefix un- to disable any toggle (e.g. ;unfly)", COLORS.textSecondary)
 end
 
-processCommand = function(input)
+F.processCommand = function(input)
 	if input:sub(1, 1) == ";" then input = input:sub(2) end
 	local parts = {}
 	for word in input:gmatch("%S+") do table.insert(parts, word) end
@@ -3443,7 +3425,7 @@ end
 pcall(function()
 	LocalPlayer.Chatted:Connect(function(msg)
 		if msg:sub(1, 1) == ";" then
-			processCommand(msg)
+			F.processCommand(msg)
 		end
 	end)
 end)
@@ -3460,7 +3442,7 @@ end)
 
 
 -- ===================== AIMBOT LOGIC =====================
-isTargetVisible = function(targetPart)
+F.isTargetVisible = function(targetPart)
 	if not combatState.aimbotWallCheck then return true end
 	local cam = workspace.CurrentCamera
 	local origin = cam.CFrame.Position
@@ -3479,7 +3461,7 @@ isTargetVisible = function(targetPart)
 	return false
 end
 
-isActualTeamMode = function()
+F.isActualTeamMode = function()
 	local ok, result = pcall(function()
 		local teamsWithPlayers = 0
 		for _, team in ipairs(Teams:GetTeams()) do
@@ -3492,23 +3474,23 @@ isActualTeamMode = function()
 	return ok and result
 end
 
-shouldSkipTeammate = function(player)
+F.shouldSkipTeammate = function(player)
 	if not combatState.aimbotTeamCheck then return false end
 	local myTeam = LocalPlayer.Team
 	local theirTeam = player.Team
 	if not myTeam or not theirTeam then return false end
 	if myTeam == theirTeam then
-		return isActualTeamMode()
+		return F.isActualTeamMode()
 	end
 	return false
 end
 
-getClosestPlayerInFOV = function()
+F.getClosestPlayerInFOV = function()
 	local cam = workspace.CurrentCamera
 	local closest, closestDist = nil, combatState.aimbotFOV
 	local screenCenter = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
 	for _, player in ipairs(Players:GetPlayers()) do
-		if player ~= LocalPlayer and player.Character and not shouldSkipTeammate(player) then
+		if player ~= LocalPlayer and player.Character and not F.shouldSkipTeammate(player) then
 			local char = player.Character
 			local head = char:FindFirstChild("Head")
 			if head then
@@ -3517,7 +3499,7 @@ getClosestPlayerInFOV = function()
 					local screenPos, onScreen = cam:WorldToViewportPoint(head.Position)
 					if onScreen then
 						local dist = (Vector2.new(screenPos.X, screenPos.Y) - screenCenter).Magnitude
-						if dist < closestDist and isTargetVisible(head) then
+						if dist < closestDist and F.isTargetVisible(head) then
 							closest = head
 							closestDist = dist
 						end
@@ -3529,7 +3511,7 @@ getClosestPlayerInFOV = function()
 	return closest
 end
 
-startAimbot = function()
+F.startAimbot = function()
 	combatState.aimbotInputBeganConn = UserInputService.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton2 or input.KeyCode == Enum.KeyCode.Q then
 			combatState.aimbotHolding = true
@@ -3544,7 +3526,7 @@ startAimbot = function()
 		if not combatState.aimbotEnabled or not combatState.aimbotHolding then return end
 		pcall(function()
 			local cam = workspace.CurrentCamera
-			local target = getClosestPlayerInFOV()
+			local target = F.getClosestPlayerInFOV()
 			if not target then return end
 			local camPos = cam.CFrame.Position
 			local targetCF = CFrame.new(camPos, target.Position)
@@ -3558,7 +3540,7 @@ startAimbot = function()
 	addLog("[AIMBOT] ON (Hold RMB or Q)", COLORS.success)
 end
 
-stopAimbot = function()
+F.stopAimbot = function()
 	if combatState.aimbotConnection then combatState.aimbotConnection:Disconnect() combatState.aimbotConnection = nil end
 	if combatState.aimbotInputBeganConn then combatState.aimbotInputBeganConn:Disconnect() combatState.aimbotInputBeganConn = nil end
 	if combatState.aimbotInputEndedConn then combatState.aimbotInputEndedConn:Disconnect() combatState.aimbotInputEndedConn = nil end
@@ -3567,7 +3549,7 @@ stopAimbot = function()
 end
 
 -- ===================== TRIGGERBOT LOGIC =====================
-startTriggerBot = function()
+F.startTriggerBot = function()
 	combatState.triggerBotConnection = RunService.Heartbeat:Connect(function()
 		if not combatState.triggerBotEnabled then return end
 		pcall(function()
@@ -3589,13 +3571,13 @@ startTriggerBot = function()
 	addLog("[TRIGGERBOT] ON", COLORS.success)
 end
 
-stopTriggerBot = function()
+F.stopTriggerBot = function()
 	if combatState.triggerBotConnection then combatState.triggerBotConnection:Disconnect() combatState.triggerBotConnection = nil end
 	addLog("[TRIGGERBOT] OFF", COLORS.error)
 end
 
 -- ===================== HITBOX EXPANDER LOGIC =====================
-startHitboxExpand = function()
+F.startHitboxExpand = function()
 	combatState.hitboxLastTick = 0
 	combatState.hitboxConnection = RunService.Heartbeat:Connect(function()
 		local now = tick()
@@ -3617,7 +3599,7 @@ startHitboxExpand = function()
 	addLog("[HITBOX] ON - Size: " .. combatState.hitboxSize, COLORS.success)
 end
 
-stopHitboxExpand = function()
+F.stopHitboxExpand = function()
 	if combatState.hitboxConnection then combatState.hitboxConnection:Disconnect() combatState.hitboxConnection = nil end
 	pcall(function()
 		for _, player in ipairs(Players:GetPlayers()) do
@@ -3631,7 +3613,7 @@ stopHitboxExpand = function()
 end
 
 -- ===================== ANTI-VOID LOGIC =====================
-startAntiVoid = function()
+F.startAntiVoid = function()
 	combatState.lastSafePos = nil
 	combatState.antiVoidConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
@@ -3649,7 +3631,7 @@ startAntiVoid = function()
 	addLog("[ANTI-VOID] ON", COLORS.success)
 end
 
-stopAntiVoid = function()
+F.stopAntiVoid = function()
 	if combatState.antiVoidConnection then combatState.antiVoidConnection:Disconnect() combatState.antiVoidConnection = nil end
 	combatState.lastSafePos = nil
 	addLog("[ANTI-VOID] OFF", COLORS.error)
@@ -3658,7 +3640,7 @@ end
 -- ===================== TRACERS LOGIC =====================
 local hasDrawing = pcall(function() return Drawing and Drawing.new end)
 
-startTracers = function()
+F.startTracers = function()
 	espState.tracerConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local cam = workspace.CurrentCamera
@@ -3695,7 +3677,7 @@ startTracers = function()
 	addLog("[TRACERS] ON", COLORS.success)
 end
 
-stopTracers = function()
+F.stopTracers = function()
 	if espState.tracerConnection then espState.tracerConnection:Disconnect() espState.tracerConnection = nil end
 	for _, line in pairs(espState.tracerLines) do pcall(function() line:Remove() end) end
 	espState.tracerLines = {}
@@ -3703,7 +3685,7 @@ stopTracers = function()
 end
 
 -- ===================== FOV CIRCLE LOGIC =====================
-startFOVCircle = function()
+F.startFOVCircle = function()
 	if not hasDrawing then addLog("[FOV] Drawing API not available", COLORS.error) return end
 	espState.fovCircleFrame = Drawing.new("Circle")
 	espState.fovCircleFrame.Color = COLORS.accent
@@ -3716,13 +3698,13 @@ startFOVCircle = function()
 	addLog("[FOV CIRCLE] ON - Radius: " .. espState.fovRadius, COLORS.success)
 end
 
-stopFOVCircle = function()
+F.stopFOVCircle = function()
 	if espState.fovCircleFrame then pcall(function() espState.fovCircleFrame:Remove() end) espState.fovCircleFrame = nil end
 	addLog("[FOV CIRCLE] OFF", COLORS.error)
 end
 
 -- ===================== CROSSHAIR LOGIC =====================
-startCrosshair = function()
+F.startCrosshair = function()
 	if not hasDrawing then addLog("[CROSSHAIR] Drawing API not available", COLORS.error) return end
 	local cam = workspace.CurrentCamera
 	local cx, cy = cam.ViewportSize.X/2, cam.ViewportSize.Y/2
@@ -3745,14 +3727,14 @@ startCrosshair = function()
 	addLog("[CROSSHAIR] ON", COLORS.success)
 end
 
-stopCrosshair = function()
+F.stopCrosshair = function()
 	for _, l in ipairs(espState.crosshairLines) do pcall(function() l:Remove() end) end
 	espState.crosshairLines = {}
 	addLog("[CROSSHAIR] OFF", COLORS.error)
 end
 
 -- ===================== CLICK TP LOGIC =====================
-startClickTp = function()
+F.startClickTp = function()
 	moveState.clickTpConnection = UserInputService.InputBegan:Connect(function(input, gpe)
 		if gpe then return end
 		if input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -3772,13 +3754,13 @@ startClickTp = function()
 	addLog("[CLICK TP] ON (Ctrl+Click)", COLORS.success)
 end
 
-stopClickTp = function()
+F.stopClickTp = function()
 	if moveState.clickTpConnection then moveState.clickTpConnection:Disconnect() moveState.clickTpConnection = nil end
 	addLog("[CLICK TP] OFF", COLORS.error)
 end
 
 -- ===================== BUNNY HOP LOGIC =====================
-startBunnyHop = function()
+F.startBunnyHop = function()
 	moveState.bunnyHopConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local char = LocalPlayer.Character
@@ -3796,13 +3778,13 @@ startBunnyHop = function()
 	addLog("[BHOP] ON - Hold W to auto-jump", COLORS.success)
 end
 
-stopBunnyHop = function()
+F.stopBunnyHop = function()
 	if moveState.bunnyHopConnection then moveState.bunnyHopConnection:Disconnect() moveState.bunnyHopConnection = nil end
 	addLog("[BHOP] OFF", COLORS.error)
 end
 
 -- ===================== FLOAT LOGIC =====================
-startFloat = function()
+F.startFloat = function()
 	local char = LocalPlayer.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
 	if not hrp then addLog("[FLOAT] No character", COLORS.error) return end
@@ -3820,13 +3802,13 @@ startFloat = function()
 	addLog("[FLOAT] ON at Y=" .. math.floor(floatY), COLORS.success)
 end
 
-stopFloat = function()
+F.stopFloat = function()
 	if moveState.floatConnection then moveState.floatConnection:Disconnect() moveState.floatConnection = nil end
 	addLog("[FLOAT] OFF", COLORS.error)
 end
 
 -- ===================== PLATFORM LOGIC =====================
-startPlatform = function()
+F.startPlatform = function()
 	local char = LocalPlayer.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
 	if not hrp then return end
@@ -3853,14 +3835,14 @@ startPlatform = function()
 	addLog("[PLATFORM] ON (fixed height)", COLORS.success)
 end
 
-stopPlatform = function()
+F.stopPlatform = function()
 	if moveState.platformConnection then moveState.platformConnection:Disconnect() moveState.platformConnection = nil end
 	if moveState.platformPart then pcall(function() moveState.platformPart:Destroy() end) moveState.platformPart = nil end
 	addLog("[PLATFORM] OFF", COLORS.error)
 end
 
 -- ===================== LONG JUMP (action) =====================
-doLongJump = function()
+F.doLongJump = function()
 	pcall(function()
 		local char = LocalPlayer.Character
 		local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -3872,7 +3854,7 @@ doLongJump = function()
 end
 
 -- ===================== TP BEHIND (action) =====================
-tpBehindPlayer = function()
+F.tpBehindPlayer = function()
 	pcall(function()
 		local target = playerState.selectedPlayer
 		if not target or not target.Character then addLog("[TP BEHIND] No player selected", COLORS.error) return end
@@ -3887,7 +3869,7 @@ tpBehindPlayer = function()
 end
 
 -- ===================== FULLBRIGHT LOGIC =====================
-startFullbright = function()
+F.startFullbright = function()
 	visualState.origAmbient = Lighting.Ambient
 	visualState.origBrightness = Lighting.Brightness
 	visualState.origFogEnd = Lighting.FogEnd
@@ -3899,7 +3881,7 @@ startFullbright = function()
 	addLog("[FULLBRIGHT] ON", COLORS.success)
 end
 
-stopFullbright = function()
+F.stopFullbright = function()
 	if visualState.origAmbient then Lighting.Ambient = visualState.origAmbient end
 	if visualState.origBrightness then Lighting.Brightness = visualState.origBrightness end
 	if visualState.origFogEnd then Lighting.FogEnd = visualState.origFogEnd end
@@ -3908,7 +3890,7 @@ stopFullbright = function()
 end
 
 -- ===================== X-RAY LOGIC =====================
-startXray = function()
+F.startXray = function()
 	visualState.xrayOrigTransparencies = {}
 	for _, part in ipairs(workspace:GetDescendants()) do
 		if part:IsA("BasePart") and not part:IsDescendantOf(LocalPlayer.Character or Instance.new("Folder")) then
@@ -3921,7 +3903,7 @@ startXray = function()
 	addLog("[X-RAY] ON", COLORS.success)
 end
 
-stopXray = function()
+F.stopXray = function()
 	for part, trans in pairs(visualState.xrayOrigTransparencies) do
 		if part and part.Parent then part.Transparency = trans end
 	end
@@ -3930,7 +3912,7 @@ stopXray = function()
 end
 
 -- ===================== FREECAM LOGIC =====================
-startFreecam = function()
+F.startFreecam = function()
 	local cam = workspace.CurrentCamera
 	visualState.origCameraSubject = cam.CameraSubject
 	visualState.origCameraType = cam.CameraType
@@ -3963,7 +3945,7 @@ startFreecam = function()
 	addLog("[FREECAM] ON (WASD/Space/E + Shift=fast)", COLORS.success)
 end
 
-stopFreecam = function()
+F.stopFreecam = function()
 	if visualState.freecamConnection then visualState.freecamConnection:Disconnect() visualState.freecamConnection = nil end
 	-- Unfreeze character
 	local char = LocalPlayer.Character
@@ -3976,19 +3958,19 @@ stopFreecam = function()
 end
 
 -- ===================== NO FOG LOGIC =====================
-startNoFog = function()
+F.startNoFog = function()
 	visualState.origFogEndVisual = Lighting.FogEnd
 	Lighting.FogEnd = 1e10
 	addLog("[NO FOG] ON", COLORS.success)
 end
 
-stopNoFog = function()
+F.stopNoFog = function()
 	if visualState.origFogEndVisual then Lighting.FogEnd = visualState.origFogEndVisual end
 	addLog("[NO FOG] OFF", COLORS.error)
 end
 
 -- ===================== FPS COUNTER LOGIC =====================
-startFpsCounter = function()
+F.startFpsCounter = function()
 	local label = Instance.new("TextLabel")
 	label.Size = UDim2.new(0, 80, 0, 22)
 	label.Position = UDim2.new(1, -90, 0, 5)
@@ -4014,14 +3996,14 @@ startFpsCounter = function()
 	addLog("[FPS COUNTER] ON", COLORS.success)
 end
 
-stopFpsCounter = function()
+F.stopFpsCounter = function()
 	if visualState.fpsConnection then visualState.fpsConnection:Disconnect() visualState.fpsConnection = nil end
 	if visualState.fpsLabel then pcall(function() visualState.fpsLabel:Destroy() end) visualState.fpsLabel = nil end
 	addLog("[FPS COUNTER] OFF", COLORS.error)
 end
 
 -- ===================== HEADLESS LOGIC =====================
-startHeadless = function()
+F.startHeadless = function()
 	pcall(function()
 		local char = LocalPlayer.Character
 		if not char then return end
@@ -4037,7 +4019,7 @@ startHeadless = function()
 	addLog("[HEADLESS] ON", COLORS.success)
 end
 
-stopHeadless = function()
+F.stopHeadless = function()
 	for inst, trans in pairs(funState.headlessSaved) do
 		if inst and inst.Parent then inst.Transparency = trans end
 	end
@@ -4046,7 +4028,7 @@ stopHeadless = function()
 end
 
 -- ===================== RAINBOW LOGIC =====================
-startRainbow = function()
+F.startRainbow = function()
 	funState.rainbowConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local char = LocalPlayer.Character
@@ -4062,13 +4044,13 @@ startRainbow = function()
 	addLog("[RAINBOW] ON", COLORS.success)
 end
 
-stopRainbow = function()
+F.stopRainbow = function()
 	if funState.rainbowConnection then funState.rainbowConnection:Disconnect() funState.rainbowConnection = nil end
 	addLog("[RAINBOW] OFF", COLORS.error)
 end
 
 -- ===================== CHARACTER MODS (actions) =====================
-tinyCharacter = function()
+F.tinyCharacter = function()
 	pcall(function()
 		local char = LocalPlayer.Character
 		if not char then return end
@@ -4082,7 +4064,7 @@ tinyCharacter = function()
 	addLog("[TINY] Character scaled to 0.5x", COLORS.success)
 end
 
-giantCharacter = function()
+F.giantCharacter = function()
 	pcall(function()
 		local char = LocalPlayer.Character
 		if not char then return end
@@ -4096,7 +4078,7 @@ giantCharacter = function()
 	addLog("[GIANT] Character scaled to 3x", COLORS.success)
 end
 
-neonBody = function()
+F.neonBody = function()
 	pcall(function()
 		local char = LocalPlayer.Character
 		if not char then return end
@@ -4107,7 +4089,7 @@ neonBody = function()
 	addLog("[NEON] Body material set to Neon", COLORS.success)
 end
 
-glassBody = function()
+F.glassBody = function()
 	pcall(function()
 		local char = LocalPlayer.Character
 		if not char then return end
@@ -4118,7 +4100,7 @@ glassBody = function()
 	addLog("[GLASS] Body material set to Glass", COLORS.success)
 end
 
-cloneIllusion = function()
+F.cloneIllusion = function()
 	pcall(function()
 		local char = LocalPlayer.Character
 		if not char then return end
@@ -4135,7 +4117,7 @@ cloneIllusion = function()
 	end)
 end
 
-sitInAir = function()
+F.sitInAir = function()
 	pcall(function()
 		local char = LocalPlayer.Character
 		if not char then return end
@@ -4146,7 +4128,7 @@ sitInAir = function()
 end
 
 -- ===================== ORBIT LOGIC =====================
-startOrbit = function()
+F.startOrbit = function()
 	playerState.orbitConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local target = playerState.selectedPlayer
@@ -4167,13 +4149,13 @@ startOrbit = function()
 	addLog("[ORBIT] ON", COLORS.success)
 end
 
-stopOrbit = function()
+F.stopOrbit = function()
 	if playerState.orbitConnection then playerState.orbitConnection:Disconnect() playerState.orbitConnection = nil end
 	addLog("[ORBIT] OFF", COLORS.error)
 end
 
 -- ===================== ATTACH LOGIC =====================
-startAttach = function()
+F.startAttach = function()
 	playerState.attachConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local target = playerState.selectedPlayer
@@ -4187,13 +4169,13 @@ startAttach = function()
 	addLog("[ATTACH] ON", COLORS.success)
 end
 
-stopAttach = function()
+F.stopAttach = function()
 	if playerState.attachConnection then playerState.attachConnection:Disconnect() playerState.attachConnection = nil end
 	addLog("[ATTACH] OFF", COLORS.error)
 end
 
 -- ===================== FOLLOW LOGIC =====================
-startFollow = function()
+F.startFollow = function()
 	playerState.followConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local target = playerState.selectedPlayer
@@ -4207,13 +4189,13 @@ startFollow = function()
 	addLog("[FOLLOW] ON", COLORS.success)
 end
 
-stopFollow = function()
+F.stopFollow = function()
 	if playerState.followConnection then playerState.followConnection:Disconnect() playerState.followConnection = nil end
 	addLog("[FOLLOW] OFF", COLORS.error)
 end
 
 -- ===================== STARE LOGIC =====================
-startStare = function()
+F.startStare = function()
 	playerState.stareConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local target = playerState.selectedPlayer
@@ -4229,13 +4211,13 @@ startStare = function()
 	addLog("[STARE] ON", COLORS.success)
 end
 
-stopStare = function()
+F.stopStare = function()
 	if playerState.stareConnection then playerState.stareConnection:Disconnect() playerState.stareConnection = nil end
 	addLog("[STARE] OFF", COLORS.error)
 end
 
 -- ===================== ANTI-AFK LOGIC =====================
-startAntiAfk = function()
+F.startAntiAfk = function()
 	local VirtualUser = game:GetService("VirtualUser")
 	serverState.antiAfkConnection = LocalPlayer.Idled:Connect(function()
 		pcall(function() VirtualUser:CaptureController() VirtualUser:ClickButton2(Vector2.new()) end)
@@ -4243,13 +4225,13 @@ startAntiAfk = function()
 	addLog("[ANTI-AFK] ON", COLORS.success)
 end
 
-stopAntiAfk = function()
+F.stopAntiAfk = function()
 	if serverState.antiAfkConnection then serverState.antiAfkConnection:Disconnect() serverState.antiAfkConnection = nil end
 	addLog("[ANTI-AFK] OFF", COLORS.error)
 end
 
 -- ===================== CHAT SPY LOGIC =====================
-startChatSpy = function()
+F.startChatSpy = function()
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player ~= LocalPlayer then
 			player.Chatted:Connect(function(msg) addLog("[SPY] " .. player.Name .. ": " .. msg, COLORS.textSecondary) end)
@@ -4261,13 +4243,13 @@ startChatSpy = function()
 	addLog("[CHAT SPY] ON", COLORS.success)
 end
 
-stopChatSpy = function()
+F.stopChatSpy = function()
 	if serverState.chatSpyConnection then serverState.chatSpyConnection:Disconnect() serverState.chatSpyConnection = nil end
 	addLog("[CHAT SPY] OFF", COLORS.error)
 end
 
 -- ===================== JOIN NOTIFY LOGIC =====================
-startJoinNotify = function()
+F.startJoinNotify = function()
 	serverState.joinNotifyAddedConn = Players.PlayerAdded:Connect(function(player)
 		addLog("[JOIN] " .. player.Name .. " joined", Color3.fromRGB(100, 255, 100))
 	end)
@@ -4277,14 +4259,14 @@ startJoinNotify = function()
 	addLog("[JOIN NOTIFY] ON", COLORS.success)
 end
 
-stopJoinNotify = function()
+F.stopJoinNotify = function()
 	if serverState.joinNotifyAddedConn then serverState.joinNotifyAddedConn:Disconnect() serverState.joinNotifyAddedConn = nil end
 	if serverState.joinNotifyRemovingConn then serverState.joinNotifyRemovingConn:Disconnect() serverState.joinNotifyRemovingConn = nil end
 	addLog("[JOIN NOTIFY] OFF", COLORS.error)
 end
 
 -- ===================== AUTO RESPAWN LOGIC =====================
-startAutoRespawn = function()
+F.startAutoRespawn = function()
 	serverState.autoRespawnConnection = LocalPlayer.CharacterAdded:Connect(function(char)
 		local hum = char:WaitForChild("Humanoid", 10)
 		if hum then
@@ -4297,13 +4279,13 @@ startAutoRespawn = function()
 	addLog("[AUTO RESPAWN] ON", COLORS.success)
 end
 
-stopAutoRespawn = function()
+F.stopAutoRespawn = function()
 	if serverState.autoRespawnConnection then serverState.autoRespawnConnection:Disconnect() serverState.autoRespawnConnection = nil end
 	addLog("[AUTO RESPAWN] OFF", COLORS.error)
 end
 
 -- ===================== PLAYER INFO (action) =====================
-showPlayerInfo = function()
+F.showPlayerInfo = function()
 	pcall(function()
 		local target = playerState.selectedPlayer
 		if not target then addLog("[INFO] No player selected", COLORS.error) return end
@@ -4316,7 +4298,7 @@ showPlayerInfo = function()
 end
 
 -- ===================== UNLOAD SCRIPT =====================
-unloadScript = function()
+F.unloadScript = function()
 	pcall(function()
 		-- Disconnect all state connections
 		for _, tbl in ipairs({combatState, espState, flyState, moveState, flingState, funState, visualState, serverState, playerState}) do
