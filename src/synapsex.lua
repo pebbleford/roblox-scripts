@@ -63,6 +63,8 @@ local combatState = {
 	antiVoidEnabled = false,
 	antiVoidConnection = nil,
 	lastSafePos = nil,
+	godEnabled = false,
+	godConnection = nil,
 }
 
 local espState = {
@@ -2045,7 +2047,7 @@ end
 
 -- ===================== GOD MODE LOGIC =====================
 local function startGod()
-	godConnection = RunService.Heartbeat:Connect(function()
+	combatState.godConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local character = LocalPlayer.Character
 			if not character then return end
@@ -2060,7 +2062,7 @@ local function startGod()
 end
 
 local function stopGod()
-	if godConnection then godConnection:Disconnect() godConnection = nil end
+	if combatState.godConnection then combatState.godConnection:Disconnect() combatState.godConnection = nil end
 	pcall(function()
 		local character = LocalPlayer.Character
 		if character then
@@ -2518,6 +2520,26 @@ local function serverHop()
 	end)
 end
 
+-- Forward declarations for functions defined after UI builder blocks
+local refreshPlayerList
+local processCommand, getClosestPlayerInFOV
+local startAimbot, stopAimbot, startTriggerBot, stopTriggerBot
+local startHitboxExpand, stopHitboxExpand, startAntiVoid, stopAntiVoid
+local startTracers, stopTracers, startFOVCircle, stopFOVCircle
+local startCrosshair, stopCrosshair, startClickTp, stopClickTp
+local startBunnyHop, stopBunnyHop, startFloat, stopFloat
+local startPlatform, stopPlatform, doLongJump, tpBehindPlayer
+local startFullbright, stopFullbright, startXray, stopXray
+local startFreecam, stopFreecam, startNoFog, stopNoFog
+local startFpsCounter, stopFpsCounter, startHeadless, stopHeadless
+local startRainbow, stopRainbow, tinyCharacter, giantCharacter
+local neonBody, glassBody, cloneIllusion, sitInAir
+local startOrbit, stopOrbit, startAttach, stopAttach
+local startFollow, stopFollow, startStare, stopStare
+local startAntiAfk, stopAntiAfk, startChatSpy, stopChatSpy
+local startJoinNotify, stopJoinNotify, startAutoRespawn, stopAutoRespawn
+local showPlayerInfo, unloadScript
+
 -- ===================== BUILD MAIN TAB =====================
 do
 	local tab = tabFrames["Main"]
@@ -2547,7 +2569,7 @@ do
 		if on then startNoclip() else stopNoclip() end
 	end)
 	createToggle(tab, "God Mode", 9, function(on)
-		godEnabled = on
+		combatState.godEnabled = on
 		if on then startGod() else stopGod() end
 	end)
 	createToggle(tab, "Infinite Jump", 10, function(on)
@@ -2724,7 +2746,7 @@ do
 	playerListLayout.Parent = playerListFrame
 end
 
-local function refreshPlayerList()
+refreshPlayerList = function()
 	for _, btn in pairs(playerButtons) do pcall(function() btn:Destroy() end) end
 	playerButtons = {}
 	local order = 0
@@ -3241,8 +3263,8 @@ commands["noclip"] = function() moveState.noclipEnabled = true startNoclip() end
 commands["unnoclip"] = function() moveState.noclipEnabled = false stopNoclip() end
 commands["antifling"] = function() combatState.antiFlingEnabled = true startAntiFling() end
 commands["unantifling"] = function() combatState.antiFlingEnabled = false stopAntiFling() end
-commands["god"] = function() godEnabled = true startGod() end
-commands["ungod"] = function() godEnabled = false stopGod() end
+commands["god"] = function() combatState.godEnabled = true startGod() end
+commands["ungod"] = function() combatState.godEnabled = false stopGod() end
 commands["tp"] = function(args)
 	if not args[1] then addLog("[CMD] Usage: ;tp <player>", COLORS.error) return end
 	local target = findPlayer(args[1])
@@ -3391,7 +3413,7 @@ commands["cmds"] = function()
 	addLog("Prefix un- to disable any toggle (e.g. ;unfly)", COLORS.textSecondary)
 end
 
-local function processCommand(input)
+processCommand = function(input)
 	if input:sub(1, 1) == ";" then input = input:sub(2) end
 	local parts = {}
 	for word in input:gmatch("%S+") do table.insert(parts, word) end
@@ -3424,7 +3446,7 @@ end)
 
 
 -- ===================== AIMBOT LOGIC =====================
-local function getClosestPlayerInFOV()
+getClosestPlayerInFOV = function()
 	local cam = workspace.CurrentCamera
 	local closest, closestDist = nil, combatState.aimbotFOV
 	for _, player in ipairs(Players:GetPlayers()) do
@@ -3452,7 +3474,7 @@ local function getClosestPlayerInFOV()
 	return closest
 end
 
-local function startAimbot()
+startAimbot = function()
 	combatState.aimbotInputBeganConn = UserInputService.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton2 or input.KeyCode == Enum.KeyCode.Q then
 			combatState.aimbotHolding = true
@@ -3489,7 +3511,7 @@ local function startAimbot()
 	addLog("[AIMBOT] ON (Hold RMB or Q)", COLORS.success)
 end
 
-local function stopAimbot()
+stopAimbot = function()
 	if combatState.aimbotConnection then combatState.aimbotConnection:Disconnect() combatState.aimbotConnection = nil end
 	if combatState.aimbotInputBeganConn then combatState.aimbotInputBeganConn:Disconnect() combatState.aimbotInputBeganConn = nil end
 	if combatState.aimbotInputEndedConn then combatState.aimbotInputEndedConn:Disconnect() combatState.aimbotInputEndedConn = nil end
@@ -3498,7 +3520,7 @@ local function stopAimbot()
 end
 
 -- ===================== TRIGGERBOT LOGIC =====================
-local function startTriggerBot()
+startTriggerBot = function()
 	combatState.triggerBotConnection = RunService.Heartbeat:Connect(function()
 		if not combatState.triggerBotEnabled then return end
 		pcall(function()
@@ -3520,13 +3542,13 @@ local function startTriggerBot()
 	addLog("[TRIGGERBOT] ON", COLORS.success)
 end
 
-local function stopTriggerBot()
+stopTriggerBot = function()
 	if combatState.triggerBotConnection then combatState.triggerBotConnection:Disconnect() combatState.triggerBotConnection = nil end
 	addLog("[TRIGGERBOT] OFF", COLORS.error)
 end
 
 -- ===================== HITBOX EXPANDER LOGIC =====================
-local function startHitboxExpand()
+startHitboxExpand = function()
 	combatState.hitboxConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			for _, player in ipairs(Players:GetPlayers()) do
@@ -3544,7 +3566,7 @@ local function startHitboxExpand()
 	addLog("[HITBOX] ON - Size: " .. combatState.hitboxSize, COLORS.success)
 end
 
-local function stopHitboxExpand()
+stopHitboxExpand = function()
 	if combatState.hitboxConnection then combatState.hitboxConnection:Disconnect() combatState.hitboxConnection = nil end
 	pcall(function()
 		for _, player in ipairs(Players:GetPlayers()) do
@@ -3558,7 +3580,7 @@ local function stopHitboxExpand()
 end
 
 -- ===================== ANTI-VOID LOGIC =====================
-local function startAntiVoid()
+startAntiVoid = function()
 	combatState.lastSafePos = nil
 	combatState.antiVoidConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
@@ -3576,7 +3598,7 @@ local function startAntiVoid()
 	addLog("[ANTI-VOID] ON", COLORS.success)
 end
 
-local function stopAntiVoid()
+stopAntiVoid = function()
 	if combatState.antiVoidConnection then combatState.antiVoidConnection:Disconnect() combatState.antiVoidConnection = nil end
 	combatState.lastSafePos = nil
 	addLog("[ANTI-VOID] OFF", COLORS.error)
@@ -3585,7 +3607,7 @@ end
 -- ===================== TRACERS LOGIC =====================
 local hasDrawing = pcall(function() return Drawing and Drawing.new end)
 
-local function startTracers()
+startTracers = function()
 	espState.tracerConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local cam = workspace.CurrentCamera
@@ -3622,7 +3644,7 @@ local function startTracers()
 	addLog("[TRACERS] ON", COLORS.success)
 end
 
-local function stopTracers()
+stopTracers = function()
 	if espState.tracerConnection then espState.tracerConnection:Disconnect() espState.tracerConnection = nil end
 	for _, line in pairs(espState.tracerLines) do pcall(function() line:Remove() end) end
 	espState.tracerLines = {}
@@ -3630,7 +3652,7 @@ local function stopTracers()
 end
 
 -- ===================== FOV CIRCLE LOGIC =====================
-local function startFOVCircle()
+startFOVCircle = function()
 	if not hasDrawing then addLog("[FOV] Drawing API not available", COLORS.error) return end
 	espState.fovCircleFrame = Drawing.new("Circle")
 	espState.fovCircleFrame.Color = COLORS.accent
@@ -3643,13 +3665,13 @@ local function startFOVCircle()
 	addLog("[FOV CIRCLE] ON - Radius: " .. espState.fovRadius, COLORS.success)
 end
 
-local function stopFOVCircle()
+stopFOVCircle = function()
 	if espState.fovCircleFrame then pcall(function() espState.fovCircleFrame:Remove() end) espState.fovCircleFrame = nil end
 	addLog("[FOV CIRCLE] OFF", COLORS.error)
 end
 
 -- ===================== CROSSHAIR LOGIC =====================
-local function startCrosshair()
+startCrosshair = function()
 	if not hasDrawing then addLog("[CROSSHAIR] Drawing API not available", COLORS.error) return end
 	local cam = workspace.CurrentCamera
 	local cx, cy = cam.ViewportSize.X/2, cam.ViewportSize.Y/2
@@ -3672,14 +3694,14 @@ local function startCrosshair()
 	addLog("[CROSSHAIR] ON", COLORS.success)
 end
 
-local function stopCrosshair()
+stopCrosshair = function()
 	for _, l in ipairs(espState.crosshairLines) do pcall(function() l:Remove() end) end
 	espState.crosshairLines = {}
 	addLog("[CROSSHAIR] OFF", COLORS.error)
 end
 
 -- ===================== CLICK TP LOGIC =====================
-local function startClickTp()
+startClickTp = function()
 	moveState.clickTpConnection = UserInputService.InputBegan:Connect(function(input, gpe)
 		if gpe then return end
 		if input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -3699,13 +3721,13 @@ local function startClickTp()
 	addLog("[CLICK TP] ON (Ctrl+Click)", COLORS.success)
 end
 
-local function stopClickTp()
+stopClickTp = function()
 	if moveState.clickTpConnection then moveState.clickTpConnection:Disconnect() moveState.clickTpConnection = nil end
 	addLog("[CLICK TP] OFF", COLORS.error)
 end
 
 -- ===================== BUNNY HOP LOGIC =====================
-local function startBunnyHop()
+startBunnyHop = function()
 	moveState.bunnyHopConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local char = LocalPlayer.Character
@@ -3723,13 +3745,13 @@ local function startBunnyHop()
 	addLog("[BHOP] ON - Hold W to auto-jump", COLORS.success)
 end
 
-local function stopBunnyHop()
+stopBunnyHop = function()
 	if moveState.bunnyHopConnection then moveState.bunnyHopConnection:Disconnect() moveState.bunnyHopConnection = nil end
 	addLog("[BHOP] OFF", COLORS.error)
 end
 
 -- ===================== FLOAT LOGIC =====================
-local function startFloat()
+startFloat = function()
 	local char = LocalPlayer.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
 	if not hrp then addLog("[FLOAT] No character", COLORS.error) return end
@@ -3747,13 +3769,13 @@ local function startFloat()
 	addLog("[FLOAT] ON at Y=" .. math.floor(floatY), COLORS.success)
 end
 
-local function stopFloat()
+stopFloat = function()
 	if moveState.floatConnection then moveState.floatConnection:Disconnect() moveState.floatConnection = nil end
 	addLog("[FLOAT] OFF", COLORS.error)
 end
 
 -- ===================== PLATFORM LOGIC =====================
-local function startPlatform()
+startPlatform = function()
 	local char = LocalPlayer.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
 	if not hrp then return end
@@ -3777,14 +3799,14 @@ local function startPlatform()
 	addLog("[PLATFORM] ON", COLORS.success)
 end
 
-local function stopPlatform()
+stopPlatform = function()
 	if moveState.platformConnection then moveState.platformConnection:Disconnect() moveState.platformConnection = nil end
 	if moveState.platformPart then pcall(function() moveState.platformPart:Destroy() end) moveState.platformPart = nil end
 	addLog("[PLATFORM] OFF", COLORS.error)
 end
 
 -- ===================== LONG JUMP (action) =====================
-local function doLongJump()
+doLongJump = function()
 	pcall(function()
 		local char = LocalPlayer.Character
 		local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -3796,7 +3818,7 @@ local function doLongJump()
 end
 
 -- ===================== TP BEHIND (action) =====================
-local function tpBehindPlayer()
+tpBehindPlayer = function()
 	pcall(function()
 		local target = playerState.selectedPlayer
 		if not target or not target.Character then addLog("[TP BEHIND] No player selected", COLORS.error) return end
@@ -3811,7 +3833,7 @@ local function tpBehindPlayer()
 end
 
 -- ===================== FULLBRIGHT LOGIC =====================
-local function startFullbright()
+startFullbright = function()
 	visualState.origAmbient = Lighting.Ambient
 	visualState.origBrightness = Lighting.Brightness
 	visualState.origFogEnd = Lighting.FogEnd
@@ -3823,7 +3845,7 @@ local function startFullbright()
 	addLog("[FULLBRIGHT] ON", COLORS.success)
 end
 
-local function stopFullbright()
+stopFullbright = function()
 	if visualState.origAmbient then Lighting.Ambient = visualState.origAmbient end
 	if visualState.origBrightness then Lighting.Brightness = visualState.origBrightness end
 	if visualState.origFogEnd then Lighting.FogEnd = visualState.origFogEnd end
@@ -3832,7 +3854,7 @@ local function stopFullbright()
 end
 
 -- ===================== X-RAY LOGIC =====================
-local function startXray()
+startXray = function()
 	visualState.xrayOrigTransparencies = {}
 	for _, part in ipairs(workspace:GetDescendants()) do
 		if part:IsA("BasePart") and not part:IsDescendantOf(LocalPlayer.Character or Instance.new("Folder")) then
@@ -3845,7 +3867,7 @@ local function startXray()
 	addLog("[X-RAY] ON", COLORS.success)
 end
 
-local function stopXray()
+stopXray = function()
 	for part, trans in pairs(visualState.xrayOrigTransparencies) do
 		if part and part.Parent then part.Transparency = trans end
 	end
@@ -3854,7 +3876,7 @@ local function stopXray()
 end
 
 -- ===================== FREECAM LOGIC =====================
-local function startFreecam()
+startFreecam = function()
 	local cam = workspace.CurrentCamera
 	visualState.origCameraSubject = cam.CameraSubject
 	visualState.origCameraType = cam.CameraType
@@ -3879,7 +3901,7 @@ local function startFreecam()
 	addLog("[FREECAM] ON (WASD + Space/Shift)", COLORS.success)
 end
 
-local function stopFreecam()
+stopFreecam = function()
 	if visualState.freecamConnection then visualState.freecamConnection:Disconnect() visualState.freecamConnection = nil end
 	local cam = workspace.CurrentCamera
 	if visualState.origCameraSubject then cam.CameraSubject = visualState.origCameraSubject end
@@ -3888,19 +3910,19 @@ local function stopFreecam()
 end
 
 -- ===================== NO FOG LOGIC =====================
-local function startNoFog()
+startNoFog = function()
 	visualState.origFogEndVisual = Lighting.FogEnd
 	Lighting.FogEnd = 1e10
 	addLog("[NO FOG] ON", COLORS.success)
 end
 
-local function stopNoFog()
+stopNoFog = function()
 	if visualState.origFogEndVisual then Lighting.FogEnd = visualState.origFogEndVisual end
 	addLog("[NO FOG] OFF", COLORS.error)
 end
 
 -- ===================== FPS COUNTER LOGIC =====================
-local function startFpsCounter()
+startFpsCounter = function()
 	local label = Instance.new("TextLabel")
 	label.Size = UDim2.new(0, 80, 0, 22)
 	label.Position = UDim2.new(1, -90, 0, 5)
@@ -3926,14 +3948,14 @@ local function startFpsCounter()
 	addLog("[FPS COUNTER] ON", COLORS.success)
 end
 
-local function stopFpsCounter()
+stopFpsCounter = function()
 	if visualState.fpsConnection then visualState.fpsConnection:Disconnect() visualState.fpsConnection = nil end
 	if visualState.fpsLabel then pcall(function() visualState.fpsLabel:Destroy() end) visualState.fpsLabel = nil end
 	addLog("[FPS COUNTER] OFF", COLORS.error)
 end
 
 -- ===================== HEADLESS LOGIC =====================
-local function startHeadless()
+startHeadless = function()
 	pcall(function()
 		local char = LocalPlayer.Character
 		if not char then return end
@@ -3949,7 +3971,7 @@ local function startHeadless()
 	addLog("[HEADLESS] ON", COLORS.success)
 end
 
-local function stopHeadless()
+stopHeadless = function()
 	for inst, trans in pairs(funState.headlessSaved) do
 		if inst and inst.Parent then inst.Transparency = trans end
 	end
@@ -3958,7 +3980,7 @@ local function stopHeadless()
 end
 
 -- ===================== RAINBOW LOGIC =====================
-local function startRainbow()
+startRainbow = function()
 	funState.rainbowConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local char = LocalPlayer.Character
@@ -3974,13 +3996,13 @@ local function startRainbow()
 	addLog("[RAINBOW] ON", COLORS.success)
 end
 
-local function stopRainbow()
+stopRainbow = function()
 	if funState.rainbowConnection then funState.rainbowConnection:Disconnect() funState.rainbowConnection = nil end
 	addLog("[RAINBOW] OFF", COLORS.error)
 end
 
 -- ===================== CHARACTER MODS (actions) =====================
-local function tinyCharacter()
+tinyCharacter = function()
 	pcall(function()
 		local char = LocalPlayer.Character
 		if not char then return end
@@ -3994,7 +4016,7 @@ local function tinyCharacter()
 	addLog("[TINY] Character scaled to 0.5x", COLORS.success)
 end
 
-local function giantCharacter()
+giantCharacter = function()
 	pcall(function()
 		local char = LocalPlayer.Character
 		if not char then return end
@@ -4008,7 +4030,7 @@ local function giantCharacter()
 	addLog("[GIANT] Character scaled to 3x", COLORS.success)
 end
 
-local function neonBody()
+neonBody = function()
 	pcall(function()
 		local char = LocalPlayer.Character
 		if not char then return end
@@ -4019,7 +4041,7 @@ local function neonBody()
 	addLog("[NEON] Body material set to Neon", COLORS.success)
 end
 
-local function glassBody()
+glassBody = function()
 	pcall(function()
 		local char = LocalPlayer.Character
 		if not char then return end
@@ -4030,7 +4052,7 @@ local function glassBody()
 	addLog("[GLASS] Body material set to Glass", COLORS.success)
 end
 
-local function cloneIllusion()
+cloneIllusion = function()
 	pcall(function()
 		local char = LocalPlayer.Character
 		if not char then return end
@@ -4047,7 +4069,7 @@ local function cloneIllusion()
 	end)
 end
 
-local function sitInAir()
+sitInAir = function()
 	pcall(function()
 		local char = LocalPlayer.Character
 		if not char then return end
@@ -4058,7 +4080,7 @@ local function sitInAir()
 end
 
 -- ===================== ORBIT LOGIC =====================
-local function startOrbit()
+startOrbit = function()
 	playerState.orbitConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local target = playerState.selectedPlayer
@@ -4079,13 +4101,13 @@ local function startOrbit()
 	addLog("[ORBIT] ON", COLORS.success)
 end
 
-local function stopOrbit()
+stopOrbit = function()
 	if playerState.orbitConnection then playerState.orbitConnection:Disconnect() playerState.orbitConnection = nil end
 	addLog("[ORBIT] OFF", COLORS.error)
 end
 
 -- ===================== ATTACH LOGIC =====================
-local function startAttach()
+startAttach = function()
 	playerState.attachConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local target = playerState.selectedPlayer
@@ -4099,13 +4121,13 @@ local function startAttach()
 	addLog("[ATTACH] ON", COLORS.success)
 end
 
-local function stopAttach()
+stopAttach = function()
 	if playerState.attachConnection then playerState.attachConnection:Disconnect() playerState.attachConnection = nil end
 	addLog("[ATTACH] OFF", COLORS.error)
 end
 
 -- ===================== FOLLOW LOGIC =====================
-local function startFollow()
+startFollow = function()
 	playerState.followConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local target = playerState.selectedPlayer
@@ -4119,13 +4141,13 @@ local function startFollow()
 	addLog("[FOLLOW] ON", COLORS.success)
 end
 
-local function stopFollow()
+stopFollow = function()
 	if playerState.followConnection then playerState.followConnection:Disconnect() playerState.followConnection = nil end
 	addLog("[FOLLOW] OFF", COLORS.error)
 end
 
 -- ===================== STARE LOGIC =====================
-local function startStare()
+startStare = function()
 	playerState.stareConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local target = playerState.selectedPlayer
@@ -4141,13 +4163,13 @@ local function startStare()
 	addLog("[STARE] ON", COLORS.success)
 end
 
-local function stopStare()
+stopStare = function()
 	if playerState.stareConnection then playerState.stareConnection:Disconnect() playerState.stareConnection = nil end
 	addLog("[STARE] OFF", COLORS.error)
 end
 
 -- ===================== ANTI-AFK LOGIC =====================
-local function startAntiAfk()
+startAntiAfk = function()
 	local VirtualUser = game:GetService("VirtualUser")
 	serverState.antiAfkConnection = LocalPlayer.Idled:Connect(function()
 		pcall(function() VirtualUser:CaptureController() VirtualUser:ClickButton2(Vector2.new()) end)
@@ -4155,13 +4177,13 @@ local function startAntiAfk()
 	addLog("[ANTI-AFK] ON", COLORS.success)
 end
 
-local function stopAntiAfk()
+stopAntiAfk = function()
 	if serverState.antiAfkConnection then serverState.antiAfkConnection:Disconnect() serverState.antiAfkConnection = nil end
 	addLog("[ANTI-AFK] OFF", COLORS.error)
 end
 
 -- ===================== CHAT SPY LOGIC =====================
-local function startChatSpy()
+startChatSpy = function()
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player ~= LocalPlayer then
 			player.Chatted:Connect(function(msg) addLog("[SPY] " .. player.Name .. ": " .. msg, COLORS.textSecondary) end)
@@ -4173,13 +4195,13 @@ local function startChatSpy()
 	addLog("[CHAT SPY] ON", COLORS.success)
 end
 
-local function stopChatSpy()
+stopChatSpy = function()
 	if serverState.chatSpyConnection then serverState.chatSpyConnection:Disconnect() serverState.chatSpyConnection = nil end
 	addLog("[CHAT SPY] OFF", COLORS.error)
 end
 
 -- ===================== JOIN NOTIFY LOGIC =====================
-local function startJoinNotify()
+startJoinNotify = function()
 	serverState.joinNotifyAddedConn = Players.PlayerAdded:Connect(function(player)
 		addLog("[JOIN] " .. player.Name .. " joined", Color3.fromRGB(100, 255, 100))
 	end)
@@ -4189,14 +4211,14 @@ local function startJoinNotify()
 	addLog("[JOIN NOTIFY] ON", COLORS.success)
 end
 
-local function stopJoinNotify()
+stopJoinNotify = function()
 	if serverState.joinNotifyAddedConn then serverState.joinNotifyAddedConn:Disconnect() serverState.joinNotifyAddedConn = nil end
 	if serverState.joinNotifyRemovingConn then serverState.joinNotifyRemovingConn:Disconnect() serverState.joinNotifyRemovingConn = nil end
 	addLog("[JOIN NOTIFY] OFF", COLORS.error)
 end
 
 -- ===================== AUTO RESPAWN LOGIC =====================
-local function startAutoRespawn()
+startAutoRespawn = function()
 	serverState.autoRespawnConnection = LocalPlayer.CharacterAdded:Connect(function(char)
 		local hum = char:WaitForChild("Humanoid", 10)
 		if hum then
@@ -4209,13 +4231,13 @@ local function startAutoRespawn()
 	addLog("[AUTO RESPAWN] ON", COLORS.success)
 end
 
-local function stopAutoRespawn()
+stopAutoRespawn = function()
 	if serverState.autoRespawnConnection then serverState.autoRespawnConnection:Disconnect() serverState.autoRespawnConnection = nil end
 	addLog("[AUTO RESPAWN] OFF", COLORS.error)
 end
 
 -- ===================== PLAYER INFO (action) =====================
-local function showPlayerInfo()
+showPlayerInfo = function()
 	pcall(function()
 		local target = playerState.selectedPlayer
 		if not target then addLog("[INFO] No player selected", COLORS.error) return end
@@ -4228,7 +4250,7 @@ local function showPlayerInfo()
 end
 
 -- ===================== UNLOAD SCRIPT =====================
-local function unloadScript()
+unloadScript = function()
 	pcall(function()
 		-- Disconnect all state connections
 		for _, tbl in ipairs({combatState, espState, flyState, moveState, flingState, funState, visualState, serverState, playerState}) do
@@ -4259,8 +4281,8 @@ LocalPlayer.CharacterAdded:Connect(function()
 	flingState.savedPhysProps = {}
 	if moveState.speedEnabled then _wait(0.3) startSpeed() end
 	if combatState.antiFlingEnabled then _wait(0.3) startAntiFling() end
-	if godEnabled then
-		if godConnection then godConnection:Disconnect() godConnection = nil end
+	if combatState.godEnabled then
+		if combatState.godConnection then combatState.godConnection:Disconnect() combatState.godConnection = nil end
 		_wait(0.3) startGod()
 	end
 	if moveState.jumpPowerValue ~= 50 then _wait(0.3) setJumpPower(moveState.jumpPowerValue) end
