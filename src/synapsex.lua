@@ -1737,8 +1737,7 @@ F.stopCarSpeed = function()
 end
 
 -- ===================== SPIN FLING LOGIC =====================
--- Infinite Yield style: BodyAngularVelocity + high density + zero self velocity
--- You stand still and spin; anyone who touches you gets launched
+-- Exact Infinite Yield method: density 100 + noclip + BAV + massless + pulse on/off
 
 F.startFling = function()
 	local ok, err = pcall(function()
@@ -1747,7 +1746,7 @@ F.startFling = function()
 		local root = character:FindFirstChild("HumanoidRootPart")
 		if not root then return end
 
-		-- Make character super dense (heavy = massive collision impulse)
+		-- Step 1: density 100 on all parts
 		flingState.savedPhysProps = {}
 		for _, part in ipairs(character:GetDescendants()) do
 			if part:IsA("BasePart") then
@@ -1756,31 +1755,44 @@ F.startFling = function()
 			end
 		end
 
-		-- BodyAngularVelocity for the spin (server processes this as real physics)
+		-- Step 2: enable noclip
+		if not moveState.noclipEnabled then
+			moveState.noclipEnabled = true
+			F.startNoclip()
+			flingState.flingAutoNoclip = true
+		end
+		wait(0.1)
+
+		-- Step 3: BodyAngularVelocity Y-axis spin
 		local bav = Instance.new("BodyAngularVelocity")
 		bav.AngularVelocity = Vector3.new(0, flingState.flingPower, 0)
-		bav.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+		bav.MaxTorque = Vector3.new(0, math.huge, 0)
 		bav.P = math.huge
 		bav.Parent = root
 		flingState.flingBAV = bav
 
-		-- Heartbeat: keep self from flying away + re-apply density
-		flingState.flingPos = root.Position
-		flingState.flingConnection = RunService.Heartbeat:Connect(function()
-			pcall(function()
-				local char = LocalPlayer.Character
-				if not char then return end
-				local rt = char:FindFirstChild("HumanoidRootPart")
-				if not rt then return end
-				-- Zero out linear velocity so we don't drift/launch ourselves
-				rt.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-				-- Keep position locked (use CFrame to snap back)
-				rt.CFrame = CFrame.new(flingState.flingPos) * (rt.CFrame - rt.CFrame.Position)
-				-- Re-apply BAV if server removed it
-				if flingState.flingBAV and not flingState.flingBAV.Parent then
-					flingState.flingBAV.Parent = rt
+		-- Step 4: massless + no collide + zero velocity on all parts
+		for _, part in ipairs(character:GetChildren()) do
+			if part:IsA("BasePart") then
+				part.CanCollide = false
+				part.Massless = true
+				part.Velocity = Vector3.new(0, 0, 0)
+			end
+		end
+
+		-- Step 5: pulse spin on/off (creates repeated impulse spikes)
+		flingState.flingEnabled = true
+		spawn(function()
+			while flingState.flingEnabled do
+				if flingState.flingBAV and flingState.flingBAV.Parent then
+					flingState.flingBAV.AngularVelocity = Vector3.new(0, flingState.flingPower, 0)
 				end
-			end)
+				wait(0.2)
+				if flingState.flingBAV and flingState.flingBAV.Parent then
+					flingState.flingBAV.AngularVelocity = Vector3.new(0, 0, 0)
+				end
+				wait(0.1)
+			end
 		end)
 
 		addLog("[SPIN FLING] ON - Players near you get flung!", COLORS.success)
@@ -1791,8 +1803,15 @@ F.startFling = function()
 end
 
 F.stopFling = function()
-	if flingState.flingConnection then flingState.flingConnection:Disconnect() flingState.flingConnection = nil end
+	flingState.flingEnabled = false
 	if flingState.flingBAV then pcall(function() flingState.flingBAV:Destroy() end) flingState.flingBAV = nil end
+
+	-- Disable auto-noclip if we enabled it
+	if flingState.flingAutoNoclip then
+		moveState.noclipEnabled = false
+		F.stopNoclip()
+		flingState.flingAutoNoclip = false
+	end
 
 	pcall(function()
 		local character = LocalPlayer.Character
@@ -1804,8 +1823,8 @@ F.stopFling = function()
 					else
 						part.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
 					end
-					part.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-					part.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+					part.Massless = false
+					part.Velocity = Vector3.new(0, 0, 0)
 				end
 			end
 		end
@@ -1897,8 +1916,8 @@ F.stopCarFling = function()
 end
 
 -- ===================== WALK FLING LOGIC =====================
--- Heavy density + Y-axis spin only = walk normally, fling on contact
--- Key: only spin on Y axis so character doesn't tumble/launch itself
+-- Exact Infinite Yield method: noclip + velocity spike each frame
+-- No spin, just massive velocity spikes that get restored next frame
 
 F.startWalkFling = function()
 	local ok, err = pcall(function()
@@ -1907,42 +1926,42 @@ F.startWalkFling = function()
 		local root = character:FindFirstChild("HumanoidRootPart")
 		if not root then return end
 
-		-- Make character super dense
-		flingState.walkFlingProps = {}
-		for _, part in ipairs(character:GetDescendants()) do
-			if part:IsA("BasePart") then
-				flingState.walkFlingProps[part] = part.CustomPhysicalProperties
-				part.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
-			end
+		-- Enable noclip
+		if not moveState.noclipEnabled then
+			moveState.noclipEnabled = true
+			F.startNoclip()
+			flingState.walkFlingAutoNoclip = true
 		end
 
-		-- BodyAngularVelocity for Y-axis spin (real physics, server-processed)
-		local bav = Instance.new("BodyAngularVelocity")
-		bav.AngularVelocity = Vector3.new(0, flingState.walkFlingPower, 0)
-		bav.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-		bav.P = math.huge
-		bav.Parent = root
-		flingState.walkFlingBAV = bav
+		flingState.walkFlingEnabled = true
+		local movel = 0.1
 
-		-- Heartbeat: keep Y-axis stable so we don't fly, re-apply BAV if removed
-		flingState.walkFlingConnection = RunService.Heartbeat:Connect(function()
-			pcall(function()
+		-- Velocity spike loop (runs across Heartbeat/RenderStepped/Stepped)
+		spawn(function()
+			while flingState.walkFlingEnabled do
 				local char = LocalPlayer.Character
-				if not char then return end
-				local rt = char:FindFirstChild("HumanoidRootPart")
-				if not rt then return end
-				-- Zero out vertical velocity so we stay grounded
-				local vel = rt.AssemblyLinearVelocity
-				rt.AssemblyLinearVelocity = Vector3.new(vel.X, math.min(vel.Y, 0), vel.Z)
-				-- Update BAV power if slider changed
-				if flingState.walkFlingBAV then
-					flingState.walkFlingBAV.AngularVelocity = Vector3.new(0, flingState.walkFlingPower, 0)
+				local rt = char and char:FindFirstChild("HumanoidRootPart")
+				if not (char and char.Parent and rt and rt.Parent) then
+					RunService.Heartbeat:Wait()
+				else
+					-- Save current velocity, then spike it
+					local vel = rt.Velocity
+					rt.Velocity = vel * flingState.walkFlingPower + Vector3.new(0, flingState.walkFlingPower, 0)
+
+					RunService.RenderStepped:Wait()
+					-- Restore original velocity
+					if char and char.Parent and rt and rt.Parent then
+						rt.Velocity = vel
+					end
+
+					RunService.Stepped:Wait()
+					-- Tiny Y oscillation to maintain ground contact
+					if char and char.Parent and rt and rt.Parent then
+						rt.Velocity = vel + Vector3.new(0, movel, 0)
+						movel = movel * -1
+					end
 				end
-				-- Re-parent BAV if server removed it
-				if flingState.walkFlingBAV and not flingState.walkFlingBAV.Parent then
-					flingState.walkFlingBAV.Parent = rt
-				end
-			end)
+			end
 		end)
 
 		addLog("[WALK FLING] ON - Walk into players!", COLORS.success)
@@ -1953,29 +1972,14 @@ F.startWalkFling = function()
 end
 
 F.stopWalkFling = function()
-	if flingState.walkFlingConnection then
-		flingState.walkFlingConnection:Disconnect()
-		flingState.walkFlingConnection = nil
-	end
-	if flingState.walkFlingBAV then pcall(function() flingState.walkFlingBAV:Destroy() end) flingState.walkFlingBAV = nil end
+	flingState.walkFlingEnabled = false
 
-	pcall(function()
-		local character = LocalPlayer.Character
-		if character then
-			for _, part in ipairs(character:GetDescendants()) do
-				if part:IsA("BasePart") then
-					if flingState.walkFlingProps[part] then
-						part.CustomPhysicalProperties = flingState.walkFlingProps[part]
-					else
-						part.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
-					end
-					part.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-					part.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-				end
-			end
-		end
-	end)
-	flingState.walkFlingProps = {}
+	-- Disable auto-noclip if we enabled it
+	if flingState.walkFlingAutoNoclip then
+		moveState.noclipEnabled = false
+		F.stopNoclip()
+		flingState.walkFlingAutoNoclip = false
+	end
 
 	addLog("[WALK FLING] OFF", COLORS.error)
 end
