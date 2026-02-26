@@ -93,6 +93,10 @@ local flyState = {
 	flyConnection = nil,
 	bodyGyro = nil,
 	bodyVelocity = nil,
+	linearVelocity = nil,
+	alignOrientation = nil,
+	flyAttachment = nil,
+	savedPlatformStand = false,
 	vehicleFlyEnabled = false,
 	vehicleFlyConnection = nil,
 	vehicleFlyBV = nil,
@@ -1428,15 +1432,54 @@ local function startFly()
 	local character = LocalPlayer.Character
 	if not character then return end
 	local hrp = character:FindFirstChild("HumanoidRootPart")
+	local hum = character:FindFirstChild("Humanoid")
 	if not hrp then return end
-	flyState.bodyGyro = Instance.new("BodyGyro")
-	flyState.bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-	flyState.bodyGyro.P = 9e4
-	flyState.bodyGyro.Parent = hrp
-	flyState.bodyVelocity = Instance.new("BodyVelocity")
-	flyState.bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-	flyState.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
-	flyState.bodyVelocity.Parent = hrp
+
+	-- Save and set PlatformStand to prevent normal physics
+	if hum then
+		flyState.savedPlatformStand = hum.PlatformStand
+		hum.PlatformStand = true
+	end
+
+	-- Try modern LinearVelocity + AlignOrientation first
+	local useModern = false
+	pcall(function()
+		-- Create attachment for constraints
+		flyState.flyAttachment = hrp:FindFirstChild("RootAttachment") or Instance.new("Attachment", hrp)
+
+		flyState.linearVelocity = Instance.new("LinearVelocity")
+		flyState.linearVelocity.MaxForce = math.huge
+		flyState.linearVelocity.VelocityConstraintMode = Enum.VelocityConstraintMode.Vector
+		flyState.linearVelocity.Attachment0 = flyState.flyAttachment
+		flyState.linearVelocity.RelativeTo = Enum.ActuatorRelativeTo.World
+		flyState.linearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
+		flyState.linearVelocity.Parent = hrp
+
+		flyState.alignOrientation = Instance.new("AlignOrientation")
+		flyState.alignOrientation.MaxTorque = math.huge
+		flyState.alignOrientation.Responsiveness = 200
+		flyState.alignOrientation.Mode = Enum.OrientationAlignmentMode.OneAttachment
+		flyState.alignOrientation.Attachment0 = flyState.flyAttachment
+		flyState.alignOrientation.CFrame = workspace.CurrentCamera.CFrame
+		flyState.alignOrientation.Parent = hrp
+
+		useModern = true
+	end)
+
+	-- Fallback to legacy BodyGyro + BodyVelocity
+	if not useModern then
+		pcall(function()
+			flyState.bodyGyro = Instance.new("BodyGyro")
+			flyState.bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+			flyState.bodyGyro.P = 9e4
+			flyState.bodyGyro.Parent = hrp
+			flyState.bodyVelocity = Instance.new("BodyVelocity")
+			flyState.bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+			flyState.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+			flyState.bodyVelocity.Parent = hrp
+		end)
+	end
+
 	flyState.flyConnection = RunService.Heartbeat:Connect(function()
 		if not flyState.flyEnabled or not hrp or not hrp.Parent then return end
 		local cam = workspace.CurrentCamera
@@ -1448,16 +1491,37 @@ local function startFly()
 		if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir = dir + Vector3.new(0, 1, 0) end
 		if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then dir = dir - Vector3.new(0, 1, 0) end
 		if dir.Magnitude > 0 then dir = dir.Unit end
-		flyState.bodyVelocity.Velocity = dir * flyState.flySpeed
-		flyState.bodyGyro.CFrame = cam.CFrame
+		local vel = dir * flyState.flySpeed
+
+		if flyState.linearVelocity then
+			flyState.linearVelocity.VectorVelocity = vel
+		end
+		if flyState.alignOrientation then
+			flyState.alignOrientation.CFrame = cam.CFrame
+		end
+		if flyState.bodyVelocity then
+			flyState.bodyVelocity.Velocity = vel
+		end
+		if flyState.bodyGyro then
+			flyState.bodyGyro.CFrame = cam.CFrame
+		end
 	end)
 	addLog("[FLY] ON - Speed: " .. flyState.flySpeed, COLORS.success)
 end
 
 local function stopFly()
 	if flyState.flyConnection then flyState.flyConnection:Disconnect() flyState.flyConnection = nil end
+	if flyState.linearVelocity then pcall(function() flyState.linearVelocity:Destroy() end) flyState.linearVelocity = nil end
+	if flyState.alignOrientation then pcall(function() flyState.alignOrientation:Destroy() end) flyState.alignOrientation = nil end
 	if flyState.bodyGyro then pcall(function() flyState.bodyGyro:Destroy() end) flyState.bodyGyro = nil end
 	if flyState.bodyVelocity then pcall(function() flyState.bodyVelocity:Destroy() end) flyState.bodyVelocity = nil end
+	flyState.flyAttachment = nil
+	-- Restore PlatformStand
+	local character = LocalPlayer.Character
+	if character then
+		local hum = character:FindFirstChild("Humanoid")
+		if hum then hum.PlatformStand = flyState.savedPlatformStand or false end
+	end
 	addLog("[FLY] OFF", COLORS.error)
 end
 

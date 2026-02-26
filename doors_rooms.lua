@@ -1,6 +1,6 @@
 --[[
     DOORS: The Rooms - Auto A-1000
-    Auto-tweens through every room to A-1000
+    Auto-walks through every room to A-1000
     Entity responses:
       A-60  -> rush to nearest locker and hide
       A-90  -> FREEZE (don't move, don't look around)
@@ -15,36 +15,40 @@
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
 
 local lp = Players.LocalPlayer
 
 -- ===================== CONFIG =====================
-local WALK_SPEED = 70       -- studs/sec tween to door
-local RUSH_SPEED = 250      -- studs/sec tween to locker
-local SCAN_RATE = 0.05      -- seconds between entity scans
-local SAFE_BUFFER = 3       -- extra wait after entity gone
-local DOOR_WAIT = 1.5       -- wait after opening door for next room
-local MAX_HIDE_TIME = 35    -- max seconds to stay hidden
-local A90_FREEZE_TIME = 4   -- seconds to freeze for A-90
+local WALK_SPEED = 70
+local RUSH_SPEED = 250
+local SCAN_RATE = 0.05
+local SAFE_BUFFER = 3
+local DOOR_WAIT = 2
+local MAX_HIDE_TIME = 35
+local A90_FREEZE_TIME = 4
 local TOGGLE_KEY = Enum.KeyCode.RightShift
 
--- The Rooms entities (only these 3 exist in this subfloor)
--- A-60: red face, hides in locker (rumbling/static sound)
--- A-90: pixelated face on screen, FREEZE - do NOT move or look
--- A-120: white face from ahead, hides in locker (thumping sound)
-local HIDE_ENTITIES = {"A-60", "A-120"}
-local FREEZE_ENTITIES = {"A-90"}
-
--- All possible model name variants
-local HIDE_ENTITY_PATTERNS = {"a%-60", "a60"}
+-- Entity patterns for The Rooms
+local HIDE_ENTITY_PATTERNS = {"a%-60", "a60", "a%-120", "a120"}
 local FREEZE_ENTITY_PATTERNS = {"a%-90", "a90"}
-local HIDE_ENTITY_EXACT = {"A-60", "A60"}
+local HIDE_ENTITY_EXACT = {"A-60", "A60", "A-120", "A120"}
 local FREEZE_ENTITY_EXACT = {"A-90", "A90"}
 local ALL_ENTITY_EXACT = {"A-60", "A60", "A-90", "A90", "A-120", "A120"}
 
--- Keywords for hiding spot models (case-insensitive)
 local HIDE_WORDS = {"closet", "locker", "wardrobe", "hiding"}
+
+-- ===================== GAME DATA =====================
+-- DOORS stores room number in ReplicatedStorage.GameData.LatestRoom
+local GameData = nil
+local LatestRoom = nil
+pcall(function()
+    GameData = ReplicatedStorage:WaitForChild("GameData", 5)
+    if GameData then
+        LatestRoom = GameData:WaitForChild("LatestRoom", 5)
+    end
+end)
 
 -- ===================== STATE =====================
 local active = false
@@ -90,7 +94,6 @@ local border = Instance.new("UIStroke", panel)
 border.Color = Color3.fromRGB(160, 50, 50)
 border.Thickness = 2
 
--- Title bar
 local titleBar = Instance.new("Frame", panel)
 titleBar.Size = UDim2.new(1, 0, 0, 26)
 titleBar.BackgroundColor3 = Color3.fromRGB(160, 50, 50)
@@ -113,7 +116,6 @@ titleLbl.Font = Enum.Font.GothamBold
 titleLbl.TextSize = 12
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left
 
--- Info labels
 local function makeLabel(yOff, text, color)
     local l = Instance.new("TextLabel", panel)
     l.Size = UDim2.new(1, -16, 0, 16)
@@ -132,7 +134,6 @@ local roomLbl = makeLabel(48, "Room: A-000")
 local alertLbl = makeLabel(66, "", Color3.fromRGB(255, 80, 80))
 alertLbl.Font = Enum.Font.GothamBold
 
--- Toggle button
 local btn = Instance.new("TextButton", panel)
 btn.Size = UDim2.new(1, -16, 0, 24)
 btn.Position = UDim2.new(0, 8, 0, 88)
@@ -171,6 +172,40 @@ local function setStatus(t) statusLbl.Text = "Status: " .. t end
 local function setRoom(n) roomCount = n; roomLbl.Text = string.format("Room: A-%03d", n) end
 local function setAlert(t) alertLbl.Text = t end
 
+-- Get the current room number from game data
+local function getCurrentRoomNumber()
+    if LatestRoom then
+        local ok, val = pcall(function() return LatestRoom.Value end)
+        if ok and val then return val end
+    end
+    -- Fallback: find highest numbered room in CurrentRooms
+    local rooms = workspace:FindFirstChild("CurrentRooms")
+    if not rooms then return 0 end
+    local maxN = 0
+    for _, room in pairs(rooms:GetChildren()) do
+        local n = tonumber(room.Name)
+        if n and n > maxN then maxN = n end
+    end
+    return maxN
+end
+
+-- Get the current room model
+local function getCurrentRoom()
+    local rooms = workspace:FindFirstChild("CurrentRooms")
+    if not rooms then return nil end
+    local roomNum = getCurrentRoomNumber()
+    -- Try direct lookup
+    local room = rooms:FindFirstChild(tostring(roomNum))
+    if room then return room, roomNum end
+    -- Fallback: find highest
+    local latest, maxN = nil, -1
+    for _, r in pairs(rooms:GetChildren()) do
+        local n = tonumber(r.Name)
+        if n and n > maxN then maxN = n; latest = r end
+    end
+    return latest, maxN
+end
+
 -- Tween HRP to a target CFrame
 local function tweenTo(cf, speed)
     if not hrp or not hrp.Parent then return false end
@@ -188,22 +223,15 @@ local function stopTween()
     if currentTween then pcall(function() currentTween:Cancel() end); currentTween = nil end
 end
 
--- Detect which entity type is present
--- Returns: "hide", "freeze", or nil
+-- ===================== ENTITY DETECTION =====================
+
 local function detectEntity()
-    -- Check for A-60 / A-120 (hide entities)
     for _, name in ipairs(HIDE_ENTITY_EXACT) do
-        if workspace:FindFirstChild(name) then
-            return "hide", name
-        end
+        if workspace:FindFirstChild(name) then return "hide", name end
     end
-    -- Check for A-90 (freeze entity)
     for _, name in ipairs(FREEZE_ENTITY_EXACT) do
-        if workspace:FindFirstChild(name) then
-            return "freeze", name
-        end
+        if workspace:FindFirstChild(name) then return "freeze", name end
     end
-    -- Fuzzy check on workspace children
     for _, child in pairs(workspace:GetChildren()) do
         if child:IsA("Model") then
             local n = child.Name:lower()
@@ -218,33 +246,22 @@ local function detectEntity()
     return nil, nil
 end
 
--- Check if any entity is still present
 local function anyEntityPresent()
     for _, name in ipairs(ALL_ENTITY_EXACT) do
         if workspace:FindFirstChild(name) then return true end
     end
-    for _, child in pairs(workspace:GetChildren()) do
-        if child:IsA("Model") then
-            local n = child.Name:lower()
-            if n:find("a%-60") or n:find("a60") or n:find("a%-90") or n:find("a90") or n:find("a%-120") or n:find("a120") then
-                return true
-            end
-        end
-    end
     return false
 end
 
--- Find nearest hiding spot (locker/closet with ProximityPrompt)
+-- ===================== HIDING SPOT FINDER =====================
+
 local function findHidingSpot()
     local rooms = workspace:FindFirstChild("CurrentRooms")
     if not rooms or not hrp or not hrp.Parent then return nil end
-
     local best, bestDist = nil, math.huge
-
     for _, room in pairs(rooms:GetChildren()) do
         for _, desc in pairs(room:GetDescendants()) do
             if desc:IsA("ProximityPrompt") then
-                -- Walk up parents checking for hiding spot keywords
                 local node = desc.Parent
                 local isHideSpot = false
                 for _ = 1, 6 do
@@ -256,66 +273,75 @@ local function findHidingSpot()
                     if isHideSpot then break end
                     node = node.Parent
                 end
-
                 if isHideSpot then
                     local part = desc.Parent
                     if part:IsA("BasePart") then
                         local d = (part.Position - hrp.Position).Magnitude
-                        if d < bestDist then
-                            best = desc
-                            bestDist = d
-                        end
+                        if d < bestDist then best = desc; bestDist = d end
                     end
                 end
             end
         end
     end
-
     return best
 end
 
--- Find the door ProximityPrompt in the latest (furthest) loaded room
-local function findNextDoor()
-    local rooms = workspace:FindFirstChild("CurrentRooms")
-    if not rooms then return nil, 0, nil end
+-- ===================== DOOR FINDER + OPENER =====================
 
-    -- Find latest room by number
-    local latest, maxN = nil, -1
-    for _, room in pairs(rooms:GetChildren()) do
-        local n = tonumber(room.Name)
-        if n and n > maxN then maxN = n; latest = room end
+local function findAndOpenDoor()
+    local room, roomNum = getCurrentRoom()
+    if not room then return false, 0 end
+
+    -- DOORS uses a "Door" model inside the room
+    local doorModel = room:FindFirstChild("Door")
+    if not doorModel then return false, roomNum end
+
+    -- Find the door part to walk to
+    local doorPart = doorModel:FindFirstChild("Door") or doorModel.PrimaryPart or doorModel:FindFirstChildWhichIsA("BasePart")
+    if not doorPart then return false, roomNum end
+
+    -- Walk to the door
+    setStatus("Walking to door")
+    tweenTo(doorPart.CFrame * CFrame.new(0, 0, -3), WALK_SPEED)
+    if hiding or frozen then return false, roomNum end
+
+    setStatus("Opening door")
+
+    -- Method 1: ClientOpen:FireServer() (how DOORS actually opens doors)
+    local clientOpen = doorModel:FindFirstChild("ClientOpen")
+    if clientOpen and clientOpen:IsA("RemoteEvent") then
+        clientOpen:FireServer()
+        return true, roomNum
     end
-    if not latest then return nil, 0, nil end
 
-    -- Look for Door model with ProximityPrompt
-    local doorModel = latest:FindFirstChild("Door")
-    if doorModel then
-        local pp = doorModel:FindFirstChildWhichIsA("ProximityPrompt", true)
-        if pp then return pp, maxN, nil end
-    end
-
-    -- Fallback: any prompt under something named "door"
-    for _, desc in pairs(latest:GetDescendants()) do
-        if desc:IsA("ProximityPrompt") then
-            local node = desc.Parent
-            for _ = 1, 4 do
-                if node and node.Name:lower():find("door") then
-                    return desc, maxN, nil
-                end
-                if node then node = node.Parent end
+    -- Method 2: Fire the lock's UnlockPrompt first, then ClientOpen
+    local lockModel = doorModel:FindFirstChild("Lock")
+    if lockModel then
+        local unlockPrompt = lockModel:FindFirstChild("UnlockPrompt")
+        if unlockPrompt and unlockPrompt:IsA("ProximityPrompt") then
+            if fireproximityprompt then
+                fireproximityprompt(unlockPrompt, 0)
             end
+            task.wait(0.3)
+        end
+        -- Try ClientOpen again after unlocking
+        clientOpen = doorModel:FindFirstChild("ClientOpen")
+        if clientOpen and clientOpen:IsA("RemoteEvent") then
+            clientOpen:FireServer()
+            return true, roomNum
         end
     end
 
-    -- Fallback 2: door model exists but no prompt - just walk to it
-    if doorModel then
-        local part = doorModel.PrimaryPart or doorModel:FindFirstChildWhichIsA("BasePart")
-        if part then
-            return nil, maxN, part.CFrame
-        end
+    -- Method 3: fireproximityprompt on any prompt in the door
+    local prompt = doorModel:FindFirstChildWhichIsA("ProximityPrompt", true)
+    if prompt and fireproximityprompt then
+        fireproximityprompt(prompt, 0)
+        return true, roomNum
     end
 
-    return nil, maxN, nil
+    -- Method 4: just walk through (some rooms have open doorways)
+    tweenTo(doorPart.CFrame * CFrame.new(0, 0, 5), WALK_SPEED)
+    return true, roomNum
 end
 
 -- ===================== A-60 / A-120: HIDE IN LOCKER =====================
@@ -330,41 +356,29 @@ local function hideFromEntity(name)
 
     local prompt = findHidingSpot()
     if prompt then
-        -- Rush to hiding spot
         local part = prompt.Parent
         if part:IsA("BasePart") then
             tweenTo(part.CFrame, RUSH_SPEED)
         end
-
-        -- Enter hiding spot
         task.wait(0.05)
         if fireproximityprompt then
             fireproximityprompt(prompt)
         end
-
         setStatus("Hidden - waiting...")
-
-        -- Wait for entity to leave
         local t0 = tick()
         repeat
             task.wait(0.3)
         until not anyEntityPresent() or (tick() - t0 > MAX_HIDE_TIME)
-
-        -- Extra safety buffer
         task.wait(SAFE_BUFFER)
-
-        -- Exit hiding spot
         setStatus("Exiting locker")
         if fireproximityprompt then
             fireproximityprompt(prompt)
         end
         task.wait(0.5)
     else
-        -- No locker found - just freeze and hope
         setStatus("No locker! Freezing...")
         local t0 = tick()
-        repeat
-            task.wait(0.5)
+        repeat task.wait(0.5)
         until not anyEntityPresent() or (tick() - t0 > MAX_HIDE_TIME)
         task.wait(SAFE_BUFFER)
     end
@@ -373,7 +387,7 @@ local function hideFromEntity(name)
     hiding = false
 end
 
--- ===================== A-90: FREEZE (don't move or look) =====================
+-- ===================== A-90: FREEZE =====================
 
 local function freezeForA90(name)
     if hiding or frozen then return end
@@ -383,14 +397,11 @@ local function freezeForA90(name)
     setAlert("!! " .. name .. " - DON'T MOVE !!")
     setStatus("FROZEN - A-90!")
 
-    -- Anchor the HRP so we can't move at all
     local wasAnchored = false
     if hrp and hrp.Parent then
         wasAnchored = hrp.Anchored
         hrp.Anchored = true
     end
-
-    -- Disable character movement
     local savedSpeed = 0
     if hum and hum.Parent then
         savedSpeed = hum.WalkSpeed
@@ -398,21 +409,16 @@ local function freezeForA90(name)
         hum.JumpPower = 0
     end
 
-    -- Wait for A-90 to pass (usually ~3-4 seconds)
     local t0 = tick()
     repeat
         task.wait(0.2)
-        -- Keep anchored in case something resets it
         if hrp and hrp.Parent then hrp.Anchored = true end
         if hum and hum.Parent then hum.WalkSpeed = 0 end
     until (tick() - t0 > A90_FREEZE_TIME) and not anyEntityPresent()
 
-    task.wait(1) -- small extra buffer
+    task.wait(1)
 
-    -- Restore movement
-    if hrp and hrp.Parent then
-        hrp.Anchored = wasAnchored
-    end
+    if hrp and hrp.Parent then hrp.Anchored = wasAnchored end
     if hum and hum.Parent then
         hum.WalkSpeed = savedSpeed
         hum.JumpPower = 50
@@ -424,7 +430,6 @@ end
 
 -- ===================== ENTITY SCANNER =====================
 
--- Respond to detected entity based on type
 local function handleEntity(entityType, name)
     if entityType == "hide" then
         hideFromEntity(name)
@@ -433,7 +438,6 @@ local function handleEntity(entityType, name)
     end
 end
 
--- Polling loop
 task.spawn(function()
     while true do
         task.wait(SCAN_RATE)
@@ -444,17 +448,14 @@ task.spawn(function()
     end
 end)
 
--- Instant detection via ChildAdded (faster than polling)
 workspace.ChildAdded:Connect(function(child)
     if not active or hiding or frozen then return end
-    task.wait() -- yield one frame for properties to replicate
+    task.wait()
     local n = child.Name:lower()
-    -- Check hide entities (A-60, A-120)
     if n:find("a%-60") or n:find("a60") or n:find("a%-120") or n:find("a120") then
         hideFromEntity(child.Name)
         return
     end
-    -- Check freeze entity (A-90)
     if n:find("a%-90") or n:find("a90") then
         freezeForA90(child.Name)
         return
@@ -465,41 +466,23 @@ end)
 
 task.spawn(function()
     while true do
-        task.wait(0.3)
+        task.wait(0.5)
         if active and not hiding and not frozen then
             getChar()
             if hrp and hrp.Parent then
-                local prompt, roomN, fallbackCF = findNextDoor()
+                local curRoom = getCurrentRoomNumber()
+                setRoom(curRoom)
 
-                if prompt then
-                    setRoom(roomN)
-                    setStatus("Walking to door")
-
-                    local part = prompt.Parent
-                    if part:IsA("BasePart") then
-                        local cf = part.CFrame
-                        tweenTo(cf * CFrame.new(0, 0, -4), WALK_SPEED)
-                    end
-
-                    if not hiding and not frozen then
-                        setStatus("Opening door")
-                        if fireproximityprompt then
-                            fireproximityprompt(prompt)
-                        end
-                        setRoom(roomN + 1)
-                        task.wait(DOOR_WAIT)
-                    end
-
-                elseif fallbackCF then
-                    setRoom(roomN)
-                    setStatus("Walking through")
-                    tweenTo(fallbackCF, WALK_SPEED)
+                local opened, roomN = findAndOpenDoor()
+                if opened then
+                    -- Wait for room to load
                     task.wait(DOOR_WAIT)
-                else
-                    setStatus("Waiting for room...")
+                    -- Update room from game data
+                    local newRoom = getCurrentRoomNumber()
+                    setRoom(newRoom)
                 end
 
-                if roomCount >= 1000 then
+                if getCurrentRoomNumber() >= 1000 then
                     setStatus("REACHED A-1000!")
                     active = false
                     btn.Text = "A-1000!"
@@ -511,15 +494,25 @@ task.spawn(function()
     end
 end)
 
+-- Listen for room changes via game data
+if LatestRoom then
+    LatestRoom.Changed:Connect(function(newVal)
+        if active then
+            setRoom(newVal)
+        end
+    end)
+end
+
 -- ===================== TOGGLE =====================
 
 local function toggle()
-    if roomCount >= 1000 then return end
+    if getCurrentRoomNumber() >= 1000 then return end
     active = not active
     if active then
         btn.Text = "STOP (RShift)"
         btn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
         setStatus("Running")
+        setRoom(getCurrentRoomNumber())
     else
         btn.Text = "START (RShift)"
         btn.BackgroundColor3 = Color3.fromRGB(40, 130, 40)
