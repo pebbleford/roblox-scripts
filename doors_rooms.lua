@@ -1,7 +1,10 @@
 --[[
     DOORS: The Rooms - Auto A-1000
     Auto-tweens through every room to A-1000
-    Auto-hides in nearest locker when entity detected
+    Entity responses:
+      A-60  -> rush to nearest locker and hide
+      A-90  -> FREEZE (don't move, don't look around)
+      A-120 -> rush to nearest locker and hide
 
     Controls:
       GUI START/STOP button
@@ -23,16 +26,22 @@ local SCAN_RATE = 0.05      -- seconds between entity scans
 local SAFE_BUFFER = 3       -- extra wait after entity gone
 local DOOR_WAIT = 1.5       -- wait after opening door for next room
 local MAX_HIDE_TIME = 35    -- max seconds to stay hidden
+local A90_FREEZE_TIME = 4   -- seconds to freeze for A-90
 local TOGGLE_KEY = Enum.KeyCode.RightShift
 
--- Entity model names that spawn in workspace
-local ENTITY_NAMES = {
-    "RushMoving", "AmbushMoving",
-    "A60", "A120",
-    "RushNew", "AmbushNew",
-    "A60New", "A120New",
-    "Blitz", "BlitzNew",
-}
+-- The Rooms entities (only these 3 exist in this subfloor)
+-- A-60: red face, hides in locker (rumbling/static sound)
+-- A-90: pixelated face on screen, FREEZE - do NOT move or look
+-- A-120: white face from ahead, hides in locker (thumping sound)
+local HIDE_ENTITIES = {"A-60", "A-120"}
+local FREEZE_ENTITIES = {"A-90"}
+
+-- All possible model name variants
+local HIDE_ENTITY_PATTERNS = {"a%-60", "a60"}
+local FREEZE_ENTITY_PATTERNS = {"a%-90", "a90"}
+local HIDE_ENTITY_EXACT = {"A-60", "A60"}
+local FREEZE_ENTITY_EXACT = {"A-90", "A90"}
+local ALL_ENTITY_EXACT = {"A-60", "A60", "A-90", "A90", "A-120", "A120"}
 
 -- Keywords for hiding spot models (case-insensitive)
 local HIDE_WORDS = {"closet", "locker", "wardrobe", "hiding"}
@@ -40,6 +49,7 @@ local HIDE_WORDS = {"closet", "locker", "wardrobe", "hiding"}
 -- ===================== STATE =====================
 local active = false
 local hiding = false
+local frozen = false
 local currentTween = nil
 local roomCount = 0
 
@@ -178,24 +188,50 @@ local function stopTween()
     if currentTween then pcall(function() currentTween:Cancel() end); currentTween = nil end
 end
 
--- Scan workspace for entity models
+-- Detect which entity type is present
+-- Returns: "hide", "freeze", or nil
 local function detectEntity()
-    -- Check exact names first (fast)
-    for _, name in ipairs(ENTITY_NAMES) do
+    -- Check for A-60 / A-120 (hide entities)
+    for _, name in ipairs(HIDE_ENTITY_EXACT) do
         if workspace:FindFirstChild(name) then
-            return true, name
+            return "hide", name
+        end
+    end
+    -- Check for A-90 (freeze entity)
+    for _, name in ipairs(FREEZE_ENTITY_EXACT) do
+        if workspace:FindFirstChild(name) then
+            return "freeze", name
         end
     end
     -- Fuzzy check on workspace children
     for _, child in pairs(workspace:GetChildren()) do
         if child:IsA("Model") then
             local n = child.Name:lower()
-            if n:find("rush") or n:find("ambush") or n:find("a%-60") or n:find("a%-120") or n:find("blitz") then
-                return true, child.Name
+            for _, pat in ipairs(HIDE_ENTITY_PATTERNS) do
+                if n:find(pat) then return "hide", child.Name end
+            end
+            for _, pat in ipairs(FREEZE_ENTITY_PATTERNS) do
+                if n:find(pat) then return "freeze", child.Name end
             end
         end
     end
-    return false, nil
+    return nil, nil
+end
+
+-- Check if any entity is still present
+local function anyEntityPresent()
+    for _, name in ipairs(ALL_ENTITY_EXACT) do
+        if workspace:FindFirstChild(name) then return true end
+    end
+    for _, child in pairs(workspace:GetChildren()) do
+        if child:IsA("Model") then
+            local n = child.Name:lower()
+            if n:find("a%-60") or n:find("a60") or n:find("a%-90") or n:find("a90") or n:find("a%-120") or n:find("a120") then
+                return true
+            end
+        end
+    end
+    return false
 end
 
 -- Find nearest hiding spot (locker/closet with ProximityPrompt)
@@ -282,10 +318,10 @@ local function findNextDoor()
     return nil, maxN, nil
 end
 
--- ===================== ENTITY HIDING =====================
+-- ===================== A-60 / A-120: HIDE IN LOCKER =====================
 
 local function hideFromEntity(name)
-    if hiding then return end
+    if hiding or frozen then return end
     hiding = true
     stopTween()
 
@@ -312,7 +348,7 @@ local function hideFromEntity(name)
         local t0 = tick()
         repeat
             task.wait(0.3)
-        until not detectEntity() or (tick() - t0 > MAX_HIDE_TIME)
+        until not anyEntityPresent() or (tick() - t0 > MAX_HIDE_TIME)
 
         -- Extra safety buffer
         task.wait(SAFE_BUFFER)
@@ -325,11 +361,11 @@ local function hideFromEntity(name)
         task.wait(0.5)
     else
         -- No locker found - just freeze and hope
-        setStatus("No locker found! Waiting...")
+        setStatus("No locker! Freezing...")
         local t0 = tick()
         repeat
             task.wait(0.5)
-        until not detectEntity() or (tick() - t0 > MAX_HIDE_TIME)
+        until not anyEntityPresent() or (tick() - t0 > MAX_HIDE_TIME)
         task.wait(SAFE_BUFFER)
     end
 
@@ -337,32 +373,91 @@ local function hideFromEntity(name)
     hiding = false
 end
 
+-- ===================== A-90: FREEZE (don't move or look) =====================
+
+local function freezeForA90(name)
+    if hiding or frozen then return end
+    frozen = true
+    stopTween()
+
+    setAlert("!! " .. name .. " - DON'T MOVE !!")
+    setStatus("FROZEN - A-90!")
+
+    -- Anchor the HRP so we can't move at all
+    local wasAnchored = false
+    if hrp and hrp.Parent then
+        wasAnchored = hrp.Anchored
+        hrp.Anchored = true
+    end
+
+    -- Disable character movement
+    local savedSpeed = 0
+    if hum and hum.Parent then
+        savedSpeed = hum.WalkSpeed
+        hum.WalkSpeed = 0
+        hum.JumpPower = 0
+    end
+
+    -- Wait for A-90 to pass (usually ~3-4 seconds)
+    local t0 = tick()
+    repeat
+        task.wait(0.2)
+        -- Keep anchored in case something resets it
+        if hrp and hrp.Parent then hrp.Anchored = true end
+        if hum and hum.Parent then hum.WalkSpeed = 0 end
+    until (tick() - t0 > A90_FREEZE_TIME) and not anyEntityPresent()
+
+    task.wait(1) -- small extra buffer
+
+    -- Restore movement
+    if hrp and hrp.Parent then
+        hrp.Anchored = wasAnchored
+    end
+    if hum and hum.Parent then
+        hum.WalkSpeed = savedSpeed
+        hum.JumpPower = 50
+    end
+
+    setAlert("")
+    frozen = false
+end
+
 -- ===================== ENTITY SCANNER =====================
+
+-- Respond to detected entity based on type
+local function handleEntity(entityType, name)
+    if entityType == "hide" then
+        hideFromEntity(name)
+    elseif entityType == "freeze" then
+        freezeForA90(name)
+    end
+end
 
 -- Polling loop
 task.spawn(function()
     while true do
         task.wait(SCAN_RATE)
-        if active and not hiding then
-            local found, name = detectEntity()
-            if found then hideFromEntity(name) end
+        if active and not hiding and not frozen then
+            local entityType, name = detectEntity()
+            if entityType then handleEntity(entityType, name) end
         end
     end
 end)
 
 -- Instant detection via ChildAdded (faster than polling)
 workspace.ChildAdded:Connect(function(child)
-    if not active or hiding then return end
+    if not active or hiding or frozen then return end
     task.wait() -- yield one frame for properties to replicate
-    for _, eName in ipairs(ENTITY_NAMES) do
-        if child.Name == eName then
-            hideFromEntity(child.Name)
-            return
-        end
-    end
     local n = child.Name:lower()
-    if n:find("rush") or n:find("ambush") or n:find("a%-60") or n:find("a%-120") or n:find("blitz") then
+    -- Check hide entities (A-60, A-120)
+    if n:find("a%-60") or n:find("a60") or n:find("a%-120") or n:find("a120") then
         hideFromEntity(child.Name)
+        return
+    end
+    -- Check freeze entity (A-90)
+    if n:find("a%-90") or n:find("a90") then
+        freezeForA90(child.Name)
+        return
     end
 end)
 
@@ -371,7 +466,7 @@ end)
 task.spawn(function()
     while true do
         task.wait(0.3)
-        if active and not hiding then
+        if active and not hiding and not frozen then
             getChar()
             if hrp and hrp.Parent then
                 local prompt, roomN, fallbackCF = findNextDoor()
@@ -386,7 +481,7 @@ task.spawn(function()
                         tweenTo(cf * CFrame.new(0, 0, -4), WALK_SPEED)
                     end
 
-                    if not hiding then
+                    if not hiding and not frozen then
                         setStatus("Opening door")
                         if fireproximityprompt then
                             fireproximityprompt(prompt)
