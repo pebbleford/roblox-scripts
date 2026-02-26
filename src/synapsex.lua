@@ -3879,20 +3879,33 @@ F.startFreecam = function()
 		visualState.freecamWasAnchored = hrp.Anchored
 		hrp.Anchored = true
 	end
+	visualState.freecamMouseConn = UserInputService.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement then
+			local delta = input.Delta
+			visualState.freecamYaw = (visualState.freecamYaw or 0) - delta.X * 0.003
+			visualState.freecamPitch = math.clamp((visualState.freecamPitch or 0) - delta.Y * 0.003, -math.rad(89), math.rad(89))
+		end
+	end)
+	-- Init yaw/pitch from current camera orientation
+	local _, ry, _ = cam.CFrame:ToEulerAnglesYXZ()
+	local rx, _, _ = cam.CFrame:ToEulerAnglesYXZ()
+	visualState.freecamYaw = ry
+	visualState.freecamPitch = rx
+	UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
 	visualState.freecamConnection = RunService.RenderStepped:Connect(function(dt)
 		pcall(function()
 			local speed = 50 * dt
-			if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then speed = speed * 2 end
-			local cf = visualState.freecamCFrame
+			if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then speed = speed * 3 end
+			local rot = CFrame.Angles(visualState.freecamPitch, visualState.freecamYaw, 0)
 			local move = Vector3.new(0, 0, 0)
-			if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + cf.LookVector end
-			if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - cf.LookVector end
-			if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - cf.RightVector end
-			if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + cf.RightVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + rot.LookVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - rot.LookVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - rot.RightVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + rot.RightVector end
 			if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move = move + Vector3.new(0, 1, 0) end
 			if UserInputService:IsKeyDown(Enum.KeyCode.E) then move = move - Vector3.new(0, 1, 0) end
 			if move.Magnitude > 0 then move = move.Unit * speed end
-			visualState.freecamCFrame = cf + move
+			visualState.freecamCFrame = CFrame.new(visualState.freecamCFrame.Position + move) * rot
 			workspace.CurrentCamera.CFrame = visualState.freecamCFrame
 		end)
 	end)
@@ -3901,6 +3914,8 @@ end
 
 F.stopFreecam = function()
 	if visualState.freecamConnection then visualState.freecamConnection:Disconnect() visualState.freecamConnection = nil end
+	if visualState.freecamMouseConn then visualState.freecamMouseConn:Disconnect() visualState.freecamMouseConn = nil end
+	UserInputService.MouseBehavior = Enum.MouseBehavior.Default
 	-- Unfreeze character
 	local char = LocalPlayer.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
