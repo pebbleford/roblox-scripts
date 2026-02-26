@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Synapse X The Revival - Key Generator</title>
+    <title>Synapse X The Revival</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -12,10 +12,6 @@
             background: #0a0a0f;
             color: #e0e0e0;
             min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
             overflow-x: hidden;
         }
 
@@ -32,246 +28,173 @@
             z-index: 0;
         }
 
-        .container {
-            position: relative;
-            z-index: 1;
-            width: 100%;
-            max-width: 480px;
-            padding: 20px;
+        .page { position: relative; z-index: 1; }
+
+        /* ===== HERO ===== */
+        .hero {
+            text-align: center;
+            padding: 60px 20px 40px;
+        }
+
+        .hero h1 {
+            font-size: 32px;
+            font-weight: 800;
+            color: #ff8c00;
+            letter-spacing: 3px;
+            text-shadow: 0 0 30px rgba(255, 140, 0, 0.3);
+            margin-bottom: 8px;
+        }
+
+        .hero .tagline {
+            font-size: 14px;
+            color: #666;
+            letter-spacing: 1px;
+            margin-bottom: 24px;
+        }
+
+        .hero .get-key-btn {
+            display: inline-block;
+            background: #ff8c00;
+            color: #fff;
+            padding: 12px 32px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 14px;
+            letter-spacing: 1px;
+            transition: background 0.2s, transform 0.1s, box-shadow 0.2s;
+            box-shadow: 0 4px 20px rgba(255, 140, 0, 0.3);
+        }
+
+        .hero .get-key-btn:hover {
+            background: #ff9e20;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 30px rgba(255, 140, 0, 0.4);
+        }
+
+        .hero .get-key-btn:active { transform: translateY(0); }
+
+        /* ===== SECTIONS ===== */
+        .section {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 0 20px 40px;
+        }
+
+        .section-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #ff8c00;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+
+        .section-subtitle {
+            font-size: 12px;
+            color: #555;
+            margin-bottom: 20px;
+        }
+
+        .section-divider {
+            height: 1px;
+            background: linear-gradient(90deg, transparent, #2a2a3a, transparent);
+            margin-bottom: 24px;
+        }
+
+        /* ===== CARDS ===== */
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
         }
 
         .card {
             background: #12121a;
             border: 1px solid #1e1e2a;
-            border-radius: 12px;
+            border-radius: 10px;
             overflow: hidden;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 40px rgba(255,140,0,0.05);
+            transition: border-color 0.2s, box-shadow 0.2s;
         }
 
-        .accent-bar {
-            height: 3px;
-            background: linear-gradient(90deg, #ff8c00, #ff6000, #ff8c00);
+        .card:hover {
+            border-color: #ff8c0040;
+            box-shadow: 0 4px 20px rgba(255, 140, 0, 0.08);
         }
 
-        .card-content { padding: 32px 28px; }
-
-        .title { text-align: center; margin-bottom: 4px; }
-
-        .title h1 {
-            font-size: 22px;
-            font-weight: 800;
-            color: #ff8c00;
-            letter-spacing: 2px;
-            text-shadow: 0 0 20px rgba(255,140,0,0.3);
+        .card-accent {
+            height: 2px;
+            background: linear-gradient(90deg, #ff8c00, #ff600080);
         }
 
-        .title .subtitle {
-            font-size: 13px;
-            color: #666;
-            letter-spacing: 1px;
-            margin-top: 4px;
-        }
+        .card-body { padding: 16px; }
 
-        .separator {
-            height: 1px;
-            background: linear-gradient(90deg, transparent, #2a2a3a, transparent);
-            margin: 20px 0;
-        }
-
-        /* Timer */
-        .timer-section { text-align: center; padding: 20px 0; }
-
-        .timer-label {
-            font-size: 13px;
-            color: #888;
-            margin-bottom: 16px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        .timer-display {
-            font-size: 48px;
-            font-weight: 700;
-            color: #ff8c00;
-            font-variant-numeric: tabular-nums;
-            text-shadow: 0 0 30px rgba(255,140,0,0.4);
-            margin-bottom: 16px;
-        }
-
-        .progress-bar-container {
-            width: 100%;
-            height: 6px;
-            background: #1a1a24;
-            border-radius: 3px;
-            overflow: hidden;
-        }
-
-        .progress-bar {
-            height: 100%;
-            background: linear-gradient(90deg, #ff6000, #ff8c00);
-            border-radius: 3px;
-            transition: width 1s linear;
-            width: 0%;
-            box-shadow: 0 0 10px rgba(255,140,0,0.5);
-        }
-
-        .timer-hint {
-            font-size: 11px;
-            color: #555;
-            margin-top: 12px;
-        }
-
-        /* Key section */
-        .key-section {
-            display: none;
-            text-align: center;
-            padding: 10px 0;
-        }
-
-        .key-section.visible {
-            display: block;
-            animation: fadeIn 0.5s ease;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .key-label {
-            font-size: 13px;
-            color: #888;
-            margin-bottom: 12px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        .key-box {
+        .card-header {
             display: flex;
             align-items: center;
             gap: 8px;
-            background: #0d0d14;
-            border: 1px solid #2a2a3a;
-            border-radius: 8px;
-            padding: 12px 16px;
-            margin-bottom: 16px;
+            margin-bottom: 8px;
         }
 
-        .key-text {
-            flex: 1;
-            font-family: 'Consolas', 'Courier New', monospace;
-            font-size: 14px;
-            color: #ff8c00;
-            letter-spacing: 1px;
-            word-break: break-all;
-            text-align: left;
-            user-select: all;
-        }
-
-        .copy-btn {
-            background: #ff8c00;
-            border: none;
-            color: white;
-            padding: 8px 16px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 12px;
-            font-weight: 600;
-            white-space: nowrap;
-            transition: background 0.2s, transform 0.1s;
-        }
-
-        .copy-btn:hover { background: #ff9e20; transform: translateY(-1px); }
-        .copy-btn:active { transform: translateY(0); }
-        .copy-btn.copied { background: #4CAF50; }
-
-        .expiry-text {
-            font-size: 13px;
-            color: #888;
-            margin-bottom: 4px;
-        }
-
-        .expiry-countdown {
+        .card-name {
             font-size: 15px;
-            color: #ff8c00;
+            font-weight: 700;
+            color: #eee;
+        }
+
+        .card-version {
+            font-size: 10px;
             font-weight: 600;
-            font-variant-numeric: tabular-nums;
-            margin-bottom: 20px;
+            color: #ff8c00;
+            background: #ff8c0018;
+            padding: 2px 8px;
+            border-radius: 10px;
+            letter-spacing: 0.5px;
         }
 
-        /* How to use */
-        .how-to {
-            background: #0d0d14;
-            border-radius: 8px;
-            padding: 16px;
-            margin-top: 16px;
-        }
-
-        .how-to h3 {
+        .card-desc {
             font-size: 12px;
             color: #888;
-            text-transform: uppercase;
-            letter-spacing: 1px;
+            margin-bottom: 10px;
+            line-height: 1.4;
+        }
+
+        .card-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
             margin-bottom: 12px;
         }
 
-        .how-to ol {
-            list-style: none;
-            counter-reset: steps;
-        }
-
-        .how-to li {
-            counter-increment: steps;
-            font-size: 13px;
-            color: #aaa;
-            padding: 4px 0 4px 28px;
-            position: relative;
-        }
-
-        .how-to li::before {
-            content: counter(steps);
-            position: absolute;
-            left: 0; top: 4px;
-            width: 20px; height: 20px;
-            background: #1a1a24;
-            color: #ff8c00;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 11px;
-            font-weight: 700;
-        }
-
-        .footer {
-            text-align: center;
-            padding: 16px 0 0;
+        .tag {
             font-size: 10px;
-            color: #333;
+            color: #aaa;
+            background: #1a1a24;
+            padding: 3px 8px;
+            border-radius: 4px;
         }
 
-        .loadstring-box {
-            background: #0d0d14;
-            border: 1px solid #1e1e2a;
-            border-radius: 6px;
-            padding: 10px 14px;
-            margin-top: 12px;
+        .card-loadstring {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
+            background: #0d0d14;
+            border: 1px solid #1a1a24;
+            border-radius: 6px;
+            padding: 8px 10px;
         }
 
-        .loadstring-text {
+        .ls-text {
             flex: 1;
             font-family: 'Consolas', 'Courier New', monospace;
             font-size: 10px;
-            color: #888;
+            color: #666;
             word-break: break-all;
-            text-align: left;
             user-select: all;
+            line-height: 1.3;
         }
 
-        .copy-btn-sm {
+        .ls-copy {
             background: #2a2a3a;
             border: none;
             color: #aaa;
@@ -282,223 +205,194 @@
             font-weight: 600;
             white-space: nowrap;
             transition: background 0.2s;
+            flex-shrink: 0;
         }
 
-        .copy-btn-sm:hover { background: #3a3a4a; }
-        .copy-btn-sm.copied { background: #4CAF50; color: #fff; }
+        .ls-copy:hover { background: #3a3a4a; color: #ddd; }
+        .ls-copy.copied { background: #4CAF50; color: #fff; }
 
-        @media (max-width: 520px) {
-            .card-content { padding: 24px 20px; }
-            .title h1 { font-size: 18px; }
-            .timer-display { font-size: 36px; }
-            .key-text { font-size: 11px; }
-            .loadstring-text { font-size: 9px; }
+        /* ===== FOOTER ===== */
+        .footer {
+            text-align: center;
+            padding: 30px 20px 40px;
+            font-size: 11px;
+            color: #333;
+        }
+
+        @media (max-width: 640px) {
+            .hero h1 { font-size: 24px; letter-spacing: 2px; }
+            .cards { grid-template-columns: 1fr; }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="card">
-            <div class="accent-bar"></div>
-            <div class="card-content">
-                <div class="title">
-                    <h1>SYNAPSE X THE REVIVAL</h1>
-                    <div class="subtitle">Key Generator</div>
-                </div>
-
-                <div class="separator"></div>
-
-                <!-- Timer (shown initially) -->
-                <div class="timer-section" id="timerSection">
-                    <div class="timer-label">Please wait</div>
-                    <div class="timer-display" id="timerDisplay">60</div>
-                    <div class="progress-bar-container">
-                        <div class="progress-bar" id="progressBar"></div>
-                    </div>
-                    <div class="timer-hint">Your key will be generated after the timer completes</div>
-                </div>
-
-                <!-- Key (shown after timer) -->
-                <div class="key-section" id="keySection">
-                    <div class="key-label">Your Key</div>
-                    <div class="key-box">
-                        <div class="key-text" id="keyText">---</div>
-                        <button class="copy-btn" id="copyBtn" onclick="copyKey()">COPY</button>
-                    </div>
-
-                    <div class="expiry-text">Expires in:</div>
-                    <div class="expiry-countdown" id="expiryCountdown">24h 00m 00s</div>
-
-                    <div class="how-to">
-                        <h3>How to use</h3>
-                        <ol>
-                            <li>Copy the key above</li>
-                            <li>Execute the Synapse X script in Roblox</li>
-                            <li>Paste the key into the key system dialog</li>
-                            <li>Key is valid for 24 hours (one-time per device)</li>
-                        </ol>
-
-                        <div class="loadstring-box">
-                            <div class="loadstring-text" id="loadstringText">loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/synapsex.lua"))()</div>
-                            <button class="copy-btn-sm" id="copyLoadstringBtn" onclick="copyLoadstring()">COPY</button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="footer">Synapse X The Revival &copy; 2024-2026</div>
-            </div>
+    <div class="page">
+        <!-- Hero -->
+        <div class="hero">
+            <h1>SYNAPSE X THE REVIVAL</h1>
+            <div class="tagline">Roblox Script Collection by pebbleford</div>
+            <a href="getkey.html" class="get-key-btn">GET KEY</a>
         </div>
+
+        <!-- Game Hubs -->
+        <div class="section">
+            <div class="section-title">Game Hubs</div>
+            <div class="section-subtitle">Requires a key — get one free above</div>
+            <div class="section-divider"></div>
+            <div class="cards" id="hubCards"></div>
+        </div>
+
+        <!-- Standalone -->
+        <div class="section">
+            <div class="section-title">Standalone Scripts</div>
+            <div class="section-subtitle">No key required</div>
+            <div class="section-divider"></div>
+            <div class="cards" id="standaloneCards"></div>
+        </div>
+
+        <div class="footer">Synapse X The Revival &copy; 2024-2026</div>
     </div>
 
     <script>
-        // ========================================
-        // CRYPTOGRAPHIC KEY GENERATION
-        // ========================================
-        var SECRET = "SXR_PEBBLEFORD_2024_KEY";
+        var BASE = "https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/";
 
-        function djb2Hash(bytes) {
-            var hash = 5381;
-            for (var i = 0; i < bytes.length; i++) {
-                hash = ((hash * 33) + bytes[i]) >>> 0;
+        var hubs = [
+            {
+                name: "Synapse X Admin Hub",
+                version: "v3.0",
+                file: "synapsex.lua",
+                desc: "Universal admin hub — works in any Roblox game",
+                tags: ["Speed", "Fly", "Noclip", "God Mode", "ESP", "Aimbot", "Triggerbot", "Hitbox Expander", "Fling", "FE Invisible", "Anti-AFK", "Car Mods", "Emotes"]
+            },
+            {
+                name: "RIVALS FPS Hub",
+                version: "v1.4",
+                file: "rivals.lua",
+                desc: "Competitive FPS hub built for RIVALS",
+                tags: ["Aimbot", "Triggerbot", "FOV Circle", "Kill Aura", "ESP", "Chams", "Hitbox Expander", "Bunny Hop", "Speed", "Fly", "Noclip"]
+            },
+            {
+                name: "Murder Mystery 2 Hub",
+                version: "v1.1",
+                file: "mm2.lua",
+                desc: "Full exploit hub for Murder Mystery 2",
+                tags: ["Role Detection", "Murderer ESP", "Auto Shoot", "Coin Farm", "Gun ESP", "Kill All", "X-Ray", "Auto Grab Gun"]
+            },
+            {
+                name: "Brookhaven Hub",
+                version: "v1.0",
+                file: "brookhaven.lua",
+                desc: "Exploit hub for Brookhaven RP",
+                tags: ["Speed", "Fly", "Noclip", "God Mode", "Teleport", "Game Features"]
+            },
+            {
+                name: "SharkBite 2 Hub",
+                version: "v1.0",
+                file: "sharkbite.lua",
+                desc: "Exploit hub for SharkBite 2",
+                tags: ["Speed", "Fly", "Noclip", "God Mode", "Game Features"]
+            },
+            {
+                name: "NBTF Hub",
+                file: "nbtf.lua",
+                desc: "Hub for Nuclear Blast Testing Facility",
+                tags: ["Game Features", "Movement Suite"]
+            },
+            {
+                name: "Elected Hub",
+                file: "elected.lua",
+                desc: "Hub for Elected",
+                tags: ["Game Features", "Movement Suite"]
+            },
+            {
+                name: "99 Nights Hub",
+                file: "99nights.lua",
+                desc: "Hub for 99 Nights in the Forest",
+                tags: ["Game Features", "Movement Suite"]
             }
-            return hash;
-        }
+        ];
 
-        function generateKey() {
-            var now = Math.floor(Date.now() / 1000);
-
-            // Timestamp as 4 bytes (big-endian)
-            var ts = new Uint8Array(4);
-            ts[0] = (now >>> 24) & 0xFF;
-            ts[1] = (now >>> 16) & 0xFF;
-            ts[2] = (now >>> 8) & 0xFF;
-            ts[3] = now & 0xFF;
-
-            // Random nonce (4 bytes)
-            var nonce = new Uint8Array(4);
-            crypto.getRandomValues(nonce);
-
-            // Payload = timestamp + nonce (8 bytes)
-            var payload = new Uint8Array(8);
-            payload.set(ts, 0);
-            payload.set(nonce, 4);
-
-            // Signature = DJB2(payload bytes + SECRET string bytes)
-            var secretBytes = new TextEncoder().encode(SECRET);
-            var sigInput = new Uint8Array(payload.length + secretBytes.length);
-            sigInput.set(payload, 0);
-            sigInput.set(secretBytes, payload.length);
-            var sig = djb2Hash(sigInput);
-
-            var sigBytes = new Uint8Array(4);
-            sigBytes[0] = (sig >>> 24) & 0xFF;
-            sigBytes[1] = (sig >>> 16) & 0xFF;
-            sigBytes[2] = (sig >>> 8) & 0xFF;
-            sigBytes[3] = sig & 0xFF;
-
-            // Full = payload + signature (12 bytes)
-            var full = new Uint8Array(12);
-            full.set(payload, 0);
-            full.set(sigBytes, 8);
-
-            // XOR encrypt with SECRET (repeating)
-            var encrypted = new Uint8Array(12);
-            for (var i = 0; i < 12; i++) {
-                encrypted[i] = full[i] ^ SECRET.charCodeAt(i % SECRET.length);
+        var standalones = [
+            {
+                name: "DOORS Auto A-1000",
+                file: "doors_rooms.lua",
+                desc: "Auto-walks to room A-1000 in DOORS: The Rooms, hides from entities",
+                tags: ["Pathfinding", "Auto-Hide", "Entity Detection", "A-60/A-120"]
+            },
+            {
+                name: "Spin Fling",
+                file: "spinfling.lua",
+                desc: "Standalone spin fling — launch other players",
+                tags: ["Fling", "Physics"]
+            },
+            {
+                name: "ESP Loader",
+                file: "esp.lua",
+                desc: "Standalone ESP for any game",
+                tags: ["ESP", "Highlights", "Nametags"]
+            },
+            {
+                name: "Steal a Brainrot",
+                file: "stealabrainrot.lua",
+                desc: "Script for Steal a Brainrot",
+                tags: ["Game Features"]
+            },
+            {
+                name: "SAB Admin",
+                file: "stealabrainrot-admin.lua",
+                desc: "Admin panel for Steal a Brainrot",
+                tags: ["Admin", "Defense"]
+            },
+            {
+                name: "Loader",
+                file: "loader.lua",
+                desc: "Universal script loader",
+                tags: ["Loader"]
             }
+        ];
 
-            // Hex encode
-            var hex = '';
-            for (var i = 0; i < 12; i++) {
-                hex += encrypted[i].toString(16).padStart(2, '0');
-            }
-            hex = hex.toUpperCase();
+        function createCard(data) {
+            var loadstring = 'loadstring(game:HttpGet("' + BASE + data.file + '"))()';
 
-            // Format: SXR-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX
-            var groups = [];
-            for (var i = 0; i < hex.length; i += 4) {
-                groups.push(hex.substring(i, i + 4));
-            }
-
-            return {
-                key: 'SXR-' + groups.join('-'),
-                timestamp: now,
-                expiresAt: now + 86400
-            };
-        }
-
-        // ========================================
-        // UI LOGIC
-        // ========================================
-        var generatedKey = null;
-        var expiryInterval = null;
-
-        function startTimer() {
-            var timerDisplay = document.getElementById('timerDisplay');
-            var progressBar = document.getElementById('progressBar');
-            var total = 60;
-            var elapsed = 0;
-
-            var interval = setInterval(function() {
-                elapsed++;
-                var remaining = total - elapsed;
-                timerDisplay.textContent = remaining;
-                progressBar.style.width = ((elapsed / total) * 100) + '%';
-
-                if (remaining <= 0) {
-                    clearInterval(interval);
-                    showKey();
+            var tagsHtml = '';
+            if (data.tags) {
+                for (var i = 0; i < data.tags.length; i++) {
+                    tagsHtml += '<span class="tag">' + data.tags[i] + '</span>';
                 }
-            }, 1000);
-        }
-
-        function showKey() {
-            generatedKey = generateKey();
-
-            document.getElementById('timerSection').style.display = 'none';
-            var keySection = document.getElementById('keySection');
-            keySection.classList.add('visible');
-
-            document.getElementById('keyText').textContent = generatedKey.key;
-            startExpiryCountdown();
-        }
-
-        function startExpiryCountdown() {
-            function update() {
-                if (!generatedKey) return;
-                var now = Math.floor(Date.now() / 1000);
-                var remaining = generatedKey.expiresAt - now;
-
-                if (remaining <= 0) {
-                    document.getElementById('expiryCountdown').textContent = 'EXPIRED';
-                    document.getElementById('expiryCountdown').style.color = '#ff4444';
-                    clearInterval(expiryInterval);
-                    return;
-                }
-
-                var h = Math.floor(remaining / 3600);
-                var m = Math.floor((remaining % 3600) / 60);
-                var s = remaining % 60;
-                document.getElementById('expiryCountdown').textContent =
-                    h + 'h ' + String(m).padStart(2, '0') + 'm ' + String(s).padStart(2, '0') + 's';
             }
 
-            update();
-            expiryInterval = setInterval(update, 1000);
+            var versionHtml = data.version
+                ? '<span class="card-version">' + data.version + '</span>'
+                : '';
+
+            var id = 'ls-' + data.file.replace(/[^a-z0-9]/g, '');
+
+            return '<div class="card">' +
+                '<div class="card-accent"></div>' +
+                '<div class="card-body">' +
+                    '<div class="card-header">' +
+                        '<span class="card-name">' + data.name + '</span>' +
+                        versionHtml +
+                    '</div>' +
+                    '<div class="card-desc">' + data.desc + '</div>' +
+                    '<div class="card-tags">' + tagsHtml + '</div>' +
+                    '<div class="card-loadstring">' +
+                        '<span class="ls-text" id="' + id + '">' + escapeHtml(loadstring) + '</span>' +
+                        '<button class="ls-copy" onclick="copyLS(\'' + id + '\', this)">COPY</button>' +
+                    '</div>' +
+                '</div>' +
+            '</div>';
         }
 
-        function copyKey() {
-            if (!generatedKey) return;
-            copyToClipboard(generatedKey.key, 'copyBtn');
+        function escapeHtml(str) {
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         }
 
-        function copyLoadstring() {
-            var text = document.getElementById('loadstringText').textContent;
-            copyToClipboard(text, 'copyLoadstringBtn');
-        }
+        function copyLS(id, btn) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            var text = el.textContent;
 
-        function copyToClipboard(text, btnId) {
-            var btn = document.getElementById(btnId);
             navigator.clipboard.writeText(text).then(function() {
                 btn.textContent = 'COPIED!';
                 btn.classList.add('copied');
@@ -522,8 +416,14 @@
             });
         }
 
-        // Start on page load
-        startTimer();
+        // Render cards
+        var hubHtml = '';
+        for (var i = 0; i < hubs.length; i++) hubHtml += createCard(hubs[i]);
+        document.getElementById('hubCards').innerHTML = hubHtml;
+
+        var saHtml = '';
+        for (var i = 0; i < standalones.length; i++) saHtml += createCard(standalones[i]);
+        document.getElementById('standaloneCards').innerHTML = saHtml;
     </script>
 </body>
 </html>
