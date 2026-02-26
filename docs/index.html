@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Synapse X The Revival - Key Generator</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: #0a0a0f;
+            color: #e0e0e0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow-x: hidden;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background:
+                linear-gradient(rgba(255, 140, 0, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 140, 0, 0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            max-width: 480px;
+            padding: 20px;
+        }
+
+        .card {
+            background: #12121a;
+            border: 1px solid #1e1e2a;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 40px rgba(255,140,0,0.05);
+        }
+
+        .accent-bar {
+            height: 3px;
+            background: linear-gradient(90deg, #ff8c00, #ff6000, #ff8c00);
+        }
+
+        .card-content { padding: 32px 28px; }
+
+        .title { text-align: center; margin-bottom: 4px; }
+
+        .title h1 {
+            font-size: 22px;
+            font-weight: 800;
+            color: #ff8c00;
+            letter-spacing: 2px;
+            text-shadow: 0 0 20px rgba(255,140,0,0.3);
+        }
+
+        .title .subtitle {
+            font-size: 13px;
+            color: #666;
+            letter-spacing: 1px;
+            margin-top: 4px;
+        }
+
+        .separator {
+            height: 1px;
+            background: linear-gradient(90deg, transparent, #2a2a3a, transparent);
+            margin: 20px 0;
+        }
+
+        /* Timer */
+        .timer-section { text-align: center; padding: 20px 0; }
+
+        .timer-label {
+            font-size: 13px;
+            color: #888;
+            margin-bottom: 16px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .timer-display {
+            font-size: 48px;
+            font-weight: 700;
+            color: #ff8c00;
+            font-variant-numeric: tabular-nums;
+            text-shadow: 0 0 30px rgba(255,140,0,0.4);
+            margin-bottom: 16px;
+        }
+
+        .progress-bar-container {
+            width: 100%;
+            height: 6px;
+            background: #1a1a24;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #ff6000, #ff8c00);
+            border-radius: 3px;
+            transition: width 1s linear;
+            width: 0%;
+            box-shadow: 0 0 10px rgba(255,140,0,0.5);
+        }
+
+        .timer-hint {
+            font-size: 11px;
+            color: #555;
+            margin-top: 12px;
+        }
+
+        /* Key section */
+        .key-section {
+            display: none;
+            text-align: center;
+            padding: 10px 0;
+        }
+
+        .key-section.visible {
+            display: block;
+            animation: fadeIn 0.5s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .key-label {
+            font-size: 13px;
+            color: #888;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .key-box {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #0d0d14;
+            border: 1px solid #2a2a3a;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 16px;
+        }
+
+        .key-text {
+            flex: 1;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 14px;
+            color: #ff8c00;
+            letter-spacing: 1px;
+            word-break: break-all;
+            text-align: left;
+            user-select: all;
+        }
+
+        .copy-btn {
+            background: #ff8c00;
+            border: none;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            white-space: nowrap;
+            transition: background 0.2s, transform 0.1s;
+        }
+
+        .copy-btn:hover { background: #ff9e20; transform: translateY(-1px); }
+        .copy-btn:active { transform: translateY(0); }
+        .copy-btn.copied { background: #4CAF50; }
+
+        .expiry-text {
+            font-size: 13px;
+            color: #888;
+            margin-bottom: 4px;
+        }
+
+        .expiry-countdown {
+            font-size: 15px;
+            color: #ff8c00;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+            margin-bottom: 20px;
+        }
+
+        /* How to use */
+        .how-to {
+            background: #0d0d14;
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 16px;
+        }
+
+        .how-to h3 {
+            font-size: 12px;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 12px;
+        }
+
+        .how-to ol {
+            list-style: none;
+            counter-reset: steps;
+        }
+
+        .how-to li {
+            counter-increment: steps;
+            font-size: 13px;
+            color: #aaa;
+            padding: 4px 0 4px 28px;
+            position: relative;
+        }
+
+        .how-to li::before {
+            content: counter(steps);
+            position: absolute;
+            left: 0; top: 4px;
+            width: 20px; height: 20px;
+            background: #1a1a24;
+            color: #ff8c00;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 16px 0 0;
+            font-size: 10px;
+            color: #333;
+        }
+
+        .loadstring-box {
+            background: #0d0d14;
+            border: 1px solid #1e1e2a;
+            border-radius: 6px;
+            padding: 10px 14px;
+            margin-top: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .loadstring-text {
+            flex: 1;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 10px;
+            color: #888;
+            word-break: break-all;
+            text-align: left;
+            user-select: all;
+        }
+
+        .copy-btn-sm {
+            background: #2a2a3a;
+            border: none;
+            color: #aaa;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 10px;
+            font-weight: 600;
+            white-space: nowrap;
+            transition: background 0.2s;
+        }
+
+        .copy-btn-sm:hover { background: #3a3a4a; }
+        .copy-btn-sm.copied { background: #4CAF50; color: #fff; }
+
+        @media (max-width: 520px) {
+            .card-content { padding: 24px 20px; }
+            .title h1 { font-size: 18px; }
+            .timer-display { font-size: 36px; }
+            .key-text { font-size: 11px; }
+            .loadstring-text { font-size: 9px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <div class="accent-bar"></div>
+            <div class="card-content">
+                <div class="title">
+                    <h1>SYNAPSE X THE REVIVAL</h1>
+                    <div class="subtitle">Key Generator</div>
+                </div>
+
+                <div class="separator"></div>
+
+                <!-- Timer (shown initially) -->
+                <div class="timer-section" id="timerSection">
+                    <div class="timer-label">Please wait</div>
+                    <div class="timer-display" id="timerDisplay">60</div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" id="progressBar"></div>
+                    </div>
+                    <div class="timer-hint">Your key will be generated after the timer completes</div>
+                </div>
+
+                <!-- Key (shown after timer) -->
+                <div class="key-section" id="keySection">
+                    <div class="key-label">Your Key</div>
+                    <div class="key-box">
+                        <div class="key-text" id="keyText">---</div>
+                        <button class="copy-btn" id="copyBtn" onclick="copyKey()">COPY</button>
+                    </div>
+
+                    <div class="expiry-text">Expires in:</div>
+                    <div class="expiry-countdown" id="expiryCountdown">24h 00m 00s</div>
+
+                    <div class="how-to">
+                        <h3>How to use</h3>
+                        <ol>
+                            <li>Copy the key above</li>
+                            <li>Execute the Synapse X script in Roblox</li>
+                            <li>Paste the key into the key system dialog</li>
+                            <li>Key is valid for 24 hours (one-time per device)</li>
+                        </ol>
+
+                        <div class="loadstring-box">
+                            <div class="loadstring-text" id="loadstringText">loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/synapsex.lua"))()</div>
+                            <button class="copy-btn-sm" id="copyLoadstringBtn" onclick="copyLoadstring()">COPY</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="footer">Synapse X The Revival &copy; 2024-2026</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ========================================
+        // CRYPTOGRAPHIC KEY GENERATION
+        // ========================================
+        var SECRET = "SXR_PEBBLEFORD_2024_KEY";
+
+        function djb2Hash(bytes) {
+            var hash = 5381;
+            for (var i = 0; i < bytes.length; i++) {
+                hash = ((hash * 33) + bytes[i]) >>> 0;
+            }
+            return hash;
+        }
+
+        function generateKey() {
+            var now = Math.floor(Date.now() / 1000);
+
+            // Timestamp as 4 bytes (big-endian)
+            var ts = new Uint8Array(4);
+            ts[0] = (now >>> 24) & 0xFF;
+            ts[1] = (now >>> 16) & 0xFF;
+            ts[2] = (now >>> 8) & 0xFF;
+            ts[3] = now & 0xFF;
+
+            // Random nonce (4 bytes)
+            var nonce = new Uint8Array(4);
+            crypto.getRandomValues(nonce);
+
+            // Payload = timestamp + nonce (8 bytes)
+            var payload = new Uint8Array(8);
+            payload.set(ts, 0);
+            payload.set(nonce, 4);
+
+            // Signature = DJB2(payload bytes + SECRET string bytes)
+            var secretBytes = new TextEncoder().encode(SECRET);
+            var sigInput = new Uint8Array(payload.length + secretBytes.length);
+            sigInput.set(payload, 0);
+            sigInput.set(secretBytes, payload.length);
+            var sig = djb2Hash(sigInput);
+
+            var sigBytes = new Uint8Array(4);
+            sigBytes[0] = (sig >>> 24) & 0xFF;
+            sigBytes[1] = (sig >>> 16) & 0xFF;
+            sigBytes[2] = (sig >>> 8) & 0xFF;
+            sigBytes[3] = sig & 0xFF;
+
+            // Full = payload + signature (12 bytes)
+            var full = new Uint8Array(12);
+            full.set(payload, 0);
+            full.set(sigBytes, 8);
+
+            // XOR encrypt with SECRET (repeating)
+            var encrypted = new Uint8Array(12);
+            for (var i = 0; i < 12; i++) {
+                encrypted[i] = full[i] ^ SECRET.charCodeAt(i % SECRET.length);
+            }
+
+            // Hex encode
+            var hex = '';
+            for (var i = 0; i < 12; i++) {
+                hex += encrypted[i].toString(16).padStart(2, '0');
+            }
+            hex = hex.toUpperCase();
+
+            // Format: SXR-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX
+            var groups = [];
+            for (var i = 0; i < hex.length; i += 4) {
+                groups.push(hex.substring(i, i + 4));
+            }
+
+            return {
+                key: 'SXR-' + groups.join('-'),
+                timestamp: now,
+                expiresAt: now + 86400
+            };
+        }
+
+        // ========================================
+        // UI LOGIC
+        // ========================================
+        var generatedKey = null;
+        var expiryInterval = null;
+
+        function startTimer() {
+            var timerDisplay = document.getElementById('timerDisplay');
+            var progressBar = document.getElementById('progressBar');
+            var total = 60;
+            var elapsed = 0;
+
+            var interval = setInterval(function() {
+                elapsed++;
+                var remaining = total - elapsed;
+                timerDisplay.textContent = remaining;
+                progressBar.style.width = ((elapsed / total) * 100) + '%';
+
+                if (remaining <= 0) {
+                    clearInterval(interval);
+                    showKey();
+                }
+            }, 1000);
+        }
+
+        function showKey() {
+            generatedKey = generateKey();
+
+            document.getElementById('timerSection').style.display = 'none';
+            var keySection = document.getElementById('keySection');
+            keySection.classList.add('visible');
+
+            document.getElementById('keyText').textContent = generatedKey.key;
+            startExpiryCountdown();
+        }
+
+        function startExpiryCountdown() {
+            function update() {
+                if (!generatedKey) return;
+                var now = Math.floor(Date.now() / 1000);
+                var remaining = generatedKey.expiresAt - now;
+
+                if (remaining <= 0) {
+                    document.getElementById('expiryCountdown').textContent = 'EXPIRED';
+                    document.getElementById('expiryCountdown').style.color = '#ff4444';
+                    clearInterval(expiryInterval);
+                    return;
+                }
+
+                var h = Math.floor(remaining / 3600);
+                var m = Math.floor((remaining % 3600) / 60);
+                var s = remaining % 60;
+                document.getElementById('expiryCountdown').textContent =
+                    h + 'h ' + String(m).padStart(2, '0') + 'm ' + String(s).padStart(2, '0') + 's';
+            }
+
+            update();
+            expiryInterval = setInterval(update, 1000);
+        }
+
+        function copyKey() {
+            if (!generatedKey) return;
+            copyToClipboard(generatedKey.key, 'copyBtn');
+        }
+
+        function copyLoadstring() {
+            var text = document.getElementById('loadstringText').textContent;
+            copyToClipboard(text, 'copyLoadstringBtn');
+        }
+
+        function copyToClipboard(text, btnId) {
+            var btn = document.getElementById(btnId);
+            navigator.clipboard.writeText(text).then(function() {
+                btn.textContent = 'COPIED!';
+                btn.classList.add('copied');
+                setTimeout(function() {
+                    btn.textContent = 'COPY';
+                    btn.classList.remove('copied');
+                }, 2000);
+            }).catch(function() {
+                var ta = document.createElement('textarea');
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                btn.textContent = 'COPIED!';
+                btn.classList.add('copied');
+                setTimeout(function() {
+                    btn.textContent = 'COPY';
+                    btn.classList.remove('copied');
+                }, 2000);
+            });
+        }
+
+        // Start on page load
+        startTimer();
+    </script>
+</body>
+</html>

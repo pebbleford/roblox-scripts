@@ -24,6 +24,8 @@ local AUTH_FILE = "SynapseXAuth.json"
 local WHITELIST_URL = "https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/whitelist.txt?v=" .. tostring(tick())
 local BLACKLIST_URL = "https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/blacklist.txt?v=" .. tostring(tick())
 local WEBHOOK_URL = "PASTE_YOUR_DISCORD_WEBHOOK_URL_HERE"
+local GENERATED_KEY_SECRET = "SXR_PEBBLEFORD_2024_KEY"
+local GENERATED_KEY_EXPIRY = 86400
 
 -- ============================================================
 -- SERVICES
@@ -92,6 +94,80 @@ local function simpleHash(input)
 end
 
 -- ============================================================
+-- XOR BYTE (portable, no bit32 dependency)
+-- ============================================================
+local function xorByte(a, b)
+    local r, p = 0, 1
+    for _ = 1, 8 do
+        if a % 2 ~= b % 2 then r = r + p end
+        a = math.floor(a / 2)
+        b = math.floor(b / 2)
+        p = p * 2
+    end
+    return r
+end
+
+-- ============================================================
+-- HEX DECODE
+-- ============================================================
+local function hexDecode(hexStr)
+    local bytes = {}
+    for i = 1, #hexStr, 2 do
+        local byte = tonumber(hexStr:sub(i, i + 1), 16)
+        if not byte then return nil end
+        bytes[#bytes + 1] = byte
+    end
+    return bytes
+end
+
+-- ============================================================
+-- VALIDATE WEBSITE-GENERATED KEY
+-- ============================================================
+local function validateGeneratedKey(keyStr)
+    if type(keyStr) ~= "string" then return false end
+    if keyStr:sub(1, 4) ~= "SXR-" then return false end
+
+    local hexStr = keyStr:sub(5):gsub("-", ""):lower()
+    if #hexStr ~= 24 or hexStr:match("[^0-9a-f]") then return false end
+
+    local encrypted = hexDecode(hexStr)
+    if not encrypted or #encrypted ~= 12 then return false end
+
+    -- XOR decrypt with secret (repeating)
+    local decrypted = {}
+    for i = 1, 12 do
+        local si = ((i - 1) % #GENERATED_KEY_SECRET) + 1
+        decrypted[i] = xorByte(encrypted[i], string.byte(GENERATED_KEY_SECRET, si))
+    end
+
+    -- Extract timestamp (bytes 1-4, big-endian)
+    local timestamp = decrypted[1] * 16777216 + decrypted[2] * 65536 + decrypted[3] * 256 + decrypted[4]
+
+    -- Extract signature (bytes 9-12, big-endian)
+    local receivedSig = decrypted[9] * 16777216 + decrypted[10] * 65536 + decrypted[11] * 256 + decrypted[12]
+
+    -- Recompute signature: DJB2(first 8 payload bytes + SECRET string)
+    local hash = 5381
+    for i = 1, 8 do
+        hash = ((hash * 33) + decrypted[i]) % 4294967296
+    end
+    for i = 1, #GENERATED_KEY_SECRET do
+        hash = ((hash * 33) + string.byte(GENERATED_KEY_SECRET, i)) % 4294967296
+    end
+
+    if hash ~= receivedSig then return false end
+
+    -- Check expiration (within 24 hours)
+    local now = os.time()
+    if now - timestamp > GENERATED_KEY_EXPIRY then return false end
+
+    -- Check not too far in the future (5 min tolerance for clock skew)
+    if timestamp > now + 300 then return false end
+
+    return true, timestamp
+end
+
+-- ============================================================
 -- AUTH TOKEN
 -- ============================================================
 local function generateAuthToken(hwid)
@@ -101,12 +177,13 @@ end
 -- ============================================================
 -- LOCAL AUTH (writefile/readfile)
 -- ============================================================
-local function saveLocalAuth(hwid)
+local function saveLocalAuth(hwid, expiresAt)
     local ok = pcall(function()
         local data = {
             hwid_hash = simpleHash(hwid),
             auth_token = generateAuthToken(hwid),
             timestamp = os.time(),
+            key_expires = expiresAt,
             version = "1.0"
         }
         writefile(AUTH_FILE, HttpService:JSONEncode(data))
@@ -128,6 +205,9 @@ local function checkLocalAuth(hwid)
         -- Verify auth token matches
         local expectedToken = generateAuthToken(hwid)
         if data.auth_token ~= expectedToken then return false end
+
+        -- Check if key has expired (generated keys have key_expires set)
+        if data.key_expires and os.time() > data.key_expires then return false end
 
         return true
     end)
@@ -405,7 +485,7 @@ local function showKeyGUI(hwid)
     getKeyLabel.Size = UDim2.new(0.85, 0, 0, 18)
     getKeyLabel.Position = UDim2.new(0.075, 0, 0, 245)
     getKeyLabel.BackgroundTransparency = 1
-    getKeyLabel.Text = "Join our Discord for keys"
+    getKeyLabel.Text = "Get a key: pebbleford.github.io/roblox-scripts"
     getKeyLabel.TextColor3 = Color3.fromRGB(80, 120, 200)
     getKeyLabel.TextSize = 11
     getKeyLabel.Font = Enum.Font.Gotham
@@ -474,16 +554,30 @@ local function showKeyGUI(hwid)
 
         task.wait(0.3) -- Brief delay for feel
 
+        local isGenerated, genTimestamp = validateGeneratedKey(enteredKey)
+
         if VALID_KEYS[enteredKey:lower()] then
-            -- Key is correct! Save auth
+            -- Hardcoded key - permanent auth
             local saved = saveLocalAuth(hwid)
             if saved then
                 setStatus("Key activated! Loading script...", Color3.fromRGB(100, 255, 100))
             else
                 setStatus("Key valid! (Could not save locally)", Color3.fromRGB(100, 255, 100))
             end
-            -- Send webhook so HWID hash gets auto-logged for whitelisting
             sendWhitelistWebhook(hwid, "Key Activated")
+            authenticated = true
+            task.wait(1)
+            pcall(function() screenGui:Destroy() end)
+        elseif isGenerated then
+            -- Website-generated key - 24h auth
+            local expiresAt = genTimestamp + GENERATED_KEY_EXPIRY
+            local saved = saveLocalAuth(hwid, expiresAt)
+            if saved then
+                setStatus("Key activated! Expires in 24h. Loading...", Color3.fromRGB(100, 255, 100))
+            else
+                setStatus("Key valid! (Could not save locally)", Color3.fromRGB(100, 255, 100))
+            end
+            sendWhitelistWebhook(hwid, "Generated Key Activated")
             authenticated = true
             task.wait(1)
             pcall(function() screenGui:Destroy() end)
