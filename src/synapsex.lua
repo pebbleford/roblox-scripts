@@ -14,6 +14,7 @@ local UserInputService = game:GetService("UserInputService")
 local TeleportService = game:GetService("TeleportService")
 local Lighting = game:GetService("Lighting")
 local HttpService = game:GetService("HttpService")
+local Teams = game:GetService("Teams")
 local LocalPlayer = Players.LocalPlayer
 
 local _spawn = (task and task.spawn) or spawn
@@ -55,6 +56,8 @@ local combatState = {
 	aimbotHolding = false,
 	aimbotFOV = 200,
 	aimbotSmoothing = 2,
+	aimbotWallCheck = true,
+	aimbotTeamCheck = true,
 	triggerBotEnabled = false,
 	triggerBotConnection = nil,
 	hitboxEnabled = false,
@@ -2522,6 +2525,7 @@ end
 
 -- Forward declarations for functions defined after UI builder blocks
 local refreshPlayerList
+local isTargetVisible, isActualTeamMode, shouldSkipTeammate
 local processCommand, getClosestPlayerInFOV
 local startAimbot, stopAimbot, startTriggerBot, stopTriggerBot
 local startHitboxExpand, stopHitboxExpand, startAntiVoid, stopAntiVoid
@@ -3150,30 +3154,40 @@ do
 	end)
 	createSlider(tab, "Aim Smoothing", 1, 10, combatState.aimbotSmoothing, 3, function(val) combatState.aimbotSmoothing = val end)
 	createSlider(tab, "Aim FOV", 50, 500, combatState.aimbotFOV, 4, function(val) combatState.aimbotFOV = val end)
-	createToggle(tab, "Triggerbot", 5, function(on)
+	createToggle(tab, "Wall Check", 5, function(on)
+		combatState.aimbotWallCheck = on
+		if on then addLog("[AIMBOT] Wall check ON", COLORS.success)
+		else addLog("[AIMBOT] Wall check OFF - aim through walls", COLORS.error) end
+	end)
+	createToggle(tab, "Team Check", 6, function(on)
+		combatState.aimbotTeamCheck = on
+		if on then addLog("[AIMBOT] Team check ON", COLORS.success)
+		else addLog("[AIMBOT] Team check OFF - target all", COLORS.error) end
+	end)
+	createToggle(tab, "Triggerbot", 7, function(on)
 		combatState.triggerBotEnabled = on
 		if on then startTriggerBot() else stopTriggerBot() end
 	end)
 
-	createSpacer(tab, 6)
-	createSectionLabel(tab, "Hitbox", 7)
-	createToggle(tab, "Hitbox Expander", 8, function(on)
+	createSpacer(tab, 8)
+	createSectionLabel(tab, "Hitbox", 9)
+	createToggle(tab, "Hitbox Expander", 10, function(on)
 		combatState.hitboxEnabled = on
 		if on then startHitboxExpand() else stopHitboxExpand() end
 	end)
-	createSlider(tab, "Hitbox Size", 1, 30, combatState.hitboxSize, 9, function(val) combatState.hitboxSize = val end)
+	createSlider(tab, "Hitbox Size", 1, 30, combatState.hitboxSize, 11, function(val) combatState.hitboxSize = val end)
 
-	createSpacer(tab, 10)
-	createSectionLabel(tab, "Defense", 11)
-	createToggle(tab, "Kill Aura", 12, function(on)
+	createSpacer(tab, 12)
+	createSectionLabel(tab, "Defense", 13)
+	createToggle(tab, "Kill Aura", 14, function(on)
 		combatState.killAuraEnabled = on
 		if on then startKillAura() else stopKillAura() end
 	end)
-	createToggle(tab, "Anti Fling", 13, function(on)
+	createToggle(tab, "Anti Fling", 15, function(on)
 		combatState.antiFlingEnabled = on
 		if on then startAntiFling() else stopAntiFling() end
 	end)
-	createToggle(tab, "Anti-Void", 14, function(on)
+	createToggle(tab, "Anti-Void", 16, function(on)
 		combatState.antiVoidEnabled = on
 		if on then startAntiVoid() else stopAntiVoid() end
 	end)
@@ -3446,25 +3460,66 @@ end)
 
 
 -- ===================== AIMBOT LOGIC =====================
+isTargetVisible = function(targetPart)
+	if not combatState.aimbotWallCheck then return true end
+	local cam = workspace.CurrentCamera
+	local origin = cam.CFrame.Position
+	local direction = (targetPart.Position - origin)
+	local rayParams = RaycastParams.new()
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+	local myChar = LocalPlayer.Character
+	local ignoreList = {}
+	if myChar then table.insert(ignoreList, myChar) end
+	rayParams.FilterDescendantsInstances = ignoreList
+	local result = workspace:Raycast(origin, direction, rayParams)
+	if not result then return true end
+	local hitPart = result.Instance
+	local targetChar = targetPart.Parent
+	if hitPart and hitPart:IsDescendantOf(targetChar) then return true end
+	return false
+end
+
+isActualTeamMode = function()
+	local ok, result = pcall(function()
+		local teamsWithPlayers = 0
+		for _, team in ipairs(Teams:GetTeams()) do
+			if #team:GetPlayers() > 0 then
+				teamsWithPlayers = teamsWithPlayers + 1
+			end
+		end
+		return teamsWithPlayers >= 2
+	end)
+	return ok and result
+end
+
+shouldSkipTeammate = function(player)
+	if not combatState.aimbotTeamCheck then return false end
+	local myTeam = LocalPlayer.Team
+	local theirTeam = player.Team
+	if not myTeam or not theirTeam then return false end
+	if myTeam == theirTeam then
+		return isActualTeamMode()
+	end
+	return false
+end
+
 getClosestPlayerInFOV = function()
 	local cam = workspace.CurrentCamera
 	local closest, closestDist = nil, combatState.aimbotFOV
+	local screenCenter = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
 	for _, player in ipairs(Players:GetPlayers()) do
-		if player ~= LocalPlayer then
+		if player ~= LocalPlayer and player.Character and not shouldSkipTeammate(player) then
 			local char = player.Character
-			if char then
-				local head = char:FindFirstChild("Head")
-				if head then
-					local hum = char:FindFirstChildOfClass("Humanoid")
-					if hum and hum.Health > 0 then
-						local screenPos, onScreen = cam:WorldToViewportPoint(head.Position)
-						if onScreen then
-							local center = Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y/2)
-							local dist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
-							if dist < closestDist then
-								closest = head
-								closestDist = dist
-							end
+			local head = char:FindFirstChild("Head")
+			if head then
+				local hum = char:FindFirstChildOfClass("Humanoid")
+				if hum and hum.Health > 0 then
+					local screenPos, onScreen = cam:WorldToViewportPoint(head.Position)
+					if onScreen then
+						local dist = (Vector2.new(screenPos.X, screenPos.Y) - screenCenter).Magnitude
+						if dist < closestDist and isTargetVisible(head) then
+							closest = head
+							closestDist = dist
 						end
 					end
 				end
@@ -3491,19 +3546,11 @@ startAimbot = function()
 			local cam = workspace.CurrentCamera
 			local target = getClosestPlayerInFOV()
 			if not target then return end
-			local screenPos = cam:WorldToViewportPoint(target.Position)
-			local center = Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y/2)
-			local delta = Vector2.new(screenPos.X - center.X, screenPos.Y - center.Y)
-			local sens = 1.5
-			local moveX = (delta.X / combatState.aimbotSmoothing) * sens
-			local moveY = (delta.Y / combatState.aimbotSmoothing) * sens
-			if math.abs(moveX) < 1 and math.abs(delta.X) > 1 then moveX = delta.X > 0 and 1 or -1 end
-			if math.abs(moveY) < 1 and math.abs(delta.Y) > 1 then moveY = delta.Y > 0 and 1 or -1 end
-			if mousemoverel then
-				mousemoverel(moveX, moveY)
+			local camPos = cam.CFrame.Position
+			local targetCF = CFrame.new(camPos, target.Position)
+			if combatState.aimbotSmoothing <= 1 then
+				cam.CFrame = targetCF
 			else
-				local camPos = cam.CFrame.Position
-				local targetCF = CFrame.new(camPos, target.Position)
 				cam.CFrame = cam.CFrame:Lerp(targetCF, 1 / combatState.aimbotSmoothing)
 			end
 		end)
