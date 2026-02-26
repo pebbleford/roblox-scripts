@@ -289,7 +289,7 @@ local function addPadding(parent, top, right, bottom, left)
 	return p
 end
 
-local function findPlayer(name)
+F.findPlayer = function(name)
 	name = name:lower()
 	for _, p in ipairs(Players:GetPlayers()) do
 		if p.Name:lower():sub(1, #name) == name or p.DisplayName:lower():sub(1, #name) == name then
@@ -1222,7 +1222,7 @@ do
 end
 
 -- ===================== ESP LOGIC =====================
-local function addHighlight(player)
+F.addHighlight = function(player)
 	if player == LocalPlayer then return end
 	if espState.highlights[player] then return end
 	local character = player.Character
@@ -1241,7 +1241,7 @@ local function addHighlight(player)
 	end)
 end
 
-local function addNametag(player)
+F.addNametag = function(player)
 	if player == LocalPlayer then return end
 	if espState.nametags[player] then return end
 	local character = player.Character
@@ -1346,19 +1346,19 @@ local function addNametag(player)
 	end)
 end
 
-local function removeHighlight(player)
+F.removeHighlight = function(player)
 	local hl = espState.highlights[player]
 	if hl then pcall(function() hl:Destroy() end) end
 	espState.highlights[player] = nil
 end
 
-local function removeNametag(player)
+F.removeNametag = function(player)
 	local tag = espState.nametags[player]
 	if tag then pcall(function() tag:Destroy() end) end
 	espState.nametags[player] = nil
 end
 
-local function cleanupStale()
+F.cleanupStale = function()
 	local staleHL, staleNT = {}, {}
 	for player, hl in pairs(espState.highlights) do
 		local alive = false
@@ -1370,19 +1370,19 @@ local function cleanupStale()
 		pcall(function() if tag and tag.Parent then alive = true end end)
 		if not alive then table.insert(staleNT, player) end
 	end
-	for _, player in ipairs(staleHL) do removeHighlight(player) end
-	for _, player in ipairs(staleNT) do removeNametag(player) end
+	for _, player in ipairs(staleHL) do F.removeHighlight(player) end
+	for _, player in ipairs(staleNT) do F.removeNametag(player) end
 end
 
-local function espScanAll()
-	cleanupStale()
+F.espScanAll = function()
+	F.cleanupStale()
 	local count, skipped = 0, 0
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player ~= LocalPlayer then
 			local character = player.Character
 			if character and character.Parent then
-				if not espState.highlights[player] then addHighlight(player) end
-				if not espState.nametags[player] then addNametag(player) end
+				if not espState.highlights[player] then F.addHighlight(player) end
+				if not espState.nametags[player] then F.addNametag(player) end
 				count = count + 1
 			else
 				skipped = skipped + 1
@@ -1392,48 +1392,48 @@ local function espScanAll()
 	return count, skipped
 end
 
-local function hookPlayer(player)
+F.hookPlayer = function(player)
 	if player == LocalPlayer then return end
 	local conn = player.CharacterAdded:Connect(function()
 		if not espState.espEnabled then return end
 		_wait(1)
-		if espState.espEnabled then addHighlight(player) addNametag(player) end
+		if espState.espEnabled then F.addHighlight(player) F.addNametag(player) end
 	end)
 	table.insert(espState.espConnections, conn)
 end
 
-local function enableESP()
-	for _, player in ipairs(Players:GetPlayers()) do hookPlayer(player) end
+F.enableESP = function()
+	for _, player in ipairs(Players:GetPlayers()) do F.hookPlayer(player) end
 	local addedConn = Players.PlayerAdded:Connect(function(player)
 		if not espState.espEnabled then return end
-		hookPlayer(player)
+		F.hookPlayer(player)
 	end)
 	table.insert(espState.espConnections, addedConn)
-	local count, skipped = espScanAll()
+	local count, skipped = F.espScanAll()
 	addLog("[ESP] ON - " .. count .. " highlighted, " .. skipped .. " pending", COLORS.success)
 	_spawn(function()
 		while espState.espEnabled do
 			_wait(espState.REFRESH_INTERVAL)
 			if not espState.espEnabled then break end
-			espScanAll()
+			F.espScanAll()
 		end
 	end)
 end
 
-local function disableESP()
+F.disableESP = function()
 	local allP = {}
 	for player in pairs(espState.highlights) do table.insert(allP, player) end
-	for _, player in ipairs(allP) do removeHighlight(player) end
+	for _, player in ipairs(allP) do F.removeHighlight(player) end
 	local allN = {}
 	for player in pairs(espState.nametags) do table.insert(allN, player) end
-	for _, player in ipairs(allN) do removeNametag(player) end
+	for _, player in ipairs(allN) do F.removeNametag(player) end
 	for _, conn in ipairs(espState.espConnections) do pcall(function() conn:Disconnect() end) end
 	espState.espConnections = {}
 	addLog("[ESP] OFF", COLORS.error)
 end
 
 -- ===================== FLY LOGIC =====================
-local function startFly()
+F.startFly = function()
 	local character = LocalPlayer.Character
 	if not character then return end
 	local hrp = character:FindFirstChild("HumanoidRootPart")
@@ -1514,7 +1514,7 @@ local function startFly()
 	addLog("[FLY] ON - Speed: " .. flyState.flySpeed, COLORS.success)
 end
 
-local function stopFly()
+F.stopFly = function()
 	if flyState.flyConnection then flyState.flyConnection:Disconnect() flyState.flyConnection = nil end
 	if flyState.linearVelocity then pcall(function() flyState.linearVelocity:Destroy() end) flyState.linearVelocity = nil end
 	if flyState.alignOrientation then pcall(function() flyState.alignOrientation:Destroy() end) flyState.alignOrientation = nil end
@@ -1534,7 +1534,7 @@ end
 local FLING_VEL_THRESHOLD = 120
 local FLING_ANGULAR_THRESHOLD = 50
 
-local function startAntiFling()
+F.startAntiFling = function()
 	if combatState.antiFlingConnection then combatState.antiFlingConnection:Disconnect() combatState.antiFlingConnection = nil end
 	combatState.antiFlingLastPos = nil
 	combatState.antiFlingConnection = RunService.Heartbeat:Connect(function()
@@ -1581,14 +1581,14 @@ local function startAntiFling()
 	addLog("[ANTI FLING] ON", COLORS.success)
 end
 
-local function stopAntiFling()
+F.stopAntiFling = function()
 	if combatState.antiFlingConnection then combatState.antiFlingConnection:Disconnect() combatState.antiFlingConnection = nil end
 	combatState.antiFlingLastPos = nil
 	addLog("[ANTI FLING] OFF", COLORS.error)
 end
 
 -- ===================== NOCLIP LOGIC =====================
-local function startNoclip()
+F.startNoclip = function()
 	moveState.noclipConnection = RunService.Stepped:Connect(function()
 		pcall(function()
 			local character = LocalPlayer.Character
@@ -1601,7 +1601,7 @@ local function startNoclip()
 	addLog("[NOCLIP] ON", COLORS.success)
 end
 
-local function stopNoclip()
+F.stopNoclip = function()
 	if moveState.noclipConnection then moveState.noclipConnection:Disconnect() moveState.noclipConnection = nil end
 	pcall(function()
 		local character = LocalPlayer.Character
@@ -1614,7 +1614,7 @@ local function stopNoclip()
 end
 
 -- ===================== GET VEHICLE HELPER =====================
-local function getVehicle()
+F.getVehicle = function()
 	local char = LocalPlayer.Character
 	if not char then return nil, nil end
 	local hum = char:FindFirstChildOfClass("Humanoid")
@@ -1628,10 +1628,10 @@ local function getVehicle()
 end
 
 -- ===================== CAR NOCLIP LOGIC =====================
-local function startCarNoclip()
+F.startCarNoclip = function()
 	moveState.carNoclipConnection = RunService.Stepped:Connect(function()
 		pcall(function()
-			local vehicle, vPart = getVehicle()
+			local vehicle, vPart = F.getVehicle()
 			if not vehicle then return end
 			local character = LocalPlayer.Character
 			-- Vehicle parts
@@ -1649,10 +1649,10 @@ local function startCarNoclip()
 	addLog("[CAR NOCLIP] ON - Drive through walls!", COLORS.success)
 end
 
-local function stopCarNoclip()
+F.stopCarNoclip = function()
 	if moveState.carNoclipConnection then moveState.carNoclipConnection:Disconnect() moveState.carNoclipConnection = nil end
 	pcall(function()
-		local vehicle, vPart = getVehicle()
+		local vehicle, vPart = F.getVehicle()
 		if vehicle then
 			for _, part in ipairs(vehicle:GetDescendants()) do
 				if part:IsA("BasePart") then part.CanCollide = true end
@@ -1669,7 +1669,7 @@ local function stopCarNoclip()
 end
 
 -- ===================== CAR SPEED BOOST =====================
-local function startCarSpeed()
+F.startCarSpeed = function()
 	local char = LocalPlayer.Character
 	if not char then addLog("[CAR SPEED] No character!", COLORS.error) return end
 	local hum = char:FindFirstChildOfClass("Humanoid")
@@ -1716,7 +1716,7 @@ local function startCarSpeed()
 	addLog("[CAR SPEED] ON - Speed: " .. moveState.carSpeedValue, COLORS.success)
 end
 
-local function stopCarSpeed()
+F.stopCarSpeed = function()
 	if moveState.carSpeedConnection then moveState.carSpeedConnection:Disconnect() moveState.carSpeedConnection = nil end
 	pcall(function()
 		local char = LocalPlayer.Character
@@ -1737,7 +1737,7 @@ end
 
 local flingConnection = nil
 
-local function startFling()
+F.startFling = function()
 	local ok, err = pcall(function()
 		local character = LocalPlayer.Character
 		if not character then return end
@@ -1754,7 +1754,7 @@ local function startFling()
 		end
 
 		-- Enable noclip so we can move freely while spinning
-		if not moveState.noclipEnabled then moveState.noclipEnabled = true startNoclip() end
+		if not moveState.noclipEnabled then moveState.noclipEnabled = true F.startNoclip() end
 		wait(0.1)
 
 		-- BodyAngularVelocity - spin on ALL axes for chaotic collision
@@ -1809,7 +1809,7 @@ local function startFling()
 	end
 end
 
-local function stopFling()
+F.stopFling = function()
 	-- Disconnect heartbeat
 	if flingConnection then flingConnection:Disconnect() flingConnection = nil end
 
@@ -1842,9 +1842,9 @@ local function stopFling()
 end
 
 -- ===================== CAR FLING LOGIC =====================
-local function startCarFling()
+F.startCarFling = function()
 	local ok, err = pcall(function()
-		local vehicle, vPart = getVehicle()
+		local vehicle, vPart = F.getVehicle()
 		if not vPart then
 			addLog("[CAR FLING] Sit in a vehicle first!", COLORS.error)
 			return
@@ -1873,7 +1873,7 @@ local function startCarFling()
 		-- Auto-enable car noclip so vehicle doesn't get stuck
 		if not moveState.carNoclipEnabled then
 			moveState.carNoclipEnabled = true
-			startCarNoclip()
+			F.startCarNoclip()
 		end
 		wait(0.1)
 
@@ -1914,7 +1914,7 @@ local function startCarFling()
 	end
 end
 
-local function stopCarFling()
+F.stopCarFling = function()
 	-- Remove BodyAngularVelocity
 	if flingState.carFlingBAV then pcall(function() flingState.carFlingBAV:Destroy() end) flingState.carFlingBAV = nil end
 
@@ -1938,7 +1938,7 @@ local function stopCarFling()
 	-- Disable car noclip if it was auto-enabled
 	if moveState.carNoclipEnabled then
 		moveState.carNoclipEnabled = false
-		stopCarNoclip()
+		F.stopCarNoclip()
 	end
 
 	addLog("[CAR FLING] OFF", COLORS.error)
@@ -1949,7 +1949,7 @@ end
 
 local walkFlingProps = {}
 
-local function startWalkFling()
+F.startWalkFling = function()
 	local ok, err = pcall(function()
 		local character = LocalPlayer.Character
 		if not character then return end
@@ -1966,7 +1966,7 @@ local function startWalkFling()
 		end
 
 		-- Enable noclip
-		if not moveState.noclipEnabled then moveState.noclipEnabled = true startNoclip() end
+		if not moveState.noclipEnabled then moveState.noclipEnabled = true F.startNoclip() end
 
 		-- Velocity spike loop using Heartbeat only
 		flingState.walkFlingThread = spawn(function()
@@ -2002,7 +2002,7 @@ local function startWalkFling()
 	end
 end
 
-local function stopWalkFling()
+F.stopWalkFling = function()
 	-- Restore physics
 	pcall(function()
 		local character = LocalPlayer.Character
@@ -2026,7 +2026,7 @@ local function stopWalkFling()
 end
 
 -- ===================== SPEED LOGIC =====================
-local function startSpeed()
+F.startSpeed = function()
 	pcall(function()
 		local character = LocalPlayer.Character
 		if character then
@@ -2037,7 +2037,7 @@ local function startSpeed()
 	addLog("[SPEED] ON - WalkSpeed: " .. moveState.speedValue, COLORS.success)
 end
 
-local function stopSpeed()
+F.stopSpeed = function()
 	pcall(function()
 		local character = LocalPlayer.Character
 		if character then
@@ -2049,7 +2049,7 @@ local function stopSpeed()
 end
 
 -- ===================== GOD MODE LOGIC =====================
-local function startGod()
+F.startGod = function()
 	combatState.godConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local character = LocalPlayer.Character
@@ -2064,7 +2064,7 @@ local function startGod()
 	addLog("[GOD] ON (client-side)", COLORS.success)
 end
 
-local function stopGod()
+F.stopGod = function()
 	if combatState.godConnection then combatState.godConnection:Disconnect() combatState.godConnection = nil end
 	pcall(function()
 		local character = LocalPlayer.Character
@@ -2077,7 +2077,7 @@ local function stopGod()
 end
 
 -- ===================== INFINITE JUMP LOGIC =====================
-local function startInfJump()
+F.startInfJump = function()
 	moveState.infJumpConnection = UserInputService.JumpRequest:Connect(function()
 		pcall(function()
 			local character = LocalPlayer.Character
@@ -2090,13 +2090,13 @@ local function startInfJump()
 	addLog("[INF JUMP] ON", COLORS.success)
 end
 
-local function stopInfJump()
+F.stopInfJump = function()
 	if moveState.infJumpConnection then moveState.infJumpConnection:Disconnect() moveState.infJumpConnection = nil end
 	addLog("[INF JUMP] OFF", COLORS.error)
 end
 
 -- ===================== KILL AURA LOGIC =====================
-local function startKillAura()
+F.startKillAura = function()
 	combatState.killAuraConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local character = LocalPlayer.Character
@@ -2125,7 +2125,7 @@ local function startKillAura()
 	addLog("[KILL AURA] ON - Range: 15 studs", COLORS.success)
 end
 
-local function stopKillAura()
+F.stopKillAura = function()
 	if combatState.killAuraConnection then combatState.killAuraConnection:Disconnect() combatState.killAuraConnection = nil end
 	addLog("[KILL AURA] OFF", COLORS.error)
 end
@@ -2135,7 +2135,7 @@ funState.savedTransparencies = {}
 funState.fakeCharacter = nil
 funState.invisPosLoop = nil
 
-local function startInvisible()
+F.startInvisible = function()
 	pcall(function()
 		local character = LocalPlayer.Character
 		if not character then return end
@@ -2217,7 +2217,7 @@ local function startInvisible()
 	addLog("[INVISIBLE] ON (FE invisible)", COLORS.success)
 end
 
-local function stopInvisible()
+F.stopInvisible = function()
 	pcall(function()
 		-- Stop position loop
 		if funState.invisPosLoop then funState.invisPosLoop:Disconnect() funState.invisPosLoop = nil end
@@ -2249,7 +2249,7 @@ local function stopInvisible()
 end
 
 -- ===================== SPIN LOGIC =====================
-local function startSpin()
+F.startSpin = function()
 	funState.spinConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local character = LocalPlayer.Character
@@ -2261,13 +2261,13 @@ local function startSpin()
 	addLog("[SPIN] ON", COLORS.success)
 end
 
-local function stopSpin()
+F.stopSpin = function()
 	if funState.spinConnection then funState.spinConnection:Disconnect() funState.spinConnection = nil end
 	addLog("[SPIN] OFF", COLORS.error)
 end
 
 -- ===================== SEIZURE LOGIC =====================
-local function startSeizure()
+F.startSeizure = function()
 	funState.seizureConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local character = LocalPlayer.Character
@@ -2282,13 +2282,13 @@ local function startSeizure()
 	addLog("[SEIZURE] ON", COLORS.success)
 end
 
-local function stopSeizure()
+F.stopSeizure = function()
 	if funState.seizureConnection then funState.seizureConnection:Disconnect() funState.seizureConnection = nil end
 	addLog("[SEIZURE] OFF", COLORS.error)
 end
 
 -- ===================== EMOTE LOGIC =====================
-local function stopEmote()
+F.stopEmote = function()
 	funState.emoteActive = false
 	if funState.emoteConnection then funState.emoteConnection:Disconnect() funState.emoteConnection = nil end
 	for _, track in ipairs(funState.emoteTracks) do
@@ -2297,8 +2297,8 @@ local function stopEmote()
 	funState.emoteTracks = {}
 end
 
-local function playEmote(animId, speed, duration)
-	stopEmote()
+F.playEmote = function(animId, speed, duration)
+	F.stopEmote()
 	pcall(function()
 		local character = LocalPlayer.Character
 		if not character then return end
@@ -2313,14 +2313,14 @@ local function playEmote(animId, speed, duration)
 		funState.emoteActive = true
 		if duration then
 			task.delay(duration, function()
-				if funState.emoteActive then stopEmote() end
+				if funState.emoteActive then F.stopEmote() end
 			end)
 		end
 	end)
 end
 
-local function playJerkEmote()
-	stopEmote()
+F.playJerkEmote = function()
+	F.stopEmote()
 	pcall(function()
 		local character = LocalPlayer.Character
 		if not character then return end
@@ -2383,8 +2383,8 @@ local function playJerkEmote()
 end
 
 -- ===================== VEHICLE FLY =====================
-local function startVehicleFly()
-	local vehicle, part = getVehicle()
+F.startVehicleFly = function()
+	local vehicle, part = F.getVehicle()
 	if not part then
 		addLog("[VFLY] Sit in a vehicle first!", COLORS.error)
 		return
@@ -2435,7 +2435,7 @@ local function startVehicleFly()
 	addLog("[VFLY] Vehicle fly ON", COLORS.success)
 end
 
-local function stopVehicleFly()
+F.stopVehicleFly = function()
 	if flyState.vehicleFlyConnection then flyState.vehicleFlyConnection:Disconnect() flyState.vehicleFlyConnection = nil end
 	if flyState.vehicleFlyBV then pcall(function() flyState.vehicleFlyBV:Destroy() end) flyState.vehicleFlyBV = nil end
 	if flyState.vehicleFlyBG then pcall(function() flyState.vehicleFlyBG:Destroy() end) flyState.vehicleFlyBG = nil end
@@ -2443,7 +2443,7 @@ local function stopVehicleFly()
 end
 
 -- ===================== TELEPORT / SPECTATE =====================
-local function teleportToPlayer(targetPlayer)
+F.teleportToPlayer = function(targetPlayer)
 	pcall(function()
 		local myChar = LocalPlayer.Character
 		local theirChar = targetPlayer.Character
@@ -2460,7 +2460,7 @@ end
 
 playerState.spectating = false
 
-local function spectatePlayer(targetPlayer)
+F.spectatePlayer = function(targetPlayer)
 	pcall(function()
 		if targetPlayer and targetPlayer.Character then
 			local humanoid = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
@@ -2473,7 +2473,7 @@ local function spectatePlayer(targetPlayer)
 	end)
 end
 
-local function unspectate()
+F.unspectate = function()
 	pcall(function()
 		local myChar = LocalPlayer.Character
 		if myChar then
@@ -2485,7 +2485,7 @@ local function unspectate()
 	end)
 end
 
-local function setJumpPower(value)
+F.setJumpPower = function(value)
 	pcall(function()
 		local character = LocalPlayer.Character
 		if character then
@@ -2495,17 +2495,17 @@ local function setJumpPower(value)
 	end)
 end
 
-local function setGravity(value)
+F.setGravity = function(value)
 	pcall(function() workspace.Gravity = value end)
 end
 
 -- ===================== SERVER FUNCTIONS =====================
-local function rejoinServer()
+F.rejoinServer = function()
 	pcall(function() TeleportService:Teleport(game.PlaceId, LocalPlayer) end)
 	addLog("[SERVER] Rejoining...", COLORS.accent)
 end
 
-local function serverHop()
+F.serverHop = function()
 	pcall(function()
 		local servers = HttpService:JSONDecode(
 			game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100")
@@ -2544,23 +2544,23 @@ do
 
 	createToggle(tab, "ESP", 6, function(on)
 		espState.espEnabled = on
-		if on then enableESP() else disableESP() end
+		if on then F.enableESP() else F.disableESP() end
 	end)
 	createToggle(tab, "Fly", 7, function(on)
 		flyState.flyEnabled = on
-		if on then startFly() else stopFly() end
+		if on then F.startFly() else F.stopFly() end
 	end)
 	createToggle(tab, "Noclip", 8, function(on)
 		moveState.noclipEnabled = on
-		if on then startNoclip() else stopNoclip() end
+		if on then F.startNoclip() else F.stopNoclip() end
 	end)
 	createToggle(tab, "God Mode", 9, function(on)
 		combatState.godEnabled = on
-		if on then startGod() else stopGod() end
+		if on then F.startGod() else F.stopGod() end
 	end)
 	createToggle(tab, "Infinite Jump", 10, function(on)
 		moveState.infJumpEnabled = on
-		if on then startInfJump() else stopInfJump() end
+		if on then F.startInfJump() else F.stopInfJump() end
 	end)
 
 	local spacer2 = Instance.new("Frame")
@@ -2615,14 +2615,14 @@ do
 	createSectionLabel(tab, "Actions", 3)
 
 	createActionButton(tab, "Teleport to Player", 4, function()
-		if playerState.selectedPlayer then teleportToPlayer(playerState.selectedPlayer)
+		if playerState.selectedPlayer then F.teleportToPlayer(playerState.selectedPlayer)
 		else addLog("[TP] No player selected", COLORS.error) end
 	end)
 	createActionButton(tab, "Spectate Player", 5, function()
-		if playerState.selectedPlayer then spectatePlayer(playerState.selectedPlayer)
+		if playerState.selectedPlayer then F.spectatePlayer(playerState.selectedPlayer)
 		else addLog("[SPECTATE] No player selected", COLORS.error) end
 	end)
-	createActionButton(tab, "Unspectate", 6, function() unspectate() end)
+	createActionButton(tab, "Unspectate", 6, function() F.unspectate() end)
 	createActionButton(tab, "Fling Player", 7, function()
 		if not playerState.selectedPlayer or not playerState.selectedPlayer.Character then
 			addLog("[FLING] No player selected", COLORS.error)
@@ -2685,7 +2685,7 @@ do
 
 	createToggle(tab, "Kill Aura", 8, function(on)
 		combatState.killAuraEnabled = on
-		if on then startKillAura() else stopKillAura() end
+		if on then F.startKillAura() else F.stopKillAura() end
 	end)
 
 	local spacer = Instance.new("Frame")
@@ -2795,8 +2795,8 @@ do
 	spacer.Parent = tab
 
 	createSectionLabel(tab, "Actions", 6)
-	createActionButton(tab, "Rejoin Server", 7, function() rejoinServer() end)
-	createActionButton(tab, "Server Hop", 8, function() serverHop() end)
+	createActionButton(tab, "Rejoin Server", 7, function() F.rejoinServer() end)
+	createActionButton(tab, "Server Hop", 8, function() F.serverHop() end)
 
 	createActionButton(tab, "Copy Server ID", 9, function()
 		pcall(function()
@@ -2821,7 +2821,7 @@ do
 	createSectionLabel(tab, "ESP Settings", 1)
 	createToggle(tab, "ESP Enabled", 2, function(on)
 		espState.espEnabled = on
-		if on then enableESP() else disableESP() end
+		if on then F.enableESP() else F.disableESP() end
 	end)
 
 	local spacer = Instance.new("Frame")
@@ -2927,16 +2927,16 @@ do
 	createSectionLabel(tab, "Flight", 1)
 	createToggle(tab, "Fly", 2, function(on)
 		flyState.flyEnabled = on
-		if on then startFly() else stopFly() end
+		if on then F.startFly() else F.stopFly() end
 	end)
 	createSlider(tab, "Fly Speed", 10, 500, flyState.flySpeed, 3, function(val) flyState.flySpeed = val end)
 	createToggle(tab, "Vehicle Fly (Sit First)", 4, function(on)
 		flyState.vehicleFlyEnabled = on
-		if on then startVehicleFly() else stopVehicleFly() end
+		if on then F.startVehicleFly() else F.stopVehicleFly() end
 	end)
 	createToggle(tab, "Car Speed Boost (Sit First)", 5, function(on)
 		moveState.carSpeedEnabled = on
-		if on then startCarSpeed() else stopCarSpeed() end
+		if on then F.startCarSpeed() else F.stopCarSpeed() end
 	end)
 	createSlider(tab, "Car Speed", 50, 1000, moveState.carSpeedValue, 6, function(val)
 		moveState.carSpeedValue = val
@@ -2951,7 +2951,7 @@ do
 	createSectionLabel(tab, "Movement", 8)
 	createToggle(tab, "Speed Boost", 9, function(on)
 		moveState.speedEnabled = on
-		if on then startSpeed() else stopSpeed() end
+		if on then F.startSpeed() else F.stopSpeed() end
 	end)
 	createSlider(tab, "Walk Speed", 16, 500, moveState.speedValue, 10, function(val)
 		moveState.speedValue = val
@@ -2967,15 +2967,15 @@ do
 	end)
 	createToggle(tab, "Noclip", 11, function(on)
 		moveState.noclipEnabled = on
-		if on then startNoclip() else stopNoclip() end
+		if on then F.startNoclip() else F.stopNoclip() end
 	end)
 	createToggle(tab, "Anti Fling", 12, function(on)
 		combatState.antiFlingEnabled = on
-		if on then startAntiFling() else stopAntiFling() end
+		if on then F.startAntiFling() else F.stopAntiFling() end
 	end)
 	createToggle(tab, "Car Noclip (Sit First)", 13, function(on)
 		moveState.carNoclipEnabled = on
-		if on then startCarNoclip() else stopCarNoclip() end
+		if on then F.startCarNoclip() else F.stopCarNoclip() end
 	end)
 
 	local spacer2 = Instance.new("Frame")
@@ -2987,9 +2987,9 @@ do
 	createSectionLabel(tab, "Jumping", 16)
 	createToggle(tab, "Infinite Jump", 17, function(on)
 		moveState.infJumpEnabled = on
-		if on then startInfJump() else stopInfJump() end
+		if on then F.startInfJump() else F.stopInfJump() end
 	end)
-	createSlider(tab, "Jump Power", 10, 500, moveState.jumpPowerValue, 18, function(val) moveState.jumpPowerValue = val setJumpPower(val) end)
+	createSlider(tab, "Jump Power", 10, 500, moveState.jumpPowerValue, 18, function(val) moveState.jumpPowerValue = val F.setJumpPower(val) end)
 
 	local spacer3 = Instance.new("Frame")
 	spacer3.Size = UDim2.new(1, 0, 0, 4)
@@ -2998,7 +2998,7 @@ do
 	spacer3.Parent = tab
 
 	createSectionLabel(tab, "World", 20)
-	createSlider(tab, "Gravity", 0, 1000, math.floor(moveState.gravityValue), 21, function(val) moveState.gravityValue = val setGravity(val) end)
+	createSlider(tab, "Gravity", 0, 1000, math.floor(moveState.gravityValue), 21, function(val) moveState.gravityValue = val F.setGravity(val) end)
 
 	createSpacer(tab, 22)
 	createSectionLabel(tab, "Teleportation", 23)
@@ -3030,26 +3030,26 @@ do
 	createToggle(tab, "Spin Fling (IY Style)", 2, function(on)
 		flingState.flingEnabled = on
 		if on then
-			if flingState.walkFlingEnabled then flingState.walkFlingEnabled = false stopWalkFling() end
-			startFling()
-		else stopFling() end
+			if flingState.walkFlingEnabled then flingState.walkFlingEnabled = false F.stopWalkFling() end
+			F.startFling()
+		else F.stopFling() end
 	end)
 	createSlider(tab, "Spin Fling Power", 1000, 99999, flingState.flingPower, 3, function(val) flingState.flingPower = val end)
 	createToggle(tab, "Walk Fling (Dinos Anim)", 4, function(on)
 		flingState.walkFlingEnabled = on
 		if on then
-			if flingState.flingEnabled then flingState.flingEnabled = false stopFling() end
-			startWalkFling()
-		else stopWalkFling() end
+			if flingState.flingEnabled then flingState.flingEnabled = false F.stopFling() end
+			F.startWalkFling()
+		else F.stopWalkFling() end
 	end)
 	createSlider(tab, "Walk Fling Power", 1000, 50000, flingState.walkFlingPower, 5, function(val) flingState.walkFlingPower = val end)
 	createToggle(tab, "Car Fling (Sit First)", 6, function(on)
 		flingState.carFlingEnabled = on
 		if on then
-			if flingState.flingEnabled then flingState.flingEnabled = false stopFling() end
-			if flingState.walkFlingEnabled then flingState.walkFlingEnabled = false stopWalkFling() end
-			startCarFling()
-		else stopCarFling() end
+			if flingState.flingEnabled then flingState.flingEnabled = false F.stopFling() end
+			if flingState.walkFlingEnabled then flingState.walkFlingEnabled = false F.stopWalkFling() end
+			F.startCarFling()
+		else F.stopCarFling() end
 	end)
 	createSlider(tab, "Car Fling Power", 1000, 99999, flingState.carFlingPower, 7, function(val) flingState.carFlingPower = val end)
 
@@ -3062,15 +3062,15 @@ do
 	createSectionLabel(tab, "Visual Effects", 9)
 	createToggle(tab, "Invisible", 10, function(on)
 		funState.invisibleEnabled = on
-		if on then startInvisible() else stopInvisible() end
+		if on then F.startInvisible() else F.stopInvisible() end
 	end)
 	createToggle(tab, "Spin", 11, function(on)
 		funState.spinEnabled = on
-		if on then startSpin() else stopSpin() end
+		if on then F.startSpin() else F.stopSpin() end
 	end)
 	createToggle(tab, "Seizure", 12, function(on)
 		funState.seizureEnabled = on
-		if on then startSeizure() else stopSeizure() end
+		if on then F.startSeizure() else F.stopSeizure() end
 	end)
 
 	local spacer2 = Instance.new("Frame")
@@ -3081,27 +3081,27 @@ do
 
 	createSectionLabel(tab, "Emotes", 14)
 	createActionButton(tab, "Emote 1", 15, function()
-		playJerkEmote()
+		F.playJerkEmote()
 	end)
 	createActionButton(tab, "Dance", 16, function()
-		playEmote(507771019, 1, 10)
+		F.playEmote(507771019, 1, 10)
 		addLog("[EMOTE] Dance!", COLORS.success)
 	end)
 	createActionButton(tab, "Dab", 17, function()
-		playEmote(183412246, 1, 3)
+		F.playEmote(183412246, 1, 3)
 		addLog("[EMOTE] Dab!", COLORS.success)
 	end)
 	createActionButton(tab, "Crouch", 18, function()
-		playEmote(182724289, 1, nil)
+		F.playEmote(182724289, 1, nil)
 		addLog("[EMOTE] Crouch (;stopemote to stop)", COLORS.success)
 	end)
 	createActionButton(tab, "Stop Emote", 19, function()
 
-	createActionButton(tab, "T-Pose", 30, function() playEmote(5104377791) end)
-	createActionButton(tab, "Zombie Walk", 31, function() playEmote(616163682) end)
-	createActionButton(tab, "Wave", 32, function() playEmote(507770239) end)
-	createActionButton(tab, "Point", 33, function() playEmote(507770453) end)
-	createActionButton(tab, "Laugh", 34, function() playEmote(507770818) end)
+	createActionButton(tab, "T-Pose", 30, function() F.playEmote(5104377791) end)
+	createActionButton(tab, "Zombie Walk", 31, function() F.playEmote(616163682) end)
+	createActionButton(tab, "Wave", 32, function() F.playEmote(507770239) end)
+	createActionButton(tab, "Point", 33, function() F.playEmote(507770453) end)
+	createActionButton(tab, "Laugh", 34, function() F.playEmote(507770818) end)
 
 	createSpacer(tab, 35)
 	createSectionLabel(tab, "Character Mods", 36)
@@ -3119,7 +3119,7 @@ do
 	createActionButton(tab, "Glass Body", 42, function() F.glassBody() end)
 	createActionButton(tab, "Clone Illusion", 43, function() F.cloneIllusion() end)
 	createActionButton(tab, "Sit in Air", 44, function() F.sitInAir() end)
-		stopEmote()
+		F.stopEmote()
 		addLog("[EMOTE] Stopped", COLORS.error)
 	end)
 end
@@ -3163,11 +3163,11 @@ do
 	createSectionLabel(tab, "Defense", 13)
 	createToggle(tab, "Kill Aura", 14, function(on)
 		combatState.killAuraEnabled = on
-		if on then startKillAura() else stopKillAura() end
+		if on then F.startKillAura() else F.stopKillAura() end
 	end)
 	createToggle(tab, "Anti Fling", 15, function(on)
 		combatState.antiFlingEnabled = on
-		if on then startAntiFling() else stopAntiFling() end
+		if on then F.startAntiFling() else F.stopAntiFling() end
 	end)
 	createToggle(tab, "Anti-Void", 16, function(on)
 		combatState.antiVoidEnabled = on
@@ -3247,68 +3247,68 @@ end
 -- but we also support ; prefix commands via a chat hook
 
 local commands = {}
-commands["esp"] = function() espState.espEnabled = true enableESP() end
-commands["unesp"] = function() espState.espEnabled = false disableESP() end
-commands["fly"] = function() flyState.flyEnabled = true startFly() end
-commands["unfly"] = function() flyState.flyEnabled = false stopFly() end
-commands["vfly"] = function() flyState.vehicleFlyEnabled = true startVehicleFly() end
-commands["unvfly"] = function() flyState.vehicleFlyEnabled = false stopVehicleFly() end
-commands["speed"] = function(args) local v = tonumber(args[1]) if v then moveState.speedValue = v end moveState.speedEnabled = true startSpeed() end
-commands["unspeed"] = function() moveState.speedEnabled = false stopSpeed() end
-commands["noclip"] = function() moveState.noclipEnabled = true startNoclip() end
-commands["unnoclip"] = function() moveState.noclipEnabled = false stopNoclip() end
-commands["antifling"] = function() combatState.antiFlingEnabled = true startAntiFling() end
-commands["unantifling"] = function() combatState.antiFlingEnabled = false stopAntiFling() end
-commands["god"] = function() combatState.godEnabled = true startGod() end
-commands["ungod"] = function() combatState.godEnabled = false stopGod() end
+commands["esp"] = function() espState.espEnabled = true F.enableESP() end
+commands["unesp"] = function() espState.espEnabled = false F.disableESP() end
+commands["fly"] = function() flyState.flyEnabled = true F.startFly() end
+commands["unfly"] = function() flyState.flyEnabled = false F.stopFly() end
+commands["vfly"] = function() flyState.vehicleFlyEnabled = true F.startVehicleFly() end
+commands["unvfly"] = function() flyState.vehicleFlyEnabled = false F.stopVehicleFly() end
+commands["speed"] = function(args) local v = tonumber(args[1]) if v then moveState.speedValue = v end moveState.speedEnabled = true F.startSpeed() end
+commands["unspeed"] = function() moveState.speedEnabled = false F.stopSpeed() end
+commands["noclip"] = function() moveState.noclipEnabled = true F.startNoclip() end
+commands["unnoclip"] = function() moveState.noclipEnabled = false F.stopNoclip() end
+commands["antifling"] = function() combatState.antiFlingEnabled = true F.startAntiFling() end
+commands["unantifling"] = function() combatState.antiFlingEnabled = false F.stopAntiFling() end
+commands["god"] = function() combatState.godEnabled = true F.startGod() end
+commands["ungod"] = function() combatState.godEnabled = false F.stopGod() end
 commands["tp"] = function(args)
 	if not args[1] then addLog("[CMD] Usage: ;tp <player>", COLORS.error) return end
-	local target = findPlayer(args[1])
-	if target then teleportToPlayer(target) else addLog("[CMD] Player not found: " .. args[1], COLORS.error) end
+	local target = F.findPlayer(args[1])
+	if target then F.teleportToPlayer(target) else addLog("[CMD] Player not found: " .. args[1], COLORS.error) end
 end
-commands["invisible"] = function() funState.invisibleEnabled = true startInvisible() end
-commands["visible"] = function() funState.invisibleEnabled = false stopInvisible() end
+commands["invisible"] = function() funState.invisibleEnabled = true F.startInvisible() end
+commands["visible"] = function() funState.invisibleEnabled = false F.stopInvisible() end
 commands["jp"] = function(args)
 	local v = tonumber(args[1])
-	if v then moveState.jumpPowerValue = v setJumpPower(v) addLog("[CMD] Jump Power: " .. v, COLORS.success)
+	if v then moveState.jumpPowerValue = v F.setJumpPower(v) addLog("[CMD] Jump Power: " .. v, COLORS.success)
 	else addLog("[CMD] Usage: ;jp <value>", COLORS.error) end
 end
 commands["gravity"] = function(args)
 	local v = tonumber(args[1])
-	if v then moveState.gravityValue = v setGravity(v) addLog("[CMD] Gravity: " .. v, COLORS.success)
+	if v then moveState.gravityValue = v F.setGravity(v) addLog("[CMD] Gravity: " .. v, COLORS.success)
 	else addLog("[CMD] Usage: ;gravity <value>", COLORS.error) end
 end
-commands["fling"] = function() if flingState.walkFlingEnabled then flingState.walkFlingEnabled = false stopWalkFling() end flingState.flingEnabled = true startFling() end
-commands["unfling"] = function() flingState.flingEnabled = false stopFling() end
-commands["walkfling"] = function() if flingState.flingEnabled then flingState.flingEnabled = false stopFling() end flingState.walkFlingEnabled = true startWalkFling() end
-commands["unwalkfling"] = function() flingState.walkFlingEnabled = false stopWalkFling() end
-commands["carfling"] = function() if flingState.flingEnabled then flingState.flingEnabled = false stopFling() end if flingState.walkFlingEnabled then flingState.walkFlingEnabled = false stopWalkFling() end flingState.carFlingEnabled = true startCarFling() end
-commands["uncarfling"] = function() flingState.carFlingEnabled = false stopCarFling() end
-commands["carnoclip"] = function() moveState.carNoclipEnabled = true startCarNoclip() end
-commands["uncarnoclip"] = function() moveState.carNoclipEnabled = false stopCarNoclip() end
-commands["carspeed"] = function(args) local v = tonumber(args[1]) if v then moveState.carSpeedValue = v end moveState.carSpeedEnabled = true startCarSpeed() end
-commands["uncarspeed"] = function() moveState.carSpeedEnabled = false stopCarSpeed() end
-commands["infjump"] = function() moveState.infJumpEnabled = true startInfJump() end
-commands["uninfjump"] = function() moveState.infJumpEnabled = false stopInfJump() end
-commands["killaura"] = function() combatState.killAuraEnabled = true startKillAura() end
-commands["unkillaura"] = function() combatState.killAuraEnabled = false stopKillAura() end
-commands["rejoin"] = function() rejoinServer() end
-commands["serverhop"] = function() serverHop() end
+commands["fling"] = function() if flingState.walkFlingEnabled then flingState.walkFlingEnabled = false F.stopWalkFling() end flingState.flingEnabled = true F.startFling() end
+commands["unfling"] = function() flingState.flingEnabled = false F.stopFling() end
+commands["walkfling"] = function() if flingState.flingEnabled then flingState.flingEnabled = false F.stopFling() end flingState.walkFlingEnabled = true F.startWalkFling() end
+commands["unwalkfling"] = function() flingState.walkFlingEnabled = false F.stopWalkFling() end
+commands["carfling"] = function() if flingState.flingEnabled then flingState.flingEnabled = false F.stopFling() end if flingState.walkFlingEnabled then flingState.walkFlingEnabled = false F.stopWalkFling() end flingState.carFlingEnabled = true F.startCarFling() end
+commands["uncarfling"] = function() flingState.carFlingEnabled = false F.stopCarFling() end
+commands["carnoclip"] = function() moveState.carNoclipEnabled = true F.startCarNoclip() end
+commands["uncarnoclip"] = function() moveState.carNoclipEnabled = false F.stopCarNoclip() end
+commands["carspeed"] = function(args) local v = tonumber(args[1]) if v then moveState.carSpeedValue = v end moveState.carSpeedEnabled = true F.startCarSpeed() end
+commands["uncarspeed"] = function() moveState.carSpeedEnabled = false F.stopCarSpeed() end
+commands["infjump"] = function() moveState.infJumpEnabled = true F.startInfJump() end
+commands["uninfjump"] = function() moveState.infJumpEnabled = false F.stopInfJump() end
+commands["killaura"] = function() combatState.killAuraEnabled = true F.startKillAura() end
+commands["unkillaura"] = function() combatState.killAuraEnabled = false F.stopKillAura() end
+commands["rejoin"] = function() F.rejoinServer() end
+commands["serverhop"] = function() F.serverHop() end
 commands["spectate"] = function(args)
 	if not args[1] then addLog("[CMD] Usage: ;spectate <player>", COLORS.error) return end
-	local target = findPlayer(args[1])
-	if target then spectatePlayer(target) else addLog("[CMD] Player not found: " .. args[1], COLORS.error) end
+	local target = F.findPlayer(args[1])
+	if target then F.spectatePlayer(target) else addLog("[CMD] Player not found: " .. args[1], COLORS.error) end
 end
-commands["unspectate"] = function() unspectate() end
-commands["spin"] = function() funState.spinEnabled = true startSpin() end
-commands["unspin"] = function() funState.spinEnabled = false stopSpin() end
-commands["seizure"] = function() funState.seizureEnabled = true startSeizure() end
-commands["unseizure"] = function() funState.seizureEnabled = false stopSeizure() end
-commands["emote1"] = function() playJerkEmote() end
-commands["dance"] = function() playEmote(507771019, 1, 10) addLog("[EMOTE] Dance!", COLORS.success) end
-commands["dab"] = function() playEmote(183412246, 1, 3) addLog("[EMOTE] Dab!", COLORS.success) end
-commands["crouch"] = function() playEmote(182724289, 1, nil) addLog("[EMOTE] Crouch", COLORS.success) end
-commands["stopemote"] = function() stopEmote() addLog("[EMOTE] Stopped", COLORS.error) end
+commands["F.unspectate"] = function() F.unspectate() end
+commands["spin"] = function() funState.spinEnabled = true F.startSpin() end
+commands["unspin"] = function() funState.spinEnabled = false F.stopSpin() end
+commands["seizure"] = function() funState.seizureEnabled = true F.startSeizure() end
+commands["unseizure"] = function() funState.seizureEnabled = false F.stopSeizure() end
+commands["emote1"] = function() F.playJerkEmote() end
+commands["dance"] = function() F.playEmote(507771019, 1, 10) addLog("[EMOTE] Dance!", COLORS.success) end
+commands["dab"] = function() F.playEmote(183412246, 1, 3) addLog("[EMOTE] Dab!", COLORS.success) end
+commands["crouch"] = function() F.playEmote(182724289, 1, nil) addLog("[EMOTE] Crouch", COLORS.success) end
+commands["stopemote"] = function() F.stopEmote() addLog("[EMOTE] Stopped", COLORS.error) end
 
 commands["aimbot"] = function() combatState.aimbotEnabled = true F.startAimbot() end
 commands["unaimbot"] = function() combatState.aimbotEnabled = false F.stopAimbot() end
@@ -3357,11 +3357,11 @@ commands["neon"] = function() F.neonBody() end
 commands["glass"] = function() F.glassBody() end
 commands["clone"] = function() F.cloneIllusion() end
 commands["sitair"] = function() F.sitInAir() end
-commands["tpose"] = function() playEmote(5104377791) end
-commands["zombie"] = function() playEmote(616163682) end
-commands["wave"] = function() playEmote(507770239) end
-commands["point"] = function() playEmote(507770453) end
-commands["laugh"] = function() playEmote(507770818) end
+commands["tpose"] = function() F.playEmote(5104377791) end
+commands["zombie"] = function() F.playEmote(616163682) end
+commands["wave"] = function() F.playEmote(507770239) end
+commands["point"] = function() F.playEmote(507770453) end
+commands["laugh"] = function() F.playEmote(507770818) end
 commands["antiafk"] = function() serverState.antiAfkEnabled = true F.startAntiAfk() end
 commands["unantiafk"] = function() serverState.antiAfkEnabled = false F.stopAntiAfk() end
 commands["chatspy"] = function() serverState.chatSpyEnabled = true F.startChatSpy() end
@@ -4314,26 +4314,26 @@ end
 
 -- ===================== RESPAWN HOOKS =====================
 Players.PlayerRemoving:Connect(function(player)
-	removeHighlight(player)
-	removeNametag(player)
+	F.removeHighlight(player)
+	F.removeNametag(player)
 end)
 
 LocalPlayer.CharacterAdded:Connect(function()
 	if flyState.flyEnabled then
-		stopFly() _wait(0.5)
-		if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then startFly() end
+		F.stopFly() _wait(0.5)
+		if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then F.startFly() end
 	end
-	if flingState.flingEnabled then stopFling() _wait(0.5) startFling() end
-	if flingState.walkFlingEnabled then stopWalkFling() _wait(0.5) startWalkFling() end
+	if flingState.flingEnabled then F.stopFling() _wait(0.5) F.startFling() end
+	if flingState.walkFlingEnabled then F.stopWalkFling() _wait(0.5) F.startWalkFling() end
 	flingState.spinBAV = nil
 	flingState.savedPhysProps = {}
-	if moveState.speedEnabled then _wait(0.3) startSpeed() end
-	if combatState.antiFlingEnabled then _wait(0.3) startAntiFling() end
+	if moveState.speedEnabled then _wait(0.3) F.startSpeed() end
+	if combatState.antiFlingEnabled then _wait(0.3) F.startAntiFling() end
 	if combatState.godEnabled then
 		if combatState.godConnection then combatState.godConnection:Disconnect() combatState.godConnection = nil end
-		_wait(0.3) startGod()
+		_wait(0.3) F.startGod()
 	end
-	if moveState.jumpPowerValue ~= 50 then _wait(0.3) setJumpPower(moveState.jumpPowerValue) end
+	if moveState.jumpPowerValue ~= 50 then _wait(0.3) F.setJumpPower(moveState.jumpPowerValue) end
 end)
 
 -- ===================== STARTUP =====================
