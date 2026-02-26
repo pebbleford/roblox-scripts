@@ -19,6 +19,7 @@ local LocalPlayer = Players.LocalPlayer
 
 local _spawn = (task and task.spawn) or spawn
 local _wait = (task and task.wait) or wait
+local F = {} -- shared function table (avoids Luau 200 local limit)
 
 -- ===================== COLOR PALETTE =====================
 local COLORS = {
@@ -2523,8 +2524,7 @@ F.serverHop = function()
 	end)
 end
 
--- Functions table (avoids Luau 200 local variable limit)
-local F = {}
+-- Functions defined below use F table (declared at top of file)
 
 -- ===================== BUILD MAIN TAB =====================
 do
