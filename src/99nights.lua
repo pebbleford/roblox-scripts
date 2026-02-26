@@ -1,7 +1,7 @@
 -- Key System Gate
 local SXKeyURL = "https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/keysystem.lua?v=" .. tostring(tick())
 local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyURL))() end)
-if not keyOk or not keySystem or not keySystem.validate() then return end
+if not keyOk or not keySystem or not keySystem.validate("99nights") then return end
 
 -- ================================================================
 -- 99 Nights in the Forest - Script Hub v1.0
@@ -678,7 +678,7 @@ local function startAutoTreeFarm()
 				for _, data in ipairs(trees) do
 					if not autoTreeFarmActive then break end
 					local trunk = data.trunk
-					if not trunk or not trunk.Parent then continue end
+					if trunk and trunk.Parent then
 
 					-- Try firing ProximityPrompts on the tree first (no TP needed)
 					fireAllPrompts(trunk.Parent)
@@ -704,6 +704,7 @@ local function startAutoTreeFarm()
 
 					if swings >= maxSwings and trunk and trunk.Parent then
 						badTrees[trunk:GetFullName()] = true
+					end
 					end
 				end
 			end)

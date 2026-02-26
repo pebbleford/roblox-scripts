@@ -78,8 +78,65 @@
             margin: 20px 0;
         }
 
+        /* Script selector */
+        .select-section { text-align: center; padding: 10px 0 20px; }
+
+        .select-label {
+            font-size: 13px;
+            color: #888;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .script-select {
+            width: 100%;
+            padding: 10px 14px;
+            background: #0d0d14;
+            border: 1px solid #2a2a3a;
+            border-radius: 8px;
+            color: #e0e0e0;
+            font-family: inherit;
+            font-size: 14px;
+            cursor: pointer;
+            appearance: none;
+            -webkit-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+        }
+
+        .script-select:focus {
+            outline: none;
+            border-color: #ff8c00;
+        }
+
+        .generate-btn {
+            display: inline-block;
+            margin-top: 14px;
+            background: #ff8c00;
+            border: none;
+            color: #fff;
+            padding: 10px 28px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+        }
+
+        .generate-btn:hover { background: #ff9e20; transform: translateY(-1px); }
+        .generate-btn:active { transform: translateY(0); }
+        .generate-btn:disabled { background: #555; cursor: not-allowed; transform: none; }
+
         /* Timer */
-        .timer-section { text-align: center; padding: 20px 0; }
+        .timer-section {
+            display: none;
+            text-align: center;
+            padding: 20px 0;
+        }
+
+        .timer-section.visible { display: block; }
 
         .timer-label {
             font-size: 13px;
@@ -141,9 +198,15 @@
         .key-label {
             font-size: 13px;
             color: #888;
-            margin-bottom: 12px;
+            margin-bottom: 4px;
             text-transform: uppercase;
             letter-spacing: 1px;
+        }
+
+        .key-script-name {
+            font-size: 12px;
+            color: #ff8c00;
+            margin-bottom: 12px;
         }
 
         .key-box {
@@ -243,13 +306,6 @@
             font-weight: 700;
         }
 
-        .footer {
-            text-align: center;
-            padding: 16px 0 0;
-            font-size: 10px;
-            color: #333;
-        }
-
         .loadstring-box {
             background: #0d0d14;
             border: 1px solid #1e1e2a;
@@ -287,6 +343,13 @@
         .copy-btn-sm:hover { background: #3a3a4a; }
         .copy-btn-sm.copied { background: #4CAF50; color: #fff; }
 
+        .footer {
+            text-align: center;
+            padding: 16px 0 0;
+            font-size: 10px;
+            color: #333;
+        }
+
         @media (max-width: 520px) {
             .card-content { padding: 24px 20px; }
             .title h1 { font-size: 18px; }
@@ -308,9 +371,25 @@
 
                 <div class="separator"></div>
 
-                <!-- Timer (shown initially) -->
+                <!-- Script selector (shown initially) -->
+                <div class="select-section" id="selectSection">
+                    <div class="select-label">Select Script</div>
+                    <select class="script-select" id="scriptSelect">
+                        <option value="synapsex">Synapse X Admin Hub (v3.0)</option>
+                        <option value="rivals">RIVALS FPS Hub (v1.4)</option>
+                        <option value="mm2">Murder Mystery 2 Hub (v1.1)</option>
+                        <option value="brookhaven">Brookhaven Hub (v1.0)</option>
+                        <option value="sharkbite">SharkBite 2 Hub (v1.0)</option>
+                        <option value="nbtf">NBTF Hub</option>
+                        <option value="elected">Elected Hub</option>
+                        <option value="99nights">99 Nights Hub</option>
+                    </select>
+                    <button class="generate-btn" id="generateBtn" onclick="startGeneration()">GENERATE KEY</button>
+                </div>
+
+                <!-- Timer (hidden initially) -->
                 <div class="timer-section" id="timerSection">
-                    <div class="timer-label">Please wait</div>
+                    <div class="timer-label">Generating key for <span id="timerScriptName" style="color:#ff8c00">---</span></div>
                     <div class="timer-display" id="timerDisplay">60</div>
                     <div class="progress-bar-container">
                         <div class="progress-bar" id="progressBar"></div>
@@ -318,9 +397,10 @@
                     <div class="timer-hint">Your key will be generated after the timer completes</div>
                 </div>
 
-                <!-- Key (shown after timer) -->
+                <!-- Key display (hidden initially) -->
                 <div class="key-section" id="keySection">
                     <div class="key-label">Your Key</div>
+                    <div class="key-script-name" id="keyScriptLabel">---</div>
                     <div class="key-box">
                         <div class="key-text" id="keyText">---</div>
                         <button class="copy-btn" id="copyBtn" onclick="copyKey()">COPY</button>
@@ -333,20 +413,20 @@
                         <h3>How to use</h3>
                         <ol>
                             <li>Copy the key above</li>
-                            <li>Execute the Synapse X script in Roblox</li>
+                            <li>Execute the script in Roblox</li>
                             <li>Paste the key into the key system dialog</li>
-                            <li>Key is valid for 24 hours (one-time per device)</li>
+                            <li>Key is valid for 24 hours, one script only</li>
                         </ol>
 
                         <div class="loadstring-box">
-                            <div class="loadstring-text" id="loadstringText">loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/synapsex.lua"))()</div>
+                            <div class="loadstring-text" id="loadstringText">---</div>
                             <button class="copy-btn-sm" id="copyLoadstringBtn" onclick="copyLoadstring()">COPY</button>
                         </div>
                     </div>
                 </div>
 
                 <div class="footer">
-                    <a href="index.html" style="color:#ff8c00;text-decoration:none;font-size:12px;display:block;margin-bottom:8px;">← Back to Home</a>
+                    <a href="index.html" style="color:#ff8c00;text-decoration:none;font-size:12px;display:block;margin-bottom:8px;">&larr; Back to Home</a>
                     Synapse X The Revival &copy; 2024-2026
                 </div>
             </div>
@@ -354,6 +434,23 @@
     </div>
 
     <script>
+        // ========================================
+        // SCRIPT DATA
+        // ========================================
+        var SCRIPTS = {
+            synapsex:   { id: 0, name: "Synapse X Admin Hub",   file: "synapsex.lua" },
+            rivals:     { id: 1, name: "RIVALS FPS Hub",        file: "rivals.lua" },
+            mm2:        { id: 2, name: "Murder Mystery 2 Hub",  file: "mm2.lua" },
+            brookhaven: { id: 3, name: "Brookhaven Hub",        file: "brookhaven.lua" },
+            sharkbite:  { id: 4, name: "SharkBite 2 Hub",       file: "sharkbite.lua" },
+            nbtf:       { id: 5, name: "NBTF Hub",              file: "nbtf.lua" },
+            elected:    { id: 6, name: "Elected Hub",           file: "elected.lua" },
+            "99nights": { id: 7, name: "99 Nights Hub",         file: "99nights.lua" }
+        };
+
+        var BASE_URL = "https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/";
+        var STORAGE_KEY = "sxr_active_key";
+
         // ========================================
         // CRYPTOGRAPHIC KEY GENERATION
         // ========================================
@@ -367,7 +464,7 @@
             return hash;
         }
 
-        function generateKey() {
+        function generateKey(scriptId) {
             var now = Math.floor(Date.now() / 1000);
 
             // Timestamp as 4 bytes (big-endian)
@@ -377,11 +474,12 @@
             ts[2] = (now >>> 8) & 0xFF;
             ts[3] = now & 0xFF;
 
-            // Random nonce (4 bytes)
+            // Byte 5 = script ID, bytes 6-8 = random nonce
             var nonce = new Uint8Array(4);
             crypto.getRandomValues(nonce);
+            nonce[0] = scriptId & 0xFF;
 
-            // Payload = timestamp + nonce (8 bytes)
+            // Payload = timestamp + [scriptId, nonce] (8 bytes)
             var payload = new Uint8Array(8);
             payload.set(ts, 0);
             payload.set(nonce, 4);
@@ -431,10 +529,85 @@
         }
 
         // ========================================
+        // LOCAL STORAGE
+        // ========================================
+        function getActiveKey() {
+            try {
+                var raw = localStorage.getItem(STORAGE_KEY);
+                if (!raw) return null;
+                var data = JSON.parse(raw);
+                if (!data || !data.key || !data.expiresAt) return null;
+                var now = Math.floor(Date.now() / 1000);
+                if (now >= data.expiresAt) {
+                    localStorage.removeItem(STORAGE_KEY);
+                    return null;
+                }
+                return data;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function saveActiveKey(key, scriptName, expiresAt) {
+            var data = { key: key, scriptName: scriptName, expiresAt: expiresAt };
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        }
+
+        // ========================================
         // UI LOGIC
         // ========================================
-        var generatedKey = null;
+        var currentKey = null;
         var expiryInterval = null;
+        var selectedScript = null;
+
+        function init() {
+            // Check query param for pre-selection
+            var params = new URLSearchParams(window.location.search);
+            var scriptParam = params.get('script');
+            if (scriptParam && SCRIPTS[scriptParam]) {
+                document.getElementById('scriptSelect').value = scriptParam;
+            }
+
+            // Check for active key
+            var active = getActiveKey();
+            if (active) {
+                currentKey = active;
+                showActiveKey(active);
+            }
+        }
+
+        function showActiveKey(data) {
+            var scriptInfo = SCRIPTS[data.scriptName] || { name: data.scriptName, file: "synapsex.lua" };
+
+            document.getElementById('selectSection').style.display = 'none';
+            document.getElementById('timerSection').style.display = 'none';
+
+            document.getElementById('keyScriptLabel').textContent = 'For: ' + scriptInfo.name;
+            document.getElementById('keyText').textContent = data.key;
+            document.getElementById('loadstringText').textContent =
+                'loadstring(game:HttpGet("' + BASE_URL + scriptInfo.file + '"))()';
+
+            var keySection = document.getElementById('keySection');
+            keySection.classList.add('visible');
+
+            startExpiryCountdown(data.expiresAt);
+        }
+
+        function startGeneration() {
+            var select = document.getElementById('scriptSelect');
+            selectedScript = select.value;
+
+            if (!SCRIPTS[selectedScript]) return;
+
+            var scriptInfo = SCRIPTS[selectedScript];
+
+            // Hide selector, show timer
+            document.getElementById('selectSection').style.display = 'none';
+            document.getElementById('timerSection').classList.add('visible');
+            document.getElementById('timerScriptName').textContent = scriptInfo.name;
+
+            startTimer();
+        }
 
         function startTimer() {
             var timerDisplay = document.getElementById('timerDisplay');
@@ -450,32 +623,44 @@
 
                 if (remaining <= 0) {
                     clearInterval(interval);
-                    showKey();
+                    finishGeneration();
                 }
             }, 1000);
         }
 
-        function showKey() {
-            generatedKey = generateKey();
+        function finishGeneration() {
+            var scriptInfo = SCRIPTS[selectedScript];
+            var result = generateKey(scriptInfo.id);
 
+            currentKey = {
+                key: result.key,
+                scriptName: selectedScript,
+                expiresAt: result.expiresAt
+            };
+
+            // Save to localStorage
+            saveActiveKey(result.key, selectedScript, result.expiresAt);
+
+            // Show key
             document.getElementById('timerSection').style.display = 'none';
-            var keySection = document.getElementById('keySection');
-            keySection.classList.add('visible');
-
-            document.getElementById('keyText').textContent = generatedKey.key;
-            startExpiryCountdown();
+            document.getElementById('timerSection').classList.remove('visible');
+            showActiveKey(currentKey);
         }
 
-        function startExpiryCountdown() {
+        function startExpiryCountdown(expiresAt) {
+            if (expiryInterval) clearInterval(expiryInterval);
+
             function update() {
-                if (!generatedKey) return;
                 var now = Math.floor(Date.now() / 1000);
-                var remaining = generatedKey.expiresAt - now;
+                var remaining = expiresAt - now;
 
                 if (remaining <= 0) {
                     document.getElementById('expiryCountdown').textContent = 'EXPIRED';
                     document.getElementById('expiryCountdown').style.color = '#ff4444';
                     clearInterval(expiryInterval);
+                    localStorage.removeItem(STORAGE_KEY);
+                    // Show selector again after short delay
+                    setTimeout(function() { location.reload(); }, 2000);
                     return;
                 }
 
@@ -491,8 +676,8 @@
         }
 
         function copyKey() {
-            if (!generatedKey) return;
-            copyToClipboard(generatedKey.key, 'copyBtn');
+            if (!currentKey) return;
+            copyToClipboard(currentKey.key, 'copyBtn');
         }
 
         function copyLoadstring() {
@@ -525,8 +710,8 @@
             });
         }
 
-        // Start on page load
-        startTimer();
+        // Initialize on page load
+        init();
     </script>
 </body>
 </html>

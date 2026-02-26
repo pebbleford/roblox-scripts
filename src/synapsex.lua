@@ -1,7 +1,7 @@
 -- Key System Gate
 local SXKeyURL = "https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/keysystem.lua?v=" .. tostring(tick())
 local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyURL))() end)
-if not keyOk or not keySystem or not keySystem.validate() then return end
+if not keyOk or not keySystem or not keySystem.validate("synapsex") then return end
 
 -- ================================================================
 -- Synapse X The Revival - Executor + Admin

@@ -211,6 +211,26 @@
         .ls-copy:hover { background: #3a3a4a; color: #ddd; }
         .ls-copy.copied { background: #4CAF50; color: #fff; }
 
+        .card-getkey {
+            display: inline-block;
+            margin-top: 10px;
+            background: #ff8c0020;
+            border: 1px solid #ff8c0040;
+            color: #ff8c00;
+            padding: 5px 14px;
+            border-radius: 5px;
+            text-decoration: none;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            transition: background 0.2s, border-color 0.2s;
+        }
+
+        .card-getkey:hover {
+            background: #ff8c0030;
+            border-color: #ff8c00;
+        }
+
         /* ===== FOOTER ===== */
         .footer {
             text-align: center;
@@ -261,6 +281,7 @@
                 name: "Synapse X Admin Hub",
                 version: "v3.0",
                 file: "synapsex.lua",
+                scriptKey: "synapsex",
                 desc: "Universal admin hub — works in any Roblox game",
                 tags: ["Speed", "Fly", "Noclip", "God Mode", "ESP", "Aimbot", "Triggerbot", "Hitbox Expander", "Fling", "FE Invisible", "Anti-AFK", "Car Mods", "Emotes"]
             },
@@ -268,6 +289,7 @@
                 name: "RIVALS FPS Hub",
                 version: "v1.4",
                 file: "rivals.lua",
+                scriptKey: "rivals",
                 desc: "Competitive FPS hub built for RIVALS",
                 tags: ["Aimbot", "Triggerbot", "FOV Circle", "Kill Aura", "ESP", "Chams", "Hitbox Expander", "Bunny Hop", "Speed", "Fly", "Noclip"]
             },
@@ -275,6 +297,7 @@
                 name: "Murder Mystery 2 Hub",
                 version: "v1.1",
                 file: "mm2.lua",
+                scriptKey: "mm2",
                 desc: "Full exploit hub for Murder Mystery 2",
                 tags: ["Role Detection", "Murderer ESP", "Auto Shoot", "Coin Farm", "Gun ESP", "Kill All", "X-Ray", "Auto Grab Gun"]
             },
@@ -282,6 +305,7 @@
                 name: "Brookhaven Hub",
                 version: "v1.0",
                 file: "brookhaven.lua",
+                scriptKey: "brookhaven",
                 desc: "Exploit hub for Brookhaven RP",
                 tags: ["Speed", "Fly", "Noclip", "God Mode", "Teleport", "Game Features"]
             },
@@ -289,24 +313,28 @@
                 name: "SharkBite 2 Hub",
                 version: "v1.0",
                 file: "sharkbite.lua",
+                scriptKey: "sharkbite",
                 desc: "Exploit hub for SharkBite 2",
                 tags: ["Speed", "Fly", "Noclip", "God Mode", "Game Features"]
             },
             {
                 name: "NBTF Hub",
                 file: "nbtf.lua",
+                scriptKey: "nbtf",
                 desc: "Hub for Nuclear Blast Testing Facility",
                 tags: ["Game Features", "Movement Suite"]
             },
             {
                 name: "Elected Hub",
                 file: "elected.lua",
+                scriptKey: "elected",
                 desc: "Hub for Elected",
                 tags: ["Game Features", "Movement Suite"]
             },
             {
                 name: "99 Nights Hub",
                 file: "99nights.lua",
+                scriptKey: "99nights",
                 desc: "Hub for 99 Nights in the Forest",
                 tags: ["Game Features", "Movement Suite"]
             }
@@ -367,6 +395,10 @@
 
             var id = 'ls-' + data.file.replace(/[^a-z0-9]/g, '');
 
+            var keyLinkHtml = data.scriptKey
+                ? '<a class="card-getkey" href="getkey.html?script=' + data.scriptKey + '">GET KEY</a>'
+                : '';
+
             return '<div class="card">' +
                 '<div class="card-accent"></div>' +
                 '<div class="card-body">' +
@@ -380,6 +412,7 @@
                         '<span class="ls-text" id="' + id + '">' + escapeHtml(loadstring) + '</span>' +
                         '<button class="ls-copy" onclick="copyLS(\'' + id + '\', this)">COPY</button>' +
                     '</div>' +
+                    keyLinkHtml +
                 '</div>' +
             '</div>';
         }

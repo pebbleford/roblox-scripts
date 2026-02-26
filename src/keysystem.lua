@@ -26,6 +26,10 @@ local BLACKLIST_URL = "https://raw.githubusercontent.com/pebbleford/roblox-scrip
 local WEBHOOK_URL = "PASTE_YOUR_DISCORD_WEBHOOK_URL_HERE"
 local GENERATED_KEY_SECRET = "SXR_PEBBLEFORD_2024_KEY"
 local GENERATED_KEY_EXPIRY = 86400
+local SCRIPT_IDS = {
+    synapsex = 0, rivals = 1, mm2 = 2, brookhaven = 3,
+    sharkbite = 4, nbtf = 5, elected = 6, ["99nights"] = 7,
+}
 
 -- ============================================================
 -- SERVICES
@@ -123,7 +127,7 @@ end
 -- ============================================================
 -- VALIDATE WEBSITE-GENERATED KEY
 -- ============================================================
-local function validateGeneratedKey(keyStr)
+local function validateGeneratedKey(keyStr, scriptName)
     if type(keyStr) ~= "string" then return false end
     if keyStr:sub(1, 4) ~= "SXR-" then return false end
 
@@ -142,6 +146,9 @@ local function validateGeneratedKey(keyStr)
 
     -- Extract timestamp (bytes 1-4, big-endian)
     local timestamp = decrypted[1] * 16777216 + decrypted[2] * 65536 + decrypted[3] * 256 + decrypted[4]
+
+    -- Extract script ID (byte 5)
+    local keyScriptId = decrypted[5]
 
     -- Extract signature (bytes 9-12, big-endian)
     local receivedSig = decrypted[9] * 16777216 + decrypted[10] * 65536 + decrypted[11] * 256 + decrypted[12]
@@ -163,6 +170,12 @@ local function validateGeneratedKey(keyStr)
 
     -- Check not too far in the future (5 min tolerance for clock skew)
     if timestamp > now + 300 then return false end
+
+    -- Check script ID matches (if scriptName provided)
+    if scriptName then
+        local expectedId = SCRIPT_IDS[scriptName]
+        if expectedId ~= nil and keyScriptId ~= expectedId then return false end
+    end
 
     return true, timestamp
 end
@@ -302,7 +315,7 @@ end
 -- ============================================================
 -- KEY ENTRY GUI
 -- ============================================================
-local function showKeyGUI(hwid)
+local function showKeyGUI(hwid, scriptName)
     local authenticated = false
     local closed = false
 
@@ -554,7 +567,7 @@ local function showKeyGUI(hwid)
 
         task.wait(0.3) -- Brief delay for feel
 
-        local isGenerated, genTimestamp = validateGeneratedKey(enteredKey)
+        local isGenerated, genTimestamp = validateGeneratedKey(enteredKey, scriptName)
 
         if VALID_KEYS[enteredKey:lower()] then
             -- Hardcoded key - permanent auth
@@ -625,7 +638,7 @@ end
 -- ============================================================
 -- MAIN VALIDATE FUNCTION
 -- ============================================================
-function KEY_SYSTEM.validate()
+function KEY_SYSTEM.validate(scriptName)
     local hwid = getHWID()
 
     -- Step 0: Check blacklist FIRST - blocked users can NEVER get in
@@ -655,7 +668,7 @@ function KEY_SYSTEM.validate()
     end
 
     -- Step 3: Show key GUI (blocks until user enters key or closes)
-    local result = showKeyGUI(hwid)
+    local result = showKeyGUI(hwid, scriptName)
     return result
 end
 
