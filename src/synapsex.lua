@@ -584,19 +584,19 @@ end
 minimizeBtn.MouseButton1Click:Connect(function()
 	mainWindow.Visible = false
 	if not isMobile then toggleBtn.Visible = true end
-	windowVisible = false
+	uiState.windowVisible = false
 end)
 
 closeBtn.MouseButton1Click:Connect(function()
 	mainWindow.Visible = false
 	if not isMobile then toggleBtn.Visible = true end
-	windowVisible = false
+	uiState.windowVisible = false
 end)
 
 toggleBtn.MouseButton1Click:Connect(function()
 	mainWindow.Visible = true
 	toggleBtn.Visible = false
-	windowVisible = true
+	uiState.windowVisible = true
 end)
 
 -- ===================== TAB CONTENT FRAMES =====================
@@ -643,7 +643,7 @@ end
 
 -- ===================== TAB SWITCHING =====================
 local function switchTab(tabName)
-	activeTab = tabName
+	uiState.activeTab = tabName
 	for name, frame in pairs(tabFrames) do
 		frame.Visible = (name == tabName)
 	end
@@ -853,6 +853,14 @@ local function createInfoLabel(parent, text, order)
 	lbl.LayoutOrder = order or 0
 	lbl.Parent = parent
 	return lbl
+end
+
+local function createSpacer(parent, order)
+	local spacer = Instance.new("Frame")
+	spacer.Size = UDim2.new(1, 0, 0, 4)
+	spacer.BackgroundTransparency = 1
+	spacer.LayoutOrder = order or 0
+	spacer.Parent = parent
 end
 
 -- ===================== LOG SYSTEM =====================
@@ -1411,7 +1419,7 @@ local function disableESP()
 	for player in pairs(espState.nametags) do table.insert(allN, player) end
 	for _, player in ipairs(allN) do removeNametag(player) end
 	for _, conn in ipairs(espState.espConnections) do pcall(function() conn:Disconnect() end) end
-	espConnections = {}
+	espState.espConnections = {}
 	addLog("[ESP] OFF", COLORS.error)
 end
 
@@ -1421,15 +1429,15 @@ local function startFly()
 	if not character then return end
 	local hrp = character:FindFirstChild("HumanoidRootPart")
 	if not hrp then return end
-	bodyGyro = Instance.new("BodyGyro")
+	flyState.bodyGyro = Instance.new("BodyGyro")
 	flyState.bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
 	flyState.bodyGyro.P = 9e4
 	flyState.bodyGyro.Parent = hrp
-	bodyVelocity = Instance.new("BodyVelocity")
+	flyState.bodyVelocity = Instance.new("BodyVelocity")
 	flyState.bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
 	flyState.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
 	flyState.bodyVelocity.Parent = hrp
-	flyConnection = RunService.Heartbeat:Connect(function()
+	flyState.flyConnection = RunService.Heartbeat:Connect(function()
 		if not flyState.flyEnabled or not hrp or not hrp.Parent then return end
 		local cam = workspace.CurrentCamera
 		local dir = Vector3.new(0, 0, 0)
@@ -1459,8 +1467,8 @@ local FLING_ANGULAR_THRESHOLD = 50
 
 local function startAntiFling()
 	if combatState.antiFlingConnection then combatState.antiFlingConnection:Disconnect() combatState.antiFlingConnection = nil end
-	antiFlingLastPos = nil
-	antiFlingConnection = RunService.Heartbeat:Connect(function()
+	combatState.antiFlingLastPos = nil
+	combatState.antiFlingConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local character = LocalPlayer.Character
 			if not character then return end
@@ -1474,7 +1482,7 @@ local function startAntiFling()
 			local angSpeed = angVel.Magnitude
 
 			if speed < FLING_VEL_THRESHOLD and angSpeed < FLING_ANGULAR_THRESHOLD then
-				antiFlingLastPos = hrp.CFrame
+				combatState.antiFlingLastPos = hrp.CFrame
 			end
 
 			-- Detect fling: abnormally high velocity or angular velocity
@@ -1506,13 +1514,13 @@ end
 
 local function stopAntiFling()
 	if combatState.antiFlingConnection then combatState.antiFlingConnection:Disconnect() combatState.antiFlingConnection = nil end
-	antiFlingLastPos = nil
+	combatState.antiFlingLastPos = nil
 	addLog("[ANTI FLING] OFF", COLORS.error)
 end
 
 -- ===================== NOCLIP LOGIC =====================
 local function startNoclip()
-	noclipConnection = RunService.Stepped:Connect(function()
+	moveState.noclipConnection = RunService.Stepped:Connect(function()
 		pcall(function()
 			local character = LocalPlayer.Character
 			if not character then return end
@@ -1552,7 +1560,7 @@ end
 
 -- ===================== CAR NOCLIP LOGIC =====================
 local function startCarNoclip()
-	carNoclipConnection = RunService.Stepped:Connect(function()
+	moveState.carNoclipConnection = RunService.Stepped:Connect(function()
 		pcall(function()
 			local vehicle, vPart = getVehicle()
 			if not vehicle then return end
@@ -1604,14 +1612,14 @@ local function startCarSpeed()
 
 	-- Save originals
 	if seat:IsA("VehicleSeat") then
-		carSpeedOrigMaxSpeed = seat.MaxSpeed
-		carSpeedOrigTorque = seat.Torque
+		moveState.carSpeedOrigMaxSpeed = seat.MaxSpeed
+		moveState.carSpeedOrigTorque = seat.Torque
 		seat.MaxSpeed = moveState.carSpeedValue
 		seat.Torque = seat.Torque * (moveState.carSpeedValue / (moveState.carSpeedOrigMaxSpeed > 0 and moveState.carSpeedOrigMaxSpeed or 50))
 	end
 
 	-- Heartbeat: keep applying speed + add thrust via AssemblyLinearVelocity for non-VehicleSeat seats
-	carSpeedConnection = RunService.Heartbeat:Connect(function()
+	moveState.carSpeedConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local c = LocalPlayer.Character
 			if not c then return end
@@ -1650,8 +1658,8 @@ local function stopCarSpeed()
 			if moveState.carSpeedOrigTorque then hum.SeatPart.Torque = moveState.carSpeedOrigTorque end
 		end
 	end)
-	carSpeedOrigMaxSpeed = nil
-	carSpeedOrigTorque = nil
+	moveState.carSpeedOrigMaxSpeed = nil
+	moveState.carSpeedOrigTorque = nil
 	addLog("[CAR SPEED] OFF", COLORS.error)
 end
 
@@ -1668,7 +1676,7 @@ local function startFling()
 		if not root then return end
 
 		-- Set density to 100 (super heavy = others get launched on contact)
-		savedPhysProps = {}
+		flingState.savedPhysProps = {}
 		for _, part in ipairs(character:GetDescendants()) do
 			if part:IsA("BasePart") then
 				flingState.savedPhysProps[part] = part.CustomPhysicalProperties
@@ -1681,7 +1689,7 @@ local function startFling()
 		wait(0.1)
 
 		-- BodyAngularVelocity - spin on ALL axes for chaotic collision
-		spinBAV = Instance.new("BodyAngularVelocity")
+		flingState.spinBAV = Instance.new("BodyAngularVelocity")
 		flingState.spinBAV.AngularVelocity = Vector3.new(flingState.flingPower, flingState.flingPower, flingState.flingPower)
 		flingState.spinBAV.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
 		flingState.spinBAV.P = math.huge
@@ -1759,7 +1767,7 @@ local function stopFling()
 			end
 		end
 	end
-	savedPhysProps = {}
+	flingState.savedPhysProps = {}
 
 	addLog("[SPIN FLING] OFF", COLORS.error)
 end
@@ -1774,7 +1782,7 @@ local function startCarFling()
 		end
 
 		-- Save original physics and set density to 100 (super heavy)
-		carFlingOrigProps = {}
+		flingState.carFlingOrigProps = {}
 		for _, part in ipairs(vehicle:GetDescendants()) do
 			if part:IsA("BasePart") then
 				flingState.carFlingOrigProps[part] = part.CustomPhysicalProperties
@@ -1795,13 +1803,13 @@ local function startCarFling()
 
 		-- Auto-enable car noclip so vehicle doesn't get stuck
 		if not moveState.carNoclipEnabled then
-			carNoclipEnabled = true
+			moveState.carNoclipEnabled = true
 			startCarNoclip()
 		end
 		wait(0.1)
 
 		-- BodyAngularVelocity on vehicle - spin on ALL axes for chaotic collision
-		carFlingBAV = Instance.new("BodyAngularVelocity")
+		flingState.carFlingBAV = Instance.new("BodyAngularVelocity")
 		flingState.carFlingBAV.AngularVelocity = Vector3.new(flingState.carFlingPower, flingState.carFlingPower, flingState.carFlingPower)
 		flingState.carFlingBAV.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
 		flingState.carFlingBAV.P = math.huge
@@ -1856,11 +1864,11 @@ local function stopCarFling()
 			end
 		end
 	end)
-	carFlingOrigProps = {}
+	flingState.carFlingOrigProps = {}
 
 	-- Disable car noclip if it was auto-enabled
 	if moveState.carNoclipEnabled then
-		carNoclipEnabled = false
+		moveState.carNoclipEnabled = false
 		stopCarNoclip()
 	end
 
@@ -1892,7 +1900,7 @@ local function startWalkFling()
 		if not moveState.noclipEnabled then moveState.noclipEnabled = true startNoclip() end
 
 		-- Velocity spike loop using Heartbeat only
-		walkFlingThread = spawn(function()
+		flingState.walkFlingThread = spawn(function()
 			local frame = 0
 			while flingState.walkFlingEnabled do
 				RunService.Heartbeat:Wait()
@@ -2001,7 +2009,7 @@ end
 
 -- ===================== INFINITE JUMP LOGIC =====================
 local function startInfJump()
-	infJumpConnection = UserInputService.JumpRequest:Connect(function()
+	moveState.infJumpConnection = UserInputService.JumpRequest:Connect(function()
 		pcall(function()
 			local character = LocalPlayer.Character
 			if character then
@@ -2020,7 +2028,7 @@ end
 
 -- ===================== KILL AURA LOGIC =====================
 local function startKillAura()
-	killAuraConnection = RunService.Heartbeat:Connect(function()
+	combatState.killAuraConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local character = LocalPlayer.Character
 			if not character then return end
@@ -2104,12 +2112,12 @@ local function startInvisible()
 		if hrp and hrp.Parent then hrp.CFrame = savedCF end
 
 		-- Keep fake alive (don't destroy it or server reconnects to real char)
-		fakeCharacter = fakeChar
+		funState.fakeCharacter = fakeChar
 
 		-- Keep real character anchored at position to prevent server drift
 		-- Use a loop to re-apply CFrame if server tries to correct
 		if funState.invisPosLoop then funState.invisPosLoop:Disconnect() end
-		invisPosLoop = RunService.Heartbeat:Connect(function()
+		funState.invisPosLoop = RunService.Heartbeat:Connect(function()
 			pcall(function()
 				if funState.fakeCharacter and funState.fakeCharacter.Parent then
 					-- Keep fake HRP under map
@@ -2120,7 +2128,7 @@ local function startInvisible()
 		end)
 
 		-- Apply client-side transparency so we can't see ourselves
-		savedTransparencies = {}
+		funState.savedTransparencies = {}
 		for _, part in ipairs(character:GetDescendants()) do
 			if part:IsA("BasePart") then
 				funState.savedTransparencies[part] = part.Transparency
@@ -2149,13 +2157,13 @@ local function stopInvisible()
 		for part, transparency in pairs(funState.savedTransparencies) do
 			if part and part.Parent then part.Transparency = transparency end
 		end
-		savedTransparencies = {}
+		funState.savedTransparencies = {}
 
 		-- Destroy fake character so server reconnects to real char
 		if funState.fakeCharacter and funState.fakeCharacter.Parent then
 			funState.fakeCharacter:Destroy()
 		end
-		fakeCharacter = nil
+		funState.fakeCharacter = nil
 
 		-- Respawn to fully restore server replication
 		local character = LocalPlayer.Character
@@ -2173,7 +2181,7 @@ end
 
 -- ===================== SPIN LOGIC =====================
 local function startSpin()
-	spinConnection = RunService.Heartbeat:Connect(function()
+	funState.spinConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local character = LocalPlayer.Character
 			if not character then return end
@@ -2191,7 +2199,7 @@ end
 
 -- ===================== SEIZURE LOGIC =====================
 local function startSeizure()
-	seizureConnection = RunService.Heartbeat:Connect(function()
+	funState.seizureConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local character = LocalPlayer.Character
 			if not character then return end
@@ -2212,12 +2220,12 @@ end
 
 -- ===================== EMOTE LOGIC =====================
 local function stopEmote()
-	emoteActive = false
+	funState.emoteActive = false
 	if funState.emoteConnection then funState.emoteConnection:Disconnect() funState.emoteConnection = nil end
 	for _, track in ipairs(funState.emoteTracks) do
 		pcall(function() track:Stop() end)
 	end
-	emoteTracks = {}
+	funState.emoteTracks = {}
 end
 
 local function playEmote(animId, speed, duration)
@@ -2233,7 +2241,7 @@ local function playEmote(animId, speed, duration)
 		track:Play()
 		if speed then track:AdjustSpeed(speed) end
 		table.insert(funState.emoteTracks, track)
-		emoteActive = true
+		funState.emoteActive = true
 		if duration then
 			task.delay(duration, function()
 				if funState.emoteActive then stopEmote() end
@@ -2249,7 +2257,7 @@ local function playJerkEmote()
 		if not character then return end
 		local hum = character:FindFirstChildOfClass("Humanoid")
 		if not hum then return end
-		emoteActive = true
+		funState.emoteActive = true
 
 		local isR6 = character:FindFirstChild("Torso") ~= nil
 
@@ -2269,7 +2277,7 @@ local function playJerkEmote()
 			table.insert(funState.emoteTracks, track2)
 
 			-- Loop by replaying when tracks finish
-			emoteConnection = RunService.Heartbeat:Connect(function()
+			funState.emoteConnection = RunService.Heartbeat:Connect(function()
 				if not funState.emoteActive then return end
 				pcall(function()
 					if track1.IsPlaying == false then
@@ -2291,7 +2299,7 @@ local function playJerkEmote()
 			track:AdjustSpeed(0.4)
 			table.insert(funState.emoteTracks, track)
 
-			emoteConnection = RunService.Heartbeat:Connect(function()
+			funState.emoteConnection = RunService.Heartbeat:Connect(function()
 				if not funState.emoteActive then return end
 				pcall(function()
 					if track.TimePosition > 0.72 then
@@ -2326,21 +2334,21 @@ local function startVehicleFly()
 		end
 	end)
 
-	vehicleFlyBV = Instance.new("BodyVelocity")
+	flyState.vehicleFlyBV = Instance.new("BodyVelocity")
 	flyState.vehicleFlyBV.Name = "SX_VFly_BV"
 	flyState.vehicleFlyBV.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
 	flyState.vehicleFlyBV.Velocity = Vector3.new(0, 0, 0)
 	flyState.vehicleFlyBV.P = 9000
 	flyState.vehicleFlyBV.Parent = part
 
-	vehicleFlyBG = Instance.new("BodyGyro")
+	flyState.vehicleFlyBG = Instance.new("BodyGyro")
 	flyState.vehicleFlyBG.Name = "SX_VFly_BG"
 	flyState.vehicleFlyBG.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
 	flyState.vehicleFlyBG.P = 9000
 	flyState.vehicleFlyBG.CFrame = part.CFrame
 	flyState.vehicleFlyBG.Parent = part
 
-	vehicleFlyConnection = RunService.RenderStepped:Connect(function()
+	flyState.vehicleFlyConnection = RunService.RenderStepped:Connect(function()
 		pcall(function()
 			if not flyState.vehicleFlyBV or not flyState.vehicleFlyBV.Parent then return end
 			local cam = workspace.CurrentCamera
@@ -2389,7 +2397,7 @@ local function spectatePlayer(targetPlayer)
 			local humanoid = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
 			if humanoid then
 				workspace.CurrentCamera.CameraSubject = humanoid
-				spectating = true
+				playerState.spectating = true
 				addLog("[SPECTATE] Watching " .. targetPlayer.DisplayName, COLORS.success)
 			end
 		end
@@ -2403,7 +2411,7 @@ local function unspectate()
 			local humanoid = myChar:FindFirstChildOfClass("Humanoid")
 			if humanoid then workspace.CurrentCamera.CameraSubject = humanoid end
 		end
-		spectating = false
+		playerState.spectating = false
 		addLog("[SPECTATE] Stopped", COLORS.error)
 	end)
 end
@@ -2463,15 +2471,15 @@ do
 	createSectionLabel(tab, "Quick Toggles", 5)
 
 	createToggle(tab, "ESP", 6, function(on)
-		espEnabled = on
+		espState.espEnabled = on
 		if on then enableESP() else disableESP() end
 	end)
 	createToggle(tab, "Fly", 7, function(on)
-		flyEnabled = on
+		flyState.flyEnabled = on
 		if on then startFly() else stopFly() end
 	end)
 	createToggle(tab, "Noclip", 8, function(on)
-		noclipEnabled = on
+		moveState.noclipEnabled = on
 		if on then startNoclip() else stopNoclip() end
 	end)
 	createToggle(tab, "God Mode", 9, function(on)
@@ -2479,7 +2487,7 @@ do
 		if on then startGod() else stopGod() end
 	end)
 	createToggle(tab, "Infinite Jump", 10, function(on)
-		infJumpEnabled = on
+		moveState.infJumpEnabled = on
 		if on then startInfJump() else stopInfJump() end
 	end)
 
@@ -2604,7 +2612,7 @@ do
 	end)
 
 	createToggle(tab, "Kill Aura", 8, function(on)
-		killAuraEnabled = on
+		combatState.killAuraEnabled = on
 		if on then startKillAura() else stopKillAura() end
 	end)
 
@@ -2671,7 +2679,7 @@ local function refreshPlayerList()
 			btn.Parent = playerListFrame
 			addCorner(btn, 4)
 			btn.MouseButton1Click:Connect(function()
-				selectedPlayer = player
+				playerState.selectedPlayer = player
 				selectedPlayerLabel.Text = "  " .. player.DisplayName .. " (@" .. player.Name .. ")"
 				selectedPlayerLabel.TextColor3 = COLORS.accent
 				refreshPlayerList()
@@ -2684,7 +2692,7 @@ end
 Players.PlayerAdded:Connect(function() _wait(0.5) refreshPlayerList() end)
 Players.PlayerRemoving:Connect(function(player)
 	if playerState.selectedPlayer == player then
-		selectedPlayer = nil
+		playerState.selectedPlayer = nil
 		selectedPlayerLabel.Text = "  None selected"
 		selectedPlayerLabel.TextColor3 = COLORS.textSecondary
 	end
@@ -2740,7 +2748,7 @@ do
 
 	createSectionLabel(tab, "ESP Settings", 1)
 	createToggle(tab, "ESP Enabled", 2, function(on)
-		espEnabled = on
+		espState.espEnabled = on
 		if on then enableESP() else disableESP() end
 	end)
 
@@ -2775,7 +2783,7 @@ do
 		colorBtn.Parent = fillRow
 		addCorner(colorBtn, 4)
 		colorBtn.MouseButton1Click:Connect(function()
-			HIGHLIGHT_COLOR = preset[1]
+			espState.HIGHLIGHT_COLOR = preset[1]
 			for _, hl in pairs(espState.highlights) do pcall(function() hl.FillColor = preset[1] end) end
 			addLog("[ESP] Fill: " .. preset[2], COLORS.accent)
 		end)
@@ -2806,7 +2814,7 @@ do
 		colorBtn.Parent = outRow
 		addCorner(colorBtn, 4)
 		colorBtn.MouseButton1Click:Connect(function()
-			OUTLINE_COLOR = preset[1]
+			espState.OUTLINE_COLOR = preset[1]
 			for _, hl in pairs(espState.highlights) do pcall(function() hl.OutlineColor = preset[1] end) end
 			addLog("[ESP] Outline: " .. preset[2], COLORS.accent)
 		end)
@@ -2820,7 +2828,7 @@ do
 
 	createSectionLabel(tab, "Refresh", 9)
 	createSlider(tab, "Interval (seconds)", 1, 30, espState.REFRESH_INTERVAL, 10, function(val)
-		REFRESH_INTERVAL = val
+		espState.REFRESH_INTERVAL = val
 	end)
 
 	createSpacer(tab, 30)
@@ -2846,20 +2854,20 @@ do
 
 	createSectionLabel(tab, "Flight", 1)
 	createToggle(tab, "Fly", 2, function(on)
-		flyEnabled = on
+		flyState.flyEnabled = on
 		if on then startFly() else stopFly() end
 	end)
 	createSlider(tab, "Fly Speed", 10, 500, flyState.flySpeed, 3, function(val) flyState.flySpeed = val end)
 	createToggle(tab, "Vehicle Fly (Sit First)", 4, function(on)
-		vehicleFlyEnabled = on
+		flyState.vehicleFlyEnabled = on
 		if on then startVehicleFly() else stopVehicleFly() end
 	end)
 	createToggle(tab, "Car Speed Boost (Sit First)", 5, function(on)
-		carSpeedEnabled = on
+		moveState.carSpeedEnabled = on
 		if on then startCarSpeed() else stopCarSpeed() end
 	end)
 	createSlider(tab, "Car Speed", 50, 1000, moveState.carSpeedValue, 6, function(val)
-		carSpeedValue = val
+		moveState.carSpeedValue = val
 	end)
 
 	local spacer = Instance.new("Frame")
@@ -2870,11 +2878,11 @@ do
 
 	createSectionLabel(tab, "Movement", 8)
 	createToggle(tab, "Speed Boost", 9, function(on)
-		speedEnabled = on
+		moveState.speedEnabled = on
 		if on then startSpeed() else stopSpeed() end
 	end)
 	createSlider(tab, "Walk Speed", 16, 500, moveState.speedValue, 10, function(val)
-		speedValue = val
+		moveState.speedValue = val
 		if moveState.speedEnabled then
 			pcall(function()
 				local character = LocalPlayer.Character
@@ -2886,15 +2894,15 @@ do
 		end
 	end)
 	createToggle(tab, "Noclip", 11, function(on)
-		noclipEnabled = on
+		moveState.noclipEnabled = on
 		if on then startNoclip() else stopNoclip() end
 	end)
 	createToggle(tab, "Anti Fling", 12, function(on)
-		antiFlingEnabled = on
+		combatState.antiFlingEnabled = on
 		if on then startAntiFling() else stopAntiFling() end
 	end)
 	createToggle(tab, "Car Noclip (Sit First)", 13, function(on)
-		carNoclipEnabled = on
+		moveState.carNoclipEnabled = on
 		if on then startCarNoclip() else stopCarNoclip() end
 	end)
 
@@ -2906,7 +2914,7 @@ do
 
 	createSectionLabel(tab, "Jumping", 16)
 	createToggle(tab, "Infinite Jump", 17, function(on)
-		infJumpEnabled = on
+		moveState.infJumpEnabled = on
 		if on then startInfJump() else stopInfJump() end
 	end)
 	createSlider(tab, "Jump Power", 10, 500, moveState.jumpPowerValue, 18, function(val) moveState.jumpPowerValue = val setJumpPower(val) end)
@@ -2948,7 +2956,7 @@ do
 
 	createSectionLabel(tab, "Fling", 1)
 	createToggle(tab, "Spin Fling (IY Style)", 2, function(on)
-		flingEnabled = on
+		flingState.flingEnabled = on
 		if on then
 			if flingState.walkFlingEnabled then flingState.walkFlingEnabled = false stopWalkFling() end
 			startFling()
@@ -2956,7 +2964,7 @@ do
 	end)
 	createSlider(tab, "Spin Fling Power", 1000, 99999, flingState.flingPower, 3, function(val) flingState.flingPower = val end)
 	createToggle(tab, "Walk Fling (Dinos Anim)", 4, function(on)
-		walkFlingEnabled = on
+		flingState.walkFlingEnabled = on
 		if on then
 			if flingState.flingEnabled then flingState.flingEnabled = false stopFling() end
 			startWalkFling()
@@ -2964,7 +2972,7 @@ do
 	end)
 	createSlider(tab, "Walk Fling Power", 1000, 50000, flingState.walkFlingPower, 5, function(val) flingState.walkFlingPower = val end)
 	createToggle(tab, "Car Fling (Sit First)", 6, function(on)
-		carFlingEnabled = on
+		flingState.carFlingEnabled = on
 		if on then
 			if flingState.flingEnabled then flingState.flingEnabled = false stopFling() end
 			if flingState.walkFlingEnabled then flingState.walkFlingEnabled = false stopWalkFling() end
@@ -2981,15 +2989,15 @@ do
 
 	createSectionLabel(tab, "Visual Effects", 9)
 	createToggle(tab, "Invisible", 10, function(on)
-		invisibleEnabled = on
+		funState.invisibleEnabled = on
 		if on then startInvisible() else stopInvisible() end
 	end)
 	createToggle(tab, "Spin", 11, function(on)
-		spinEnabled = on
+		funState.spinEnabled = on
 		if on then startSpin() else stopSpin() end
 	end)
 	createToggle(tab, "Seizure", 12, function(on)
-		seizureEnabled = on
+		funState.seizureEnabled = on
 		if on then startSeizure() else stopSeizure() end
 	end)
 
@@ -3344,7 +3352,7 @@ end)
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
 	if input.KeyCode == Enum.KeyCode.RightShift then
-		windowVisible = not uiState.windowVisible
+		uiState.windowVisible = not uiState.windowVisible
 		mainWindow.Visible = uiState.windowVisible
 		toggleBtn.Visible = not uiState.windowVisible
 	end
@@ -4183,8 +4191,8 @@ LocalPlayer.CharacterAdded:Connect(function()
 	end
 	if flingState.flingEnabled then stopFling() _wait(0.5) startFling() end
 	if flingState.walkFlingEnabled then stopWalkFling() _wait(0.5) startWalkFling() end
-	spinBAV = nil
-	savedPhysProps = {}
+	flingState.spinBAV = nil
+	flingState.savedPhysProps = {}
 	if moveState.speedEnabled then _wait(0.3) startSpeed() end
 	if combatState.antiFlingEnabled then _wait(0.3) startAntiFling() end
 	if godEnabled then
