@@ -3596,7 +3596,11 @@ end
 
 -- ===================== HITBOX EXPANDER LOGIC =====================
 startHitboxExpand = function()
+	combatState.hitboxLastTick = 0
 	combatState.hitboxConnection = RunService.Heartbeat:Connect(function()
+		local now = tick()
+		if now - combatState.hitboxLastTick < 2 then return end
+		combatState.hitboxLastTick = now
 		pcall(function()
 			for _, player in ipairs(Players:GetPlayers()) do
 				if player ~= LocalPlayer and player.Character then
@@ -3826,12 +3830,15 @@ startPlatform = function()
 	local char = LocalPlayer.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
 	if not hrp then return end
+	local platY = hrp.Position.Y - 3
 	local plat = Instance.new("Part")
-	plat.Size = Vector3.new(5, 0.5, 5)
+	plat.Size = Vector3.new(10, 1, 10)
 	plat.Anchored = true
-	plat.Transparency = 1
+	plat.Transparency = 0.5
+	plat.BrickColor = BrickColor.new("Medium stone grey")
+	plat.Material = Enum.Material.SmoothPlastic
 	plat.CanCollide = true
-	plat.CFrame = hrp.CFrame * CFrame.new(0, -3, 0)
+	plat.CFrame = CFrame.new(hrp.Position.X, platY, hrp.Position.Z)
 	plat.Parent = workspace
 	moveState.platformPart = plat
 	moveState.platformConnection = RunService.Heartbeat:Connect(function()
@@ -3839,11 +3846,11 @@ startPlatform = function()
 			local c = LocalPlayer.Character
 			local r = c and c:FindFirstChild("HumanoidRootPart")
 			if r and plat and plat.Parent then
-				plat.CFrame = CFrame.new(r.Position.X, r.Position.Y - 3, r.Position.Z)
+				plat.CFrame = CFrame.new(r.Position.X, platY, r.Position.Z)
 			end
 		end)
 	end)
-	addLog("[PLATFORM] ON", COLORS.success)
+	addLog("[PLATFORM] ON (fixed height)", COLORS.success)
 end
 
 stopPlatform = function()
@@ -3929,9 +3936,17 @@ startFreecam = function()
 	visualState.origCameraType = cam.CameraType
 	visualState.freecamCFrame = cam.CFrame
 	cam.CameraType = Enum.CameraType.Scriptable
+	-- Freeze character so WASD only moves camera
+	local char = LocalPlayer.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		visualState.freecamWasAnchored = hrp.Anchored
+		hrp.Anchored = true
+	end
 	visualState.freecamConnection = RunService.RenderStepped:Connect(function(dt)
 		pcall(function()
 			local speed = 50 * dt
+			if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then speed = speed * 2 end
 			local cf = visualState.freecamCFrame
 			local move = Vector3.new(0, 0, 0)
 			if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + cf.LookVector end
@@ -3939,17 +3954,21 @@ startFreecam = function()
 			if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - cf.RightVector end
 			if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + cf.RightVector end
 			if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move = move + Vector3.new(0, 1, 0) end
-			if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move = move - Vector3.new(0, 1, 0) end
+			if UserInputService:IsKeyDown(Enum.KeyCode.E) then move = move - Vector3.new(0, 1, 0) end
 			if move.Magnitude > 0 then move = move.Unit * speed end
 			visualState.freecamCFrame = cf + move
 			workspace.CurrentCamera.CFrame = visualState.freecamCFrame
 		end)
 	end)
-	addLog("[FREECAM] ON (WASD + Space/Shift)", COLORS.success)
+	addLog("[FREECAM] ON (WASD/Space/E + Shift=fast)", COLORS.success)
 end
 
 stopFreecam = function()
 	if visualState.freecamConnection then visualState.freecamConnection:Disconnect() visualState.freecamConnection = nil end
+	-- Unfreeze character
+	local char = LocalPlayer.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if hrp then hrp.Anchored = visualState.freecamWasAnchored or false end
 	local cam = workspace.CurrentCamera
 	if visualState.origCameraSubject then cam.CameraSubject = visualState.origCameraSubject end
 	if visualState.origCameraType then cam.CameraType = visualState.origCameraType end
