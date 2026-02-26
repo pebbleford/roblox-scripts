@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("brookhaven") then return end
 
 -- ================================================================
--- Synapse X The Revival - Brookhaven RP Admin Hub
+-- Pebbleford Hub - Brookhaven RP Admin Hub
 -- Dedicated admin for Brookhaven RP
 -- v1.0
 -- ================================================================

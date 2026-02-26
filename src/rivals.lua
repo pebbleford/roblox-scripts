@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("rivals") then return end
 
 -- ================================================================
--- Synapse X The Revival - RIVALS Hub
+-- Pebbleford Hub - RIVALS Hub
 -- Dedicated admin for RIVALS FPS
 -- v1.4
 -- ================================================================

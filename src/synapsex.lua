@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("synapsex") then return end
 
 -- ================================================================
--- Synapse X The Revival - Executor + Admin
+-- Pebbleford Hub - Executor + Admin
 -- Script executor with Infinite Yield-style admin
 -- ================================================================
 
@@ -248,16 +248,16 @@ end
 -- ===================== SCREEN GUI =====================
 -- Kill old instance if re-executing
 pcall(function()
-	local old = game:GetService("CoreGui"):FindFirstChild("SynapseXRevival")
+	local old = game:GetService("CoreGui"):FindFirstChild("PebblefordHub")
 	if old then old:Destroy() end
 end)
 pcall(function()
-	local old = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("SynapseXRevival")
+	local old = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("PebblefordHub")
 	if old then old:Destroy() end
 end)
 
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "SynapseXRevival"
+screenGui.Name = "PebblefordHub"
 screenGui.ResetOnSpawn = false
 screenGui.DisplayOrder = 999
 screenGui.IgnoreGuiInset = true
@@ -439,7 +439,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -120, 1, 0)
 titleLabel.Position = UDim2.new(0, 34, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "Synapse X - The Revival"
+titleLabel.Text = "Pebbleford Hub"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextSize = 14
@@ -509,7 +509,7 @@ do
 	end)
 end
 
--- ===================== TAB BAR (horizontal, Synapse X style) =====================
+-- ===================== TAB BAR (horizontal) =====================
 local tabBar = Instance.new("Frame")
 tabBar.Name = "TabBar"
 tabBar.Size = UDim2.new(1, 0, 0, 30)
@@ -957,7 +957,7 @@ do
 	scriptInput.Position = UDim2.new(0, 40, 0, 0)
 	scriptInput.BackgroundTransparency = 1
 	scriptInput.TextColor3 = COLORS.textPrimary
-	scriptInput.PlaceholderText = '-- Paste your script here...\n-- Press "Execute" to run\nprint("Hello from Synapse X The Revival!")'
+	scriptInput.PlaceholderText = '-- Paste your script here...\n-- Press "Execute" to run\nprint("Hello from Pebbleford Hub!")'
 	scriptInput.PlaceholderColor3 = COLORS.textDim
 	scriptInput.Font = Enum.Font.Code
 	scriptInput.TextSize = 14
@@ -2489,7 +2489,7 @@ do
 	local tab = tabFrames["Main"]
 
 	createSectionLabel(tab, "Welcome", 1)
-	createInfoLabel(tab, "Synapse X - The Revival v3.0", 2)
+	createInfoLabel(tab, "Pebbleford Hub v3.0", 2)
 	createInfoLabel(tab, "Player: " .. LocalPlayer.DisplayName .. " (@" .. LocalPlayer.Name .. ")", 3)
 
 	local spacer = Instance.new("Frame")
@@ -3195,7 +3195,7 @@ do
 
 	createSpacer(tab, 10)
 	createSectionLabel(tab, "About", 11)
-	createInfoLabel(tab, "Synapse X - The Revival v3.0", 12)
+	createInfoLabel(tab, "Pebbleford Hub v3.0", 12)
 	createInfoLabel(tab, "50+ features | 10 tabs", 13)
 	createInfoLabel(tab, "github.com/pebbleford/roblox-scripts", 14)
 end
@@ -4309,8 +4309,8 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ===================== STARTUP =====================
-addLog("Synapse X - The Revival v3.0", COLORS.accent)
+addLog("Pebbleford Hub v3.0", COLORS.accent)
 addLog("50+ features loaded across 10 tabs", COLORS.success)
 addLog("Type ;cmds in chat for commands", COLORS.textSecondary)
 addLog("Press Right Shift to toggle window", COLORS.textSecondary)
-print("[Synapse X] The Revival v3.0 loaded")
+print("[Pebbleford Hub] v3.0 loaded")

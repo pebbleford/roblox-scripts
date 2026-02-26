@@ -1,5 +1,5 @@
 """
-Synapse X The Revival - Script Obfuscator
+Pebbleford Hub - Script Obfuscator
 Reads source Lua files from src/ and outputs obfuscated versions to root.
 
 Obfuscation layers:
@@ -80,7 +80,7 @@ def obfuscate_script(source_code: str) -> str:
 
     # Build the decoder stub
     # Uses bit32.bxor for Luau compatibility, with fallback
-    stub = f"""-- Synapse X The Revival | Protected
+    stub = f"""-- Pebbleford Hub | Protected
 local {v_key}={key_str}
 local {v_data}={data_str}
 local {v_xor}=bit32 and bit32.bxor or function(a,b) local r,p=0,1 for i=0,31 do local a1,b1=a%2,b%2 if a1~=b1 then r=r+p end a=(a-a1)/2 b=(b-b1)/2 p=p*2 end return r end
@@ -125,6 +125,6 @@ def main():
     print(f"\nDone: {success} obfuscated, {failed} skipped")
 
 if __name__ == "__main__":
-    print("Synapse X The Revival - Obfuscator")
+    print("Pebbleford Hub - Obfuscator")
     print("=" * 40)
     main()

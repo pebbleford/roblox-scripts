@@ -1,4 +1,4 @@
-# Synapse X The Revival - Project Instructions
+# Pebbleford Hub - Project Instructions
 
 ## What This Is
 A collection of Roblox exploit/hub scripts for various games, built by **pebbleford**. Each script creates a custom GUI (dark themed) with toggles, sliders, action buttons, and chat commands. All scripts are protected by a shared key system and XOR-obfuscated before pushing to GitHub.

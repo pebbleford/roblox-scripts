@@ -1,5 +1,5 @@
 --[[
-    Synapse X The Revival - Key System
+    Pebbleford Hub - Key System
     HWID-locked key validation with blacklist + auto-whitelist webhook
 
     Auth Flow:
@@ -370,13 +370,13 @@ local function showKeyGUI(hwid, scriptName)
     accentBar.ZIndex = 102
     accentBar.Parent = mainFrame
 
-    -- Title: SYNAPSE X THE REVIVAL
+    -- Title: PEBBLEFORD HUB
     local title = Instance.new("TextLabel")
     title.Name = "Title"
     title.Size = UDim2.new(1, -20, 0, 30)
     title.Position = UDim2.new(0, 10, 0, 15)
     title.BackgroundTransparency = 1
-    title.Text = "SYNAPSE X THE REVIVAL"
+    title.Text = "PEBBLEFORD HUB"
     title.TextColor3 = Color3.fromRGB(255, 140, 0)
     title.TextSize = 18
     title.Font = Enum.Font.GothamBold
@@ -512,7 +512,7 @@ local function showKeyGUI(hwid, scriptName)
     footer.Size = UDim2.new(1, -20, 0, 16)
     footer.Position = UDim2.new(0, 10, 1, -25)
     footer.BackgroundTransparency = 1
-    footer.Text = "Synapse X The Revival v1.0 | HWID Locked"
+    footer.Text = "Pebbleford Hub v1.0 | HWID Locked"
     footer.TextColor3 = Color3.fromRGB(60, 60, 70)
     footer.TextSize = 9
     footer.Font = Enum.Font.Code
@@ -647,7 +647,7 @@ function KEY_SYSTEM.validate(scriptName)
         sendWhitelistWebhook(hwid, "BLACKLISTED")
         pcall(function()
             game:GetService("StarterGui"):SetCore("SendNotification", {
-                Title = "Synapse X The Revival",
+                Title = "Pebbleford Hub",
                 Text = "Access denied. You are blacklisted.",
                 Duration = 5
             })

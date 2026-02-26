@@ -1,7 +1,7 @@
-Synapse X The Revival - Loadstrings
+Pebbleford Hub - Loadstrings
 =====================================
 
--- Synapse X Admin Hub (v3.0)
+-- Pebbleford Admin Hub (v3.0)
 loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/synapsex.lua"))()
 
 -- RIVALS FPS Hub (v1.4)

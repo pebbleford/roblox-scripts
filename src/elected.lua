@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("elected") then return end
 
 -- ================================================================
--- Synapse X The Revival - Elected Admin Hub v1.3
+-- Pebbleford Hub - Elected Admin Hub v1.3
 -- Tool-Based Mining | Admin Commands | Building | Sign Editor
 -- Player Control | Teleports | ESP | Anti-Jail | Remote Spy
 -- Game uses Red networking (ReliableRedEvent) + ReplicaService
@@ -2908,7 +2908,7 @@ end)
 
 -- ===================== STARTUP =====================
 notify("SX Elected v1.3", "Loaded! Right Shift to toggle")
-print("[SX Elected v1.3] Synapse X The Revival - Elected Admin Hub")
+print("[SX Elected v1.3] Pebbleford Hub - Elected Admin Hub")
 print("[SX Elected v1.3] Tabs: Mining | Admin | Build | Players | Movement | Visuals | Troll")
 print("[SX Elected v1.3] Red Event: " .. (RedEvent and RedEvent:GetFullName() or "NOT FOUND"))
 print("[SX Elected v1.3] Chat: " .. (ChatRemote and "Legacy Chat" or "TextChatService"))

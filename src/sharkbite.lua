@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("sharkbite") then return end
 
 -- ================================================================
--- Synapse X The Revival - SharkBite 2 Hub
+-- Pebbleford Hub - SharkBite 2 Hub
 -- Dedicated admin for SharkBite 2
 -- v1.0
 -- ================================================================

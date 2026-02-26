@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("mm2") then return end
 
 -- ================================================================
--- Synapse X The Revival - MM2 Hub
+-- Pebbleford Hub - MM2 Hub
 -- Dedicated admin for Murder Mystery 2
 -- v1.1
 -- ================================================================

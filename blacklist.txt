@@ -1,4 +1,4 @@
-# Synapse X The Revival - HWID Blacklist
+# Pebbleford Hub - HWID Blacklist
 # One HASHED HWID per line (never put raw HWIDs here - this repo is public)
 # Lines starting with # are comments
 # Anyone listed here is BLOCKED even if they have local auth or a valid key

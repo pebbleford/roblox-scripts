@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Synapse X The Revival - NBTF Hub v3.0
+-- Pebbleford Hub - NBTF Hub v3.0
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -13,13 +13,13 @@ if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- Cleanup old instance
 pcall(function()
-	local old = game:GetService("CoreGui"):FindFirstChild("SynapseXNBTF")
+	local old = game:GetService("CoreGui"):FindFirstChild("PebblefordNBTF")
 	if old then old:Destroy() end
 end)
 pcall(function()
 	local old = game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui")
 	if old then
-		local oldGui = old:FindFirstChild("SynapseXNBTF")
+		local oldGui = old:FindFirstChild("PebblefordNBTF")
 		if oldGui then oldGui:Destroy() end
 	end
 end)
@@ -172,7 +172,7 @@ function helpers.mouse1click()
 	VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
 end
 
--- ===================== COLOR PALETTE (Synapse X Orange Theme) =====================
+-- ===================== COLOR PALETTE (Orange Theme) =====================
 local COLORS = {
 	bg = Color3.fromRGB(20, 20, 20),
 	bgSecondary = Color3.fromRGB(30, 30, 30),
@@ -2243,7 +2243,7 @@ end
 
 -- ===================== GUI SETUP =====================
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "SynapseXNBTF"
+screenGui.Name = "PebblefordNBTF"
 screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 pcall(function() screenGui.Parent = game:GetService("CoreGui") end)
@@ -2369,7 +2369,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "Synapse X The Revival - NBTF Hub v4.0"
+titleText.Text = "Pebbleford Hub - NBTF Hub v4.0"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 12
@@ -4313,7 +4313,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Synapse X The Revival - NBTF Hub v4.0", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v4.0", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -4406,7 +4406,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("SX NBTF v4.0", "Loaded! Right Shift to toggle")
-print("[SX NBTF v4.0] Synapse X The Revival - NBTF Hub v4.0")
+print("[SX NBTF v4.0] Pebbleford Hub - NBTF Hub v4.0")
 print("[SX NBTF v4.0] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
 print("[SX NBTF v4.0] Uses WeaponsSystem.Network.WeaponHit for combat")
 print("[SX NBTF v4.0] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
