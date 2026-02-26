@@ -89,7 +89,9 @@ for {v_i},{v_v} in ipairs({v_data}) do
 {v_out}[{v_i}]=string.char({v_xor}({v_v},{v_key}[({v_i}-1)%#{v_key}+1]))
 end
 local {v_load}=table.concat({v_out})
-return loadstring({v_load})()
+local {v_load}_fn,{v_load}_err=loadstring({v_load})
+if not {v_load}_fn then error("Load failed: "..tostring({v_load}_err)) end
+return {v_load}_fn()
 """
     return stub
 
