@@ -1,7 +1,7 @@
 Synapse X The Revival - Loadstrings
 =====================================
 
--- Synapse X Admin Hub (v2.3)
+-- Synapse X Admin Hub (v3.0)
 loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/synapsex.lua"))()
 
 -- RIVALS FPS Hub (v1.4)
@@ -37,6 +37,9 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scr
 
 -- Steal a Brainrot Admin
 loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/stealabrainrot-admin.lua"))()
+
+-- DOORS: The Rooms Auto A-1000
+loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/doors_rooms.lua"))()
 
 -- Loader
 loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/loader.lua"))()
