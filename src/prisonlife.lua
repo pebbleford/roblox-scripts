@@ -46,7 +46,7 @@ local COLORS = {
 local TEAM_COLORS = {
 	["Bright orange"] = Color3.fromRGB(255, 165, 0),
 	["Bright blue"] = Color3.fromRGB(0, 120, 255),
-	["Really red"] = Color3.fromRGB(255, 0, 0),
+	["Medium stone grey"] = Color3.fromRGB(180, 180, 180),
 }
 
 -- ===================== STATE =====================
@@ -876,7 +876,7 @@ local function switchTeam(teamColor)
 	pcall(function()
 		workspace.Remote.TeamEvent:FireServer(teamColor)
 		_wait(0.3)
-		workspace.Remote.loadchar:InvokeServer()
+		workspace.Remote.loadchar:InvokeServer(LocalPlayer, teamColor)
 	end)
 	addLog("[TEAM] Switched to " .. teamColor, COLORS.success)
 end
@@ -900,14 +900,35 @@ end
 -- Get Keycard
 local function getKeycard()
 	pcall(function()
-		for _, v in ipairs(workspace.Prison_ITEMS.giver:GetChildren()) do
-			if v.Name:lower():find("keycard") or v.Name:lower():find("key") then
-				pcall(function()
-					if v:FindFirstChild("ITEMPICKUP") then
-						workspace.Remote.ItemHandler:InvokeServer(v.ITEMPICKUP)
-						addLog("[KEYCARD] Grabbed keycard!", COLORS.success)
+		-- Keycard is in Prison_ITEMS.single, not giver
+		local singles = workspace:FindFirstChild("Prison_ITEMS")
+		if singles then
+			local single = singles:FindFirstChild("single")
+			if single then
+				for _, v in ipairs(single:GetChildren()) do
+					if v.Name:lower():find("key") then
+						pcall(function()
+							if v:FindFirstChild("ITEMPICKUP") then
+								workspace.Remote.ItemHandler:InvokeServer(v.ITEMPICKUP)
+								addLog("[KEYCARD] Grabbed keycard!", COLORS.success)
+							end
+						end)
 					end
-				end)
+				end
+			end
+			-- Also check giver folder as fallback
+			local giver = singles:FindFirstChild("giver")
+			if giver then
+				for _, v in ipairs(giver:GetChildren()) do
+					if v.Name:lower():find("key") then
+						pcall(function()
+							if v:FindFirstChild("ITEMPICKUP") then
+								workspace.Remote.ItemHandler:InvokeServer(v.ITEMPICKUP)
+								addLog("[KEYCARD] Grabbed keycard!", COLORS.success)
+							end
+						end)
+					end
+				end
 			end
 		end
 	end)
@@ -974,16 +995,30 @@ local function applyGunMods()
 				local module = tool:FindFirstChildWhichIsA("ModuleScript")
 				if module then
 					local stat = require(module)
-					if rapidFireEnabled and stat.FireRate then stat.FireRate = 0.01 end
-					if noSpreadEnabled and stat.Spread then stat.Spread = 0 end
+					if rapidFireEnabled then
+						if stat.FireRate then stat.FireRate = 0.01 end
+					end
+					if noSpreadEnabled then
+						if stat.Spread then stat.Spread = 0 end
+					end
 					if infiniteAmmoEnabled then
 						if stat.MaxAmmo then stat.MaxAmmo = 9999 end
 						if stat.StoredAmmo then stat.StoredAmmo = 9999 end
+						if stat.CurrentAmmo then stat.CurrentAmmo = 9999 end
+						if stat.AmmoPerClip then stat.AmmoPerClip = 9999 end
 					end
-					if autoFireGunEnabled and stat.AutoFire ~= nil then stat.AutoFire = true end
-					if extendedRangeEnabled and stat.Range then stat.Range = 9999 end
-					if multiBulletEnabled and stat.Bullets then stat.Bullets = 10 end
-					if instantReloadEnabled and stat.ReloadTime then stat.ReloadTime = 0 end
+					if autoFireGunEnabled then
+						if stat.AutoFire ~= nil then stat.AutoFire = true end
+					end
+					if extendedRangeEnabled then
+						if stat.Range then stat.Range = 9999 end
+					end
+					if multiBulletEnabled then
+						if stat.Bullets then stat.Bullets = 10 end
+					end
+					if instantReloadEnabled then
+						if stat.ReloadTime then stat.ReloadTime = 0 end
+					end
 					count = count + 1
 				end
 			end)
@@ -1448,18 +1483,35 @@ end
 
 -- Door Remover
 local function removeDoors()
+	local count = 0
+	-- Prison Life stores doors in workspace.Doors
 	pcall(function()
-		local count = 0
-		for _, obj in ipairs(workspace:GetDescendants()) do
-			pcall(function()
-				if obj.Name:lower():find("door") and (obj:IsA("BasePart") or obj:IsA("Model")) then
-					obj:Destroy()
-					count = count + 1
-				end
-			end)
+		if workspace:FindFirstChild("Doors") then
+			local children = workspace.Doors:GetChildren()
+			count = count + #children
+			workspace.Doors:Destroy()
 		end
-		addLog("[DOORS] Removed " .. count .. " door objects", COLORS.success)
 	end)
+	-- Also destroy cell block doors
+	pcall(function()
+		if workspace:FindFirstChild("Prison_Cellblock") then
+			local doors = workspace.Prison_Cellblock:FindFirstChild("doors")
+			if doors then
+				local children = doors:GetChildren()
+				count = count + #children
+				doors:Destroy()
+			end
+		end
+	end)
+	-- Destroy prison fences
+	pcall(function()
+		if workspace:FindFirstChild("Prison_Fences") then
+			local children = workspace.Prison_Fences:GetChildren()
+			count = count + #children
+			workspace.Prison_Fences:Destroy()
+		end
+	end)
+	addLog("[DOORS] Removed " .. count .. " door/fence objects", COLORS.success)
 end
 
 -- Teleport to location
@@ -1479,8 +1531,26 @@ do
 	createSectionLabel(tab, "Prison Life Actions", 1)
 	createActionButton(tab, "Switch to Guard", 2, function() switchTeam("Bright blue") end)
 	createActionButton(tab, "Switch to Inmate", 3, function() switchTeam("Bright orange") end)
-	createActionButton(tab, "Get All Guns", 4, function() getAllGuns() end)
-	createActionButton(tab, "Get Keycard", 5, function() getKeycard() end)
+	createActionButton(tab, "Switch to Criminal", 4, function() switchTeam("Medium stone grey") end)
+	createActionButton(tab, "Get All Guns", 5, function() getAllGuns() end)
+	createActionButton(tab, "Get Keycard", 6, function() getKeycard() end)
+	createActionButton(tab, "Arrest All (as Guard)", 7, function()
+		pcall(function()
+			local count = 0
+			for _, player in ipairs(Players:GetPlayers()) do
+				if player ~= LocalPlayer and player.Character then
+					pcall(function()
+						local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+						if hrp then
+							workspace.Remote.arrest:InvokeServer(hrp)
+							count = count + 1
+						end
+					end)
+				end
+			end
+			addLog("[ARREST] Arrested " .. count .. " players", COLORS.success)
+		end)
+	end)
 
 	createSectionLabel(tab, "Movement", 10)
 	createToggle(tab, "Speed", 11, function(on)
@@ -1565,7 +1635,7 @@ do
 		espEnabled = on
 		if on then startESP() else stopESP() end
 	end)
-	createInfoLabel(tab, "Orange=Inmate, Blue=Guard, Red=Criminal", 3)
+	createInfoLabel(tab, "Orange=Inmate, Blue=Guard, Grey=Criminal", 3)
 
 	createSectionLabel(tab, "Item ESP", 5)
 	createToggle(tab, "Item ESP", 6, function(on)
@@ -1593,32 +1663,36 @@ do
 
 	createSectionLabel(tab, "Location Teleports", 1)
 	createActionButton(tab, "Criminal Base", 2, function()
-		teleportTo(CFrame.new(283, 70, 2213))
+		teleportTo(CFrame.new(-943.704, 91.632, 2056.925))
 		addLog("[TP] Criminal Base", COLORS.success)
 	end)
 	createActionButton(tab, "Yard", 3, function()
-		teleportTo(CFrame.new(918, 98, 2355))
+		teleportTo(CFrame.new(779.092, 96.001, 2451.114))
 		addLog("[TP] Yard", COLORS.success)
 	end)
 	createActionButton(tab, "Cafeteria", 4, function()
-		teleportTo(CFrame.new(917, 98, 2437))
+		teleportTo(CFrame.new(930, 97.54, 2291))
 		addLog("[TP] Cafeteria", COLORS.success)
 	end)
 	createActionButton(tab, "Guard Armory", 5, function()
-		teleportTo(CFrame.new(918, 98, 2285))
+		teleportTo(CFrame.new(821.793, 98.200, 2280.899))
 		addLog("[TP] Guard Armory", COLORS.success)
 	end)
-	createActionButton(tab, "Parking Lot", 6, function()
-		teleportTo(CFrame.new(835, 98, 2285))
-		addLog("[TP] Parking Lot", COLORS.success)
-	end)
-	createActionButton(tab, "Cells", 7, function()
-		teleportTo(CFrame.new(918, 98, 2315))
+	createActionButton(tab, "Cells", 6, function()
+		teleportTo(CFrame.new(918, 97.73, 2447))
 		addLog("[TP] Cells", COLORS.success)
 	end)
-	createActionButton(tab, "Gas Station", 8, function()
-		teleportTo(CFrame.new(178, 73, 2452))
-		addLog("[TP] Gas Station", COLORS.success)
+	createActionButton(tab, "Outside Prison", 7, function()
+		teleportTo(CFrame.new(288.452, 69.999, 2206.731))
+		addLog("[TP] Outside Prison", COLORS.success)
+	end)
+	createActionButton(tab, "Sewer Entrance", 8, function()
+		teleportTo(CFrame.new(917.174, 76.406, 2426.199))
+		addLog("[TP] Sewer Entrance", COLORS.success)
+	end)
+	createActionButton(tab, "Secret Room", 9, function()
+		teleportTo(CFrame.new(697, 97.492, 2364))
+		addLog("[TP] Secret Room", COLORS.success)
 	end)
 
 	createSectionLabel(tab, "Player Teleport", 20)
@@ -1806,6 +1880,20 @@ local function onChatted(msg)
 		switchTeam("Bright blue")
 	elseif cmd == "!inmate" then
 		switchTeam("Bright orange")
+	elseif cmd == "!criminal" then
+		switchTeam("Medium stone grey")
+	elseif cmd == "!arrest" then
+		pcall(function()
+			for _, player in ipairs(Players:GetPlayers()) do
+				if player ~= LocalPlayer and player.Character then
+					pcall(function()
+						local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+						if hrp then workspace.Remote.arrest:InvokeServer(hrp) end
+					end)
+				end
+			end
+			addLog("[ARREST] Arrested all", COLORS.success)
+		end)
 	elseif cmd == "!guns" then
 		getAllGuns()
 	elseif cmd == "!keycard" then
@@ -1835,11 +1923,14 @@ local function onChatted(msg)
 				addLog("[TP] Player not found", COLORS.error)
 			end
 		end
+	elseif cmd == "!doors" then
+		removeDoors()
 	elseif cmd == "!help" then
 		addLog("=== Prison Life Hub v1.0 Commands ===", COLORS.accent)
 		addLog("!speed [val] | !fly | !noclip | !god | !killaura", COLORS.textSecondary)
-		addLog("!killall | !esp | !aimbot | !xray | !guard | !inmate", COLORS.textSecondary)
-		addLog("!guns | !keycard | !invisible | !antiafk", COLORS.textSecondary)
+		addLog("!killall | !esp | !aimbot | !xray", COLORS.textSecondary)
+		addLog("!guard | !inmate | !criminal | !arrest", COLORS.textSecondary)
+		addLog("!guns | !keycard | !invisible | !antiafk | !doors", COLORS.textSecondary)
 		addLog("!fling | !walkfling | !gravity [val] | !tp [player]", COLORS.textSecondary)
 	end
 end
