@@ -29,6 +29,7 @@ SCRIPTS = [
     "sharkbite.lua",
     "rivals.lua",
     "mm2.lua",
+    "prisonlife.lua",
 ]
 
 def random_var(length=8):
