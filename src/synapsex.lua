@@ -3279,35 +3279,87 @@ do
 	createSpacer(tab, 6)
 	createSectionLabel(tab, "Theme", 7)
 	local themeOrder = 8
-	for themeId, themeData in pairs(THEMES) do
+	local themeList = {"default", "galaxy", "ocean", "blood", "mint"}
+	for _, themeId in ipairs(themeList) do
+		local themeData = THEMES[themeId]
 		local themeName = themeData.name
-		local isActive = (themeId == currentThemeName)
-		createActionButton(tab, (isActive and "> " or "") .. themeName .. (isActive and " <" or ""), themeOrder, function()
-			-- Apply theme
+		createActionButton(tab, themeName, themeOrder, function()
+			-- Save old colors for mapping
+			local oldColors = {}
+			for k, v in pairs(COLORS) do oldColors[k] = v end
+
+			-- Apply new theme to COLORS table
 			for k, v in pairs(themeData) do
 				if k ~= "name" then COLORS[k] = v end
 			end
 			currentThemeName = themeId
-			-- Refresh main UI colors
+
+			-- Build color mapping: old color -> list of new color roles
+			local colorMap = {}
+			for role, oldColor in pairs(oldColors) do
+				local key = tostring(oldColor)
+				if not colorMap[key] then colorMap[key] = {} end
+				colorMap[key][role] = true
+			end
+
+			-- Walk EVERY descendant of the GUI and update colors
 			pcall(function()
-				mainWindow.BackgroundColor3 = COLORS.bg
-				titleBar.BackgroundColor3 = COLORS.bgSecondary
-				titleLabel.TextColor3 = COLORS.textPrimary
-				versionLabel.TextColor3 = COLORS.accent
-				toggleBtn.BackgroundColor3 = COLORS.accent
-				contentArea.BackgroundColor3 = COLORS.bg
-				logFrame.BackgroundColor3 = COLORS.bgSecondary
-			end)
-			-- Refresh tab bar colors
-			pcall(function()
-				for _, btn in ipairs(tabBar:GetChildren()) do
-					if btn:IsA("TextButton") then
-						btn.BackgroundColor3 = COLORS.tabBg
-						btn.TextColor3 = COLORS.textSecondary
-					end
+				for _, obj in ipairs(screenGui:GetDescendants()) do
+					pcall(function()
+						-- Update BackgroundColor3
+						if obj:IsA("GuiObject") and obj.BackgroundTransparency < 1 then
+							local bgKey = tostring(obj.BackgroundColor3)
+							if colorMap[bgKey] then
+								-- Pick best match: bg > bgSecondary > tabBg > accent > toggleOff > editor > editorLine > btnClear > btnExecute
+								local priority = {"bg", "bgSecondary", "tabBg", "accent", "accentDark", "accentHover", "toggleOff", "toggleOn", "editor", "editorLine", "btnClear", "btnExecute", "border", "error", "success"}
+								for _, role in ipairs(priority) do
+									if colorMap[bgKey][role] then
+										obj.BackgroundColor3 = COLORS[role]
+										break
+									end
+								end
+							end
+						end
+						-- Update TextColor3
+						if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
+							local txtKey = tostring(obj.TextColor3)
+							if colorMap[txtKey] then
+								local priority = {"textPrimary", "textSecondary", "textDim", "accent", "accentHover", "error", "success"}
+								for _, role in ipairs(priority) do
+									if colorMap[txtKey][role] then
+										obj.TextColor3 = COLORS[role]
+										break
+									end
+								end
+							end
+							-- Update PlaceholderColor3 for TextBoxes
+							if obj:IsA("TextBox") then
+								pcall(function()
+									local phKey = tostring(obj.PlaceholderColor3)
+									if colorMap[phKey] and colorMap[phKey]["textDim"] then
+										obj.PlaceholderColor3 = COLORS.textDim
+									end
+								end)
+							end
+						end
+						-- Update UIStroke color
+						if obj:IsA("UIStroke") then
+							local sKey = tostring(obj.Color)
+							if colorMap[sKey] then
+								for role, _ in pairs(colorMap[sKey]) do
+									if COLORS[role] then obj.Color = COLORS[role] break end
+								end
+							end
+						end
+					end)
 				end
+				-- Update logo icon
+				logoIcon.BackgroundColor3 = COLORS.accent
+				-- Update toggle button
+				toggleBtn.BackgroundColor3 = COLORS.accent
 			end)
-			addLog("[THEME] Switched to " .. themeName, COLORS.accent)
+
+			addLog("[THEME] " .. themeName .. " applied!", COLORS.accent)
 		end)
 		themeOrder = themeOrder + 1
 	end
