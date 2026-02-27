@@ -21,27 +21,64 @@ local _spawn = (task and task.spawn) or spawn
 local _wait = (task and task.wait) or wait
 local F = {} -- shared function table (avoids Luau 200 local limit)
 
--- ===================== COLOR PALETTE =====================
-local COLORS = {
-	bg = Color3.fromRGB(20, 20, 20),
-	bgSecondary = Color3.fromRGB(30, 30, 30),
-	tabBg = Color3.fromRGB(45, 45, 45),
-	accent = Color3.fromRGB(255, 102, 0),
-	accentHover = Color3.fromRGB(255, 133, 51),
-	accentDark = Color3.fromRGB(180, 72, 0),
-	textPrimary = Color3.fromRGB(255, 255, 255),
-	textSecondary = Color3.fromRGB(176, 176, 176),
-	textDim = Color3.fromRGB(120, 120, 120),
-	border = Color3.fromRGB(50, 50, 50),
-	toggleOn = Color3.fromRGB(255, 102, 0),
-	toggleOff = Color3.fromRGB(85, 85, 85),
-	error = Color3.fromRGB(255, 68, 68),
-	success = Color3.fromRGB(68, 255, 68),
-	editor = Color3.fromRGB(15, 15, 15),
-	editorLine = Color3.fromRGB(35, 35, 35),
-	btnExecute = Color3.fromRGB(255, 102, 0),
-	btnClear = Color3.fromRGB(60, 60, 60),
+-- ===================== THEME SYSTEM =====================
+local THEMES = {
+	default = {
+		name = "Default",
+		bg = Color3.fromRGB(20, 20, 20), bgSecondary = Color3.fromRGB(30, 30, 30), tabBg = Color3.fromRGB(45, 45, 45),
+		accent = Color3.fromRGB(255, 102, 0), accentHover = Color3.fromRGB(255, 133, 51), accentDark = Color3.fromRGB(180, 72, 0),
+		textPrimary = Color3.fromRGB(255, 255, 255), textSecondary = Color3.fromRGB(176, 176, 176), textDim = Color3.fromRGB(120, 120, 120),
+		border = Color3.fromRGB(50, 50, 50), toggleOn = Color3.fromRGB(255, 102, 0), toggleOff = Color3.fromRGB(85, 85, 85),
+		error = Color3.fromRGB(255, 68, 68), success = Color3.fromRGB(68, 255, 68),
+		editor = Color3.fromRGB(15, 15, 15), editorLine = Color3.fromRGB(35, 35, 35),
+		btnExecute = Color3.fromRGB(255, 102, 0), btnClear = Color3.fromRGB(60, 60, 60),
+	},
+	galaxy = {
+		name = "Galaxy",
+		bg = Color3.fromRGB(10, 5, 25), bgSecondary = Color3.fromRGB(18, 10, 40), tabBg = Color3.fromRGB(30, 15, 60),
+		accent = Color3.fromRGB(138, 43, 226), accentHover = Color3.fromRGB(170, 80, 255), accentDark = Color3.fromRGB(90, 20, 160),
+		textPrimary = Color3.fromRGB(230, 220, 255), textSecondary = Color3.fromRGB(160, 140, 200), textDim = Color3.fromRGB(100, 80, 140),
+		border = Color3.fromRGB(50, 30, 80), toggleOn = Color3.fromRGB(138, 43, 226), toggleOff = Color3.fromRGB(60, 40, 90),
+		error = Color3.fromRGB(255, 68, 68), success = Color3.fromRGB(100, 255, 150),
+		editor = Color3.fromRGB(8, 4, 18), editorLine = Color3.fromRGB(25, 15, 45),
+		btnExecute = Color3.fromRGB(138, 43, 226), btnClear = Color3.fromRGB(40, 25, 65),
+	},
+	ocean = {
+		name = "Ocean",
+		bg = Color3.fromRGB(8, 18, 28), bgSecondary = Color3.fromRGB(12, 25, 38), tabBg = Color3.fromRGB(18, 40, 60),
+		accent = Color3.fromRGB(0, 170, 255), accentHover = Color3.fromRGB(50, 200, 255), accentDark = Color3.fromRGB(0, 120, 180),
+		textPrimary = Color3.fromRGB(220, 240, 255), textSecondary = Color3.fromRGB(140, 180, 210), textDim = Color3.fromRGB(80, 120, 150),
+		border = Color3.fromRGB(20, 50, 75), toggleOn = Color3.fromRGB(0, 170, 255), toggleOff = Color3.fromRGB(30, 60, 80),
+		error = Color3.fromRGB(255, 90, 90), success = Color3.fromRGB(68, 255, 150),
+		editor = Color3.fromRGB(5, 12, 20), editorLine = Color3.fromRGB(15, 30, 45),
+		btnExecute = Color3.fromRGB(0, 170, 255), btnClear = Color3.fromRGB(20, 40, 55),
+	},
+	blood = {
+		name = "Blood",
+		bg = Color3.fromRGB(15, 5, 5), bgSecondary = Color3.fromRGB(25, 8, 8), tabBg = Color3.fromRGB(50, 15, 15),
+		accent = Color3.fromRGB(200, 0, 0), accentHover = Color3.fromRGB(255, 40, 40), accentDark = Color3.fromRGB(140, 0, 0),
+		textPrimary = Color3.fromRGB(255, 220, 220), textSecondary = Color3.fromRGB(200, 150, 150), textDim = Color3.fromRGB(140, 100, 100),
+		border = Color3.fromRGB(60, 20, 20), toggleOn = Color3.fromRGB(200, 0, 0), toggleOff = Color3.fromRGB(70, 30, 30),
+		error = Color3.fromRGB(255, 100, 100), success = Color3.fromRGB(100, 255, 100),
+		editor = Color3.fromRGB(10, 3, 3), editorLine = Color3.fromRGB(30, 10, 10),
+		btnExecute = Color3.fromRGB(200, 0, 0), btnClear = Color3.fromRGB(50, 20, 20),
+	},
+	mint = {
+		name = "Mint",
+		bg = Color3.fromRGB(8, 20, 15), bgSecondary = Color3.fromRGB(12, 30, 22), tabBg = Color3.fromRGB(18, 50, 38),
+		accent = Color3.fromRGB(0, 210, 140), accentHover = Color3.fromRGB(40, 240, 170), accentDark = Color3.fromRGB(0, 150, 100),
+		textPrimary = Color3.fromRGB(220, 255, 240), textSecondary = Color3.fromRGB(140, 200, 175), textDim = Color3.fromRGB(80, 140, 115),
+		border = Color3.fromRGB(20, 60, 45), toggleOn = Color3.fromRGB(0, 210, 140), toggleOff = Color3.fromRGB(30, 65, 50),
+		error = Color3.fromRGB(255, 90, 90), success = Color3.fromRGB(68, 255, 130),
+		editor = Color3.fromRGB(5, 14, 10), editorLine = Color3.fromRGB(15, 35, 25),
+		btnExecute = Color3.fromRGB(0, 210, 140), btnClear = Color3.fromRGB(18, 40, 30),
+	},
 }
+
+local COLORS = {}
+for k, v in pairs(THEMES.default) do COLORS[k] = v end
+
+local currentThemeName = "default"
 
 -- ===================== STATE (grouped to reduce local count) =====================
 local combatState = {
@@ -448,7 +485,7 @@ titleLabel.Parent = titleBar
 
 local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 40, 1, 0)
-versionLabel.Position = UDim2.new(0, 200, 0, 0)
+versionLabel.Position = UDim2.new(0, 120, 0, 0)
 versionLabel.BackgroundTransparency = 1
 versionLabel.Text = "v3.0"
 versionLabel.TextColor3 = COLORS.accent
@@ -577,7 +614,7 @@ toggleBtn.Name = "ToggleBtn"
 toggleBtn.Size = UDim2.new(0, 44, 0, 44)
 toggleBtn.Position = UDim2.new(0, 10, 0.5, -22)
 toggleBtn.BackgroundColor3 = COLORS.accent
-toggleBtn.Text = "SX"
+toggleBtn.Text = "PB"
 toggleBtn.TextColor3 = COLORS.textPrimary
 toggleBtn.Font = Enum.Font.GothamBold
 toggleBtn.TextSize = 15
@@ -1489,16 +1526,67 @@ F.startFly = function()
 		end)
 	end
 
+	-- Mobile: create fly up/down buttons
+	if isMobile then
+		local flyUpBtn = Instance.new("TextButton")
+		flyUpBtn.Name = "FlyUp"
+		flyUpBtn.Size = UDim2.new(0, 60, 0, 60)
+		flyUpBtn.Position = UDim2.new(1, -80, 1, -180)
+		flyUpBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+		flyUpBtn.BackgroundTransparency = 0.3
+		flyUpBtn.Text = "UP"
+		flyUpBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+		flyUpBtn.Font = Enum.Font.GothamBold
+		flyUpBtn.TextSize = 14
+		flyUpBtn.Parent = screenGui
+		addCorner(flyUpBtn, 8)
+		flyState.flyUpBtn = flyUpBtn
+
+		local flyDownBtn = Instance.new("TextButton")
+		flyDownBtn.Name = "FlyDown"
+		flyDownBtn.Size = UDim2.new(0, 60, 0, 60)
+		flyDownBtn.Position = UDim2.new(1, -80, 1, -110)
+		flyDownBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+		flyDownBtn.BackgroundTransparency = 0.3
+		flyDownBtn.Text = "DOWN"
+		flyDownBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+		flyDownBtn.Font = Enum.Font.GothamBold
+		flyDownBtn.TextSize = 12
+		flyDownBtn.Parent = screenGui
+		addCorner(flyDownBtn, 8)
+		flyState.flyDownBtn = flyDownBtn
+
+		flyState.flyUpHeld = false
+		flyState.flyDownHeld = false
+		flyUpBtn.MouseButton1Down:Connect(function() flyState.flyUpHeld = true end)
+		flyUpBtn.MouseButton1Up:Connect(function() flyState.flyUpHeld = false end)
+		flyDownBtn.MouseButton1Down:Connect(function() flyState.flyDownHeld = true end)
+		flyDownBtn.MouseButton1Up:Connect(function() flyState.flyDownHeld = false end)
+	end
+
 	flyState.flyConnection = RunService.Heartbeat:Connect(function()
 		if not flyState.flyEnabled or not hrp or not hrp.Parent then return end
 		local cam = workspace.CurrentCamera
 		local dir = Vector3.new(0, 0, 0)
+
+		-- Keyboard input
 		if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir = dir + cam.CFrame.LookVector end
 		if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir = dir - cam.CFrame.LookVector end
 		if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir = dir - cam.CFrame.RightVector end
 		if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir = dir + cam.CFrame.RightVector end
 		if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir = dir + Vector3.new(0, 1, 0) end
 		if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then dir = dir - Vector3.new(0, 1, 0) end
+
+		-- Mobile: read thumbstick for movement + buttons for up/down
+		if isMobile then
+			local moveDir = game:GetService("Players").LocalPlayer:GetMoveDirection()
+			if moveDir.Magnitude > 0.1 then
+				dir = dir + cam.CFrame.LookVector * moveDir.Z * -1 + cam.CFrame.RightVector * moveDir.X
+			end
+			if flyState.flyUpHeld then dir = dir + Vector3.new(0, 1, 0) end
+			if flyState.flyDownHeld then dir = dir - Vector3.new(0, 1, 0) end
+		end
+
 		if dir.Magnitude > 0 then dir = dir.Unit end
 		local vel = dir * flyState.flySpeed
 
@@ -1525,6 +1613,9 @@ F.stopFly = function()
 	if flyState.bodyGyro then pcall(function() flyState.bodyGyro:Destroy() end) flyState.bodyGyro = nil end
 	if flyState.bodyVelocity then pcall(function() flyState.bodyVelocity:Destroy() end) flyState.bodyVelocity = nil end
 	flyState.flyAttachment = nil
+	-- Remove mobile fly buttons
+	if flyState.flyUpBtn then pcall(function() flyState.flyUpBtn:Destroy() end) flyState.flyUpBtn = nil end
+	if flyState.flyDownBtn then pcall(function() flyState.flyDownBtn:Destroy() end) flyState.flyDownBtn = nil end
 	-- Restore PlatformStand
 	local character = LocalPlayer.Character
 	if character then
@@ -1944,9 +2035,10 @@ F.startWalkFling = function()
 				if not (char and char.Parent and rt and rt.Parent) then
 					RunService.Heartbeat:Wait()
 				else
-					-- Save current velocity, then spike it
+					-- Save current velocity, spike horizontal only (no Y = no flying up)
 					local vel = rt.Velocity
-					rt.Velocity = vel * flingState.walkFlingPower + Vector3.new(0, flingState.walkFlingPower, 0)
+					local spiked = Vector3.new(vel.X * 10000, vel.Y, vel.Z * 10000)
+					rt.Velocity = spiked
 
 					RunService.RenderStepped:Wait()
 					-- Restore original velocity
@@ -3185,19 +3277,63 @@ do
 	createInfoLabel(tab, "Hold RMB/Q = Aimbot (when on)", 5)
 
 	createSpacer(tab, 6)
-	createSectionLabel(tab, "Danger Zone", 7)
-	createActionButton(tab, "Panic Key (Destroy All)", 8, function()
+	createSectionLabel(tab, "Theme", 7)
+	local themeOrder = 8
+	for themeId, themeData in pairs(THEMES) do
+		local themeName = themeData.name
+		local isActive = (themeId == currentThemeName)
+		createActionButton(tab, (isActive and "> " or "") .. themeName .. (isActive and " <" or ""), themeOrder, function()
+			-- Apply theme
+			for k, v in pairs(themeData) do
+				if k ~= "name" then COLORS[k] = v end
+			end
+			currentThemeName = themeId
+			-- Refresh main UI colors
+			pcall(function()
+				mainWindow.BackgroundColor3 = COLORS.bg
+				titleBar.BackgroundColor3 = COLORS.bgSecondary
+				titleLabel.TextColor3 = COLORS.textPrimary
+				versionLabel.TextColor3 = COLORS.accent
+				toggleBtn.BackgroundColor3 = COLORS.accent
+				contentArea.BackgroundColor3 = COLORS.bg
+				logFrame.BackgroundColor3 = COLORS.bgSecondary
+			end)
+			-- Refresh tab bar colors
+			pcall(function()
+				for _, btn in ipairs(tabBar:GetChildren()) do
+					if btn:IsA("TextButton") then
+						btn.BackgroundColor3 = COLORS.tabBg
+						btn.TextColor3 = COLORS.textSecondary
+					end
+				end
+			end)
+			addLog("[THEME] Switched to " .. themeName, COLORS.accent)
+		end)
+		themeOrder = themeOrder + 1
+	end
+
+	createSpacer(tab, themeOrder)
+	themeOrder = themeOrder + 1
+	createSectionLabel(tab, "Danger Zone", themeOrder)
+	themeOrder = themeOrder + 1
+	createActionButton(tab, "Panic Key (Destroy All)", themeOrder, function()
 		pcall(function() screenGui:Destroy() end)
 	end)
-	createActionButton(tab, "Unload Script", 9, function()
+	themeOrder = themeOrder + 1
+	createActionButton(tab, "Unload Script", themeOrder, function()
 		F.unloadScript()
 	end)
 
-	createSpacer(tab, 10)
-	createSectionLabel(tab, "About", 11)
-	createInfoLabel(tab, "Pebbleford Hub v3.0", 12)
-	createInfoLabel(tab, "50+ features | 10 tabs", 13)
-	createInfoLabel(tab, "github.com/pebbleford/roblox-scripts", 14)
+	themeOrder = themeOrder + 1
+	createSpacer(tab, themeOrder)
+	themeOrder = themeOrder + 1
+	createSectionLabel(tab, "About", themeOrder)
+	themeOrder = themeOrder + 1
+	createInfoLabel(tab, "Pebbleford Hub v3.0", themeOrder)
+	themeOrder = themeOrder + 1
+	createInfoLabel(tab, "50+ features | 10 tabs", themeOrder)
+	themeOrder = themeOrder + 1
+	createInfoLabel(tab, "github.com/pebbleford/roblox-scripts", themeOrder)
 end
 
 -- ===================== COMMAND BAR (hidden inline at bottom of Main tab) =====================
