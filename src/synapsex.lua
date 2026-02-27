@@ -466,7 +466,7 @@ addCorner(logoIcon, 3)
 local logoText = Instance.new("TextLabel")
 logoText.Size = UDim2.new(1, 0, 1, 0)
 logoText.BackgroundTransparency = 1
-logoText.Text = "S"
+logoText.Text = "P"
 logoText.TextColor3 = COLORS.textPrimary
 logoText.Font = Enum.Font.GothamBold
 logoText.TextSize = 12
