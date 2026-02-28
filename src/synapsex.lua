@@ -165,6 +165,8 @@ local moveState = {
 	carSpeedConnection = nil,
 	carSpeedOrigMaxSpeed = nil,
 	carSpeedOrigTorque = nil,
+	backseatDriveEnabled = false,
+	backseatDriveConnection = nil,
 	clickTpEnabled = false,
 	clickTpConnection = nil,
 	bunnyHopEnabled = false,
@@ -1827,6 +1829,68 @@ F.stopCarSpeed = function()
 	addLog("[CAR SPEED] OFF", COLORS.error)
 end
 
+-- ===================== BACKSEAT DRIVE LOGIC =====================
+F.startBackseatDrive = function()
+	local char = LocalPlayer.Character
+	if not char then addLog("[BACKSEAT] No character!", COLORS.error) return end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum or not hum.SeatPart then
+		addLog("[BACKSEAT] Sit in a vehicle first!", COLORS.error)
+		return
+	end
+
+	local mySeat = hum.SeatPart
+	local vehicle = mySeat.Parent
+	if not vehicle or not vehicle:IsA("Model") then
+		addLog("[BACKSEAT] Could not find vehicle model!", COLORS.error)
+		return
+	end
+
+	-- Find the VehicleSeat in the vehicle (the driver seat)
+	local driverSeat = nil
+	for _, part in ipairs(vehicle:GetDescendants()) do
+		if part:IsA("VehicleSeat") then
+			driverSeat = part
+			break
+		end
+	end
+
+	if not driverSeat then
+		addLog("[BACKSEAT] No VehicleSeat found in vehicle!", COLORS.error)
+		return
+	end
+
+	moveState.backseatDriveConnection = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			local c = LocalPlayer.Character
+			if not c then return end
+			local h = c:FindFirstChildOfClass("Humanoid")
+			if not h or not h.SeatPart then return end
+
+			-- Read player input and apply to the driver seat
+			local throttle = 0
+			local steer = 0
+
+			if UserInputService:IsKeyDown(Enum.KeyCode.W) then throttle = throttle + 1 end
+			if UserInputService:IsKeyDown(Enum.KeyCode.S) then throttle = throttle - 1 end
+			if UserInputService:IsKeyDown(Enum.KeyCode.A) then steer = steer - 1 end
+			if UserInputService:IsKeyDown(Enum.KeyCode.D) then steer = steer + 1 end
+
+			driverSeat.Throttle = throttle
+			driverSeat.Steer = steer
+		end)
+	end)
+	addLog("[BACKSEAT] ON - Driving from backseat! WASD to control", COLORS.success)
+end
+
+F.stopBackseatDrive = function()
+	if moveState.backseatDriveConnection then
+		moveState.backseatDriveConnection:Disconnect()
+		moveState.backseatDriveConnection = nil
+	end
+	addLog("[BACKSEAT] OFF", COLORS.error)
+end
+
 -- ===================== SPIN FLING LOGIC =====================
 -- Exact Infinite Yield method: density 100 + noclip + BAV + massless + pulse on/off
 
@@ -3027,14 +3091,19 @@ do
 		moveState.carNoclipEnabled = on
 		if on then F.startCarNoclip() else F.stopCarNoclip() end
 	end)
+	createToggle(tab, "Backseat Drive (Sit First)", 14, function(on)
+		moveState.backseatDriveEnabled = on
+		if on then F.startBackseatDrive() else F.stopBackseatDrive() end
+	end)
+	createInfoLabel(tab, "Control the vehicle from any seat with WASD", 15)
 
 	local spacer2 = Instance.new("Frame")
 	spacer2.Size = UDim2.new(1, 0, 0, 4)
 	spacer2.BackgroundTransparency = 1
-	spacer2.LayoutOrder = 14
+	spacer2.LayoutOrder = 16
 	spacer2.Parent = tab
 
-	createSectionLabel(tab, "Jumping", 16)
+	createSectionLabel(tab, "Jumping", 17)
 	createToggle(tab, "Infinite Jump", 17, function(on)
 		moveState.infJumpEnabled = on
 		if on then F.startInfJump() else F.stopInfJump() end
@@ -3432,6 +3501,8 @@ commands["carfling"] = function() if flingState.flingEnabled then flingState.fli
 commands["uncarfling"] = function() flingState.carFlingEnabled = false F.stopCarFling() end
 commands["carnoclip"] = function() moveState.carNoclipEnabled = true F.startCarNoclip() end
 commands["uncarnoclip"] = function() moveState.carNoclipEnabled = false F.stopCarNoclip() end
+commands["backseat"] = function() moveState.backseatDriveEnabled = true F.startBackseatDrive() end
+commands["unbackseat"] = function() moveState.backseatDriveEnabled = false F.stopBackseatDrive() end
 commands["carspeed"] = function(args) local v = tonumber(args[1]) if v then moveState.carSpeedValue = v end moveState.carSpeedEnabled = true F.startCarSpeed() end
 commands["uncarspeed"] = function() moveState.carSpeedEnabled = false F.stopCarSpeed() end
 commands["infjump"] = function() moveState.infJumpEnabled = true F.startInfJump() end
