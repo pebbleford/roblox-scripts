@@ -123,6 +123,9 @@ local espState = {
 	tracerConnection = nil,
 	nameEspEnabled = false,
 	nameEspBillboards = {},
+	drawingEspEnabled = false,
+	drawingEspConnection = nil,
+	drawingEspObjects = {},
 	fovCircleEnabled = false,
 	fovCircleFrame = nil,
 	fovRadius = 200,
@@ -1475,6 +1478,195 @@ F.disableESP = function()
 	for _, conn in ipairs(espState.espConnections) do pcall(function() conn:Disconnect() end) end
 	espState.espConnections = {}
 	addLog("[ESP] OFF", COLORS.error)
+end
+
+-- ===================== DRAWING ESP (INFINITE RANGE) =====================
+F.clearDrawingEsp = function()
+	for _, objs in pairs(espState.drawingEspObjects) do
+		pcall(function() if objs.box then objs.box:Remove() end end)
+		pcall(function() if objs.name then objs.name:Remove() end end)
+		pcall(function() if objs.dist then objs.dist:Remove() end end)
+		pcall(function() if objs.health then objs.health:Remove() end end)
+		pcall(function() if objs.healthBg then objs.healthBg:Remove() end end)
+	end
+	espState.drawingEspObjects = {}
+end
+
+F.getDrawingObjects = function(player)
+	if espState.drawingEspObjects[player] then
+		return espState.drawingEspObjects[player]
+	end
+	local ok, objs = pcall(function()
+		local box = Drawing.new("Quad")
+		box.Color = espState.OUTLINE_COLOR
+		box.Thickness = 1
+		box.Filled = false
+		box.Visible = false
+
+		local name = Drawing.new("Text")
+		name.Color = Color3.fromRGB(255, 255, 255)
+		name.Size = 13
+		name.Center = true
+		name.Outline = true
+		name.OutlineColor = Color3.fromRGB(0, 0, 0)
+		name.Visible = false
+
+		local dist = Drawing.new("Text")
+		dist.Color = Color3.fromRGB(170, 170, 255)
+		dist.Size = 12
+		dist.Center = true
+		dist.Outline = true
+		dist.OutlineColor = Color3.fromRGB(0, 0, 0)
+		dist.Visible = false
+
+		local healthBg = Drawing.new("Line")
+		healthBg.Color = Color3.fromRGB(40, 40, 40)
+		healthBg.Thickness = 3
+		healthBg.Visible = false
+
+		local health = Drawing.new("Line")
+		health.Color = Color3.fromRGB(80, 255, 80)
+		health.Thickness = 2
+		health.Visible = false
+
+		return {box = box, name = name, dist = dist, health = health, healthBg = healthBg}
+	end)
+	if ok and objs then
+		espState.drawingEspObjects[player] = objs
+		return objs
+	end
+	return nil
+end
+
+F.startDrawingEsp = function()
+	if not Drawing then
+		addLog("[ESP+] Drawing API not available!", COLORS.error)
+		return
+	end
+
+	espState.drawingEspConnection = RunService.RenderStepped:Connect(function()
+		pcall(function()
+			local myChar = LocalPlayer.Character
+			local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+			local cam = Camera
+
+			for _, player in ipairs(Players:GetPlayers()) do
+				if player ~= LocalPlayer then
+					local objs = F.getDrawingObjects(player)
+					if objs then
+
+					local character = player.Character
+					if not character or not character.Parent then
+						if objs.box then objs.box.Visible = false end
+						if objs.name then objs.name.Visible = false end
+						if objs.dist then objs.dist.Visible = false end
+						if objs.health then objs.health.Visible = false end
+						if objs.healthBg then objs.healthBg.Visible = false end
+					else
+						local hrp = character:FindFirstChild("HumanoidRootPart")
+						local head = character:FindFirstChild("Head")
+						local humanoid = character:FindFirstChildOfClass("Humanoid")
+						if not hrp or not head then
+							objs.box.Visible = false
+							objs.name.Visible = false
+							objs.dist.Visible = false
+							objs.health.Visible = false
+							objs.healthBg.Visible = false
+						else
+							local pos, onScreen = cam:WorldToViewportPoint(hrp.Position)
+							if not onScreen then
+								objs.box.Visible = false
+								objs.name.Visible = false
+								objs.dist.Visible = false
+								objs.health.Visible = false
+								objs.healthBg.Visible = false
+							else
+								-- Calculate box size based on distance
+								local distance = pos.Z
+								local scaleFactor = 1 / distance * 1000
+								local boxW = 4.5 * scaleFactor
+								local boxH = 6 * scaleFactor
+
+								local screenPos = Vector2.new(pos.X, pos.Y)
+
+								-- Box corners
+								objs.box.PointA = Vector2.new(screenPos.X - boxW / 2, screenPos.Y - boxH / 2)
+								objs.box.PointB = Vector2.new(screenPos.X + boxW / 2, screenPos.Y - boxH / 2)
+								objs.box.PointC = Vector2.new(screenPos.X + boxW / 2, screenPos.Y + boxH / 2)
+								objs.box.PointD = Vector2.new(screenPos.X - boxW / 2, screenPos.Y + boxH / 2)
+								objs.box.Color = espState.OUTLINE_COLOR
+								objs.box.Visible = true
+
+								-- Name above box
+								objs.name.Text = player.DisplayName
+								objs.name.Position = Vector2.new(screenPos.X, screenPos.Y - boxH / 2 - 16)
+								objs.name.Visible = true
+
+								-- Distance below box
+								local studs = myRoot and math.floor((myRoot.Position - hrp.Position).Magnitude) or 0
+								objs.dist.Text = "[" .. studs .. "m]"
+								objs.dist.Position = Vector2.new(screenPos.X, screenPos.Y + boxH / 2 + 4)
+								objs.dist.Visible = true
+
+								-- Health bar on left side
+								if humanoid then
+									local hp = humanoid.Health
+									local maxHp = humanoid.MaxHealth
+									local pct = (maxHp > 0) and (hp / maxHp) or 0
+									if pct < 0 then pct = 0 end
+									if pct > 1 then pct = 1 end
+
+									local barX = screenPos.X - boxW / 2 - 5
+									local barTop = screenPos.Y - boxH / 2
+									local barBot = screenPos.Y + boxH / 2
+									local barH = barBot - barTop
+
+									objs.healthBg.From = Vector2.new(barX, barTop)
+									objs.healthBg.To = Vector2.new(barX, barBot)
+									objs.healthBg.Visible = true
+
+									objs.health.From = Vector2.new(barX, barBot - barH * pct)
+									objs.health.To = Vector2.new(barX, barBot)
+									if pct > 0.5 then
+										objs.health.Color = Color3.fromRGB(80, 255, 80)
+									elseif pct > 0.25 then
+										objs.health.Color = Color3.fromRGB(255, 200, 0)
+									else
+										objs.health.Color = Color3.fromRGB(255, 50, 50)
+									end
+									objs.health.Visible = true
+								end
+							end
+						end
+					end
+					end -- if objs
+				end
+			end
+
+			-- Hide objects for players who left
+			for player, objs in pairs(espState.drawingEspObjects) do
+				if not player or not player.Parent then
+					pcall(function()
+						objs.box.Visible = false
+						objs.name.Visible = false
+						objs.dist.Visible = false
+						objs.health.Visible = false
+						objs.healthBg.Visible = false
+					end)
+				end
+			end
+		end)
+	end)
+	addLog("[ESP+] Drawing ESP ON - infinite range!", COLORS.success)
+end
+
+F.stopDrawingEsp = function()
+	if espState.drawingEspConnection then
+		espState.drawingEspConnection:Disconnect()
+		espState.drawingEspConnection = nil
+	end
+	F.clearDrawingEsp()
+	addLog("[ESP+] Drawing ESP OFF", COLORS.error)
 end
 
 -- ===================== FLY LOGIC =====================
@@ -2960,11 +3152,16 @@ do
 		espState.espEnabled = on
 		if on then F.enableESP() else F.disableESP() end
 	end)
+	createToggle(tab, "Infinite Range ESP (Drawing)", 3, function(on)
+		espState.drawingEspEnabled = on
+		if on then F.startDrawingEsp() else F.stopDrawingEsp() end
+	end)
+	createInfoLabel(tab, "Drawing ESP has no distance limit - shows boxes + names + HP", 4)
 
 	local spacer = Instance.new("Frame")
 	spacer.Size = UDim2.new(1, 0, 0, 4)
 	spacer.BackgroundTransparency = 1
-	spacer.LayoutOrder = 3
+	spacer.LayoutOrder = 5
 	spacer.Parent = tab
 
 	createSectionLabel(tab, "Fill Color", 4)
@@ -3487,6 +3684,8 @@ end
 local commands = {}
 commands["esp"] = function() espState.espEnabled = true F.enableESP() end
 commands["unesp"] = function() espState.espEnabled = false F.disableESP() end
+commands["esp+"] = function() espState.drawingEspEnabled = true F.startDrawingEsp() end
+commands["unesp+"] = function() espState.drawingEspEnabled = false F.stopDrawingEsp() end
 commands["fly"] = function() flyState.flyEnabled = true F.startFly() end
 commands["unfly"] = function() flyState.flyEnabled = false F.stopFly() end
 commands["vfly"] = function() flyState.vehicleFlyEnabled = true F.startVehicleFly() end
