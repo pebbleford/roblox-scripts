@@ -79,6 +79,10 @@ local antiHitActive = false
 local autoFarmActive = false
 local antiRagdollActive = false
 local instaPickUpActive = false
+local desyncActive = false
+local desyncConnection = nil
+local desyncFakeChar = nil
+local desyncServerPos = nil
 
 -- Trade exploit state
 local tradeFloodActive = false
@@ -794,6 +798,124 @@ end
 
 local function stopAutoFarm()
 	autoFarmActive = false
+end
+
+-- ===================== DESYNC =====================
+-- Desyncs your character from the server so other players see you frozen
+-- at your old position. You move freely on your client but are invisible
+-- to others. Useful for stealing without being seen/hit.
+--
+-- How it works:
+-- 1. Save your current position (this is where the server thinks you are)
+-- 2. Teleport your HRP far below the map for one frame (server registers this)
+-- 3. Immediately move back on client
+-- 4. Server now thinks you're under the map - other players see nothing
+-- 5. A ghost (transparent clone) shows where the server thinks you are
+
+local function startDesync()
+	local hrp = getRoot()
+	local hum = getHumanoid()
+	local char = LocalPlayer.Character
+	if not hrp or not hum or not char then
+		notify("Desync", "No character!")
+		return
+	end
+
+	desyncServerPos = hrp.CFrame
+
+	-- Create a transparent ghost at the server position so you can see where
+	-- the server thinks you are
+	pcall(function()
+		if desyncFakeChar then desyncFakeChar:Destroy() end
+		desyncFakeChar = Instance.new("Model")
+		desyncFakeChar.Name = "DesyncGhost"
+
+		for _, part in ipairs(char:GetChildren()) do
+			if part:IsA("BasePart") then
+				local clone = part:Clone()
+				clone.CanCollide = false
+				clone.Anchored = true
+				clone.Transparency = 0.7
+				-- Remove scripts/welds from clone
+				for _, child in ipairs(clone:GetChildren()) do
+					if not child:IsA("SpecialMesh") and not child:IsA("Decal") then
+						pcall(function() child:Destroy() end)
+					end
+				end
+				clone.Parent = desyncFakeChar
+			end
+		end
+
+		if desyncFakeChar:FindFirstChild("HumanoidRootPart") then
+			desyncFakeChar.PrimaryPart = desyncFakeChar:FindFirstChild("HumanoidRootPart")
+		end
+		desyncFakeChar.Parent = workspace
+	end)
+
+	-- Break replication by anchoring HRP, teleporting down, then unanchoring
+	-- The server snapshots the position during the anchor frame
+	pcall(function()
+		-- Method 1: Anchor break
+		hrp.Anchored = true
+		wait()
+		-- Teleport to void (server registers this as your position)
+		local voidPos = CFrame.new(hrp.Position.X, -3000, hrp.Position.Z)
+		hrp.CFrame = voidPos
+		wait()
+		-- Move back on client immediately
+		hrp.CFrame = desyncServerPos
+		hrp.Anchored = false
+	end)
+
+	-- Heartbeat: keep the ghost at server pos, keep character desynced
+	desyncConnection = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			local rt = getRoot()
+			if not rt then return end
+
+			-- Keep the fake ghost at server position
+			if desyncFakeChar and desyncFakeChar.Parent and desyncFakeChar.PrimaryPart then
+				desyncFakeChar:SetPrimaryPartCFrame(desyncServerPos)
+			end
+
+			-- Re-break replication every few seconds to prevent server resync
+			-- The server periodically tries to resync character positions
+			if tick() % 3 < 0.016 then
+				pcall(function()
+					local savedCF = rt.CFrame
+					rt.Anchored = true
+					rt.CFrame = CFrame.new(rt.Position.X, -3000, rt.Position.Z)
+					wait()
+					rt.CFrame = savedCF
+					rt.Anchored = false
+				end)
+			end
+		end)
+	end)
+
+	notify("Desync", "ON - other players can't see you!")
+end
+
+local function stopDesync()
+	if desyncConnection then
+		desyncConnection:Disconnect()
+		desyncConnection = nil
+	end
+	if desyncFakeChar then
+		pcall(function() desyncFakeChar:Destroy() end)
+		desyncFakeChar = nil
+	end
+	-- Resync: unanchor and let the server pick up your real position
+	pcall(function()
+		local hrp = getRoot()
+		if hrp then
+			hrp.Anchored = false
+			-- Force a small velocity to trigger server position update
+			hrp.AssemblyLinearVelocity = Vector3.new(0, 1, 0)
+		end
+	end)
+	desyncServerPos = nil
+	notify("Desync", "OFF - resynced with server")
 end
 
 -- ===================== NOCLIP (Anti-Cheat Safe) =====================
@@ -2149,6 +2271,20 @@ do
 		if on then startSpeedBoost() else stopSpeedBoost() end
 	end)
 	createSlider(tab, "Speed Value", 20, 150, speedValue, 11, function(val) speedValue = val end)
+
+	local spacer2 = Instance.new("Frame")
+	spacer2.Size = UDim2.new(1, 0, 0, 8)
+	spacer2.BackgroundTransparency = 1
+	spacer2.LayoutOrder = 12
+	spacer2.Parent = tab
+
+	createSectionLabel(tab, "Desync", 13)
+	createToggle(tab, "Desync Character", 14, function(on)
+		desyncActive = on
+		if on then startDesync() else stopDesync() end
+	end)
+	createInfoLabel(tab, "Other players can't see your real position", 15)
+	createInfoLabel(tab, "Ghost shows where server thinks you are", 16)
 end
 
 -- ===================== BUILD ESP TAB =====================
@@ -2200,6 +2336,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 	if antiRagdollActive then stopAntiRagdoll() wait(0.3) startAntiRagdoll() end
 	if antiHitActive then stopAntiHit() wait(0.3) startAntiHit() end
 	if instaPickUpActive then wait(0.3) startInstaPickUp() end
+	if desyncActive then stopDesync() wait(0.3) startDesync() end
 end)
 
 -- ===================== STARTUP =====================
