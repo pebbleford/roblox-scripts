@@ -167,6 +167,8 @@ local moveState = {
 	carSpeedOrigTorque = nil,
 	backseatDriveEnabled = false,
 	backseatDriveConnection = nil,
+	backseatDriveSpeed = 80,
+	backseatDriveTurn = 3,
 	clickTpEnabled = false,
 	clickTpConnection = nil,
 	bunnyHopEnabled = false,
@@ -1830,6 +1832,7 @@ F.stopCarSpeed = function()
 end
 
 -- ===================== BACKSEAT DRIVE LOGIC =====================
+-- Direct physics control: apply velocity + angular velocity to vehicle from any seat
 F.startBackseatDrive = function()
 	local char = LocalPlayer.Character
 	if not char then addLog("[BACKSEAT] No character!", COLORS.error) return end
@@ -1840,25 +1843,30 @@ F.startBackseatDrive = function()
 	end
 
 	local mySeat = hum.SeatPart
+	-- Walk up to find the vehicle model
 	local vehicle = mySeat.Parent
-	if not vehicle or not vehicle:IsA("Model") then
+	while vehicle and not vehicle:IsA("Model") do
+		vehicle = vehicle.Parent
+	end
+	if not vehicle or vehicle == workspace then
 		addLog("[BACKSEAT] Could not find vehicle model!", COLORS.error)
 		return
 	end
 
-	-- Find the VehicleSeat in the vehicle (the driver seat)
-	local driverSeat = nil
-	for _, part in ipairs(vehicle:GetDescendants()) do
-		if part:IsA("VehicleSeat") then
-			driverSeat = part
-			break
+	-- Find the main part to apply forces to (PrimaryPart or VehicleSeat or our seat)
+	local drivePart = vehicle.PrimaryPart
+	if not drivePart then
+		for _, part in ipairs(vehicle:GetDescendants()) do
+			if part:IsA("VehicleSeat") then
+				drivePart = part
+				break
+			end
 		end
 	end
+	if not drivePart then drivePart = mySeat end
 
-	if not driverSeat then
-		addLog("[BACKSEAT] No VehicleSeat found in vehicle!", COLORS.error)
-		return
-	end
+	local driveSpeed = moveState.backseatDriveSpeed or 80
+	local turnSpeed = moveState.backseatDriveTurn or 3
 
 	moveState.backseatDriveConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
@@ -1866,8 +1874,8 @@ F.startBackseatDrive = function()
 			if not c then return end
 			local h = c:FindFirstChildOfClass("Humanoid")
 			if not h or not h.SeatPart then return end
+			if not drivePart or not drivePart.Parent then return end
 
-			-- Read player input and apply to the driver seat
 			local throttle = 0
 			local steer = 0
 
@@ -1876,11 +1884,26 @@ F.startBackseatDrive = function()
 			if UserInputService:IsKeyDown(Enum.KeyCode.A) then steer = steer - 1 end
 			if UserInputService:IsKeyDown(Enum.KeyCode.D) then steer = steer + 1 end
 
-			driverSeat.Throttle = throttle
-			driverSeat.Steer = steer
+			-- Apply forward/backward velocity along the vehicle's look direction
+			if throttle ~= 0 then
+				local lookDir = drivePart.CFrame.LookVector
+				local currentVel = drivePart.AssemblyLinearVelocity
+				local targetVel = lookDir * throttle * driveSpeed
+				-- Keep existing Y velocity (gravity) and blend horizontal
+				drivePart.AssemblyLinearVelocity = Vector3.new(targetVel.X, currentVel.Y, targetVel.Z)
+			end
+
+			-- Apply steering via angular velocity (Y-axis rotation)
+			if steer ~= 0 then
+				drivePart.AssemblyAngularVelocity = Vector3.new(0, -steer * turnSpeed, 0)
+			else
+				-- Dampen angular velocity when not steering
+				local av = drivePart.AssemblyAngularVelocity
+				drivePart.AssemblyAngularVelocity = Vector3.new(av.X, av.Y * 0.8, av.Z)
+			end
 		end)
 	end)
-	addLog("[BACKSEAT] ON - Driving from backseat! WASD to control", COLORS.success)
+	addLog("[BACKSEAT] ON - WASD to drive from any seat!", COLORS.success)
 end
 
 F.stopBackseatDrive = function()
@@ -3095,7 +3118,7 @@ do
 		moveState.backseatDriveEnabled = on
 		if on then F.startBackseatDrive() else F.stopBackseatDrive() end
 	end)
-	createInfoLabel(tab, "Control the vehicle from any seat with WASD", 15)
+	createSlider(tab, "Backseat Speed", 20, 300, moveState.backseatDriveSpeed, 15, function(val) moveState.backseatDriveSpeed = val end)
 
 	local spacer2 = Instance.new("Frame")
 	spacer2.Size = UDim2.new(1, 0, 0, 4)
