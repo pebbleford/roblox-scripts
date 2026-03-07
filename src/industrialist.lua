@@ -4,12 +4,12 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("industrialist") then return end
 
 -- ================================================================
--- Pebbleford Hub - Industrialist Auto Farm v1.2.4
+-- Pebbleford Hub - Industrialist Auto Farm v1.2.5
 -- Auto-place farm layouts | Resource monitor | Auto-sell
 -- Direct PlaceBind placement | Auto-wire | Auto-pipe
 -- ================================================================
 
-print("[PB Industrialist v1.2.4] Loading...")
+print("[PB Industrialist v1.2.5] Loading...")
 
 -- Cleanup old instance
 pcall(function()
@@ -131,47 +131,85 @@ local function getPlayerPosition()
 	return Vector3.new(0, 0, 0)
 end
 
+-- Find Purchasable remote (separate from PlacementSystem)
+local PurchasableRemote = ReplicatedStorage:FindFirstChild("Purchasable")
+
+-- Read Shop module data from a building
+local function getShopData(model)
+	local shopModule = model:FindFirstChild("Shop")
+	if shopModule and shopModule:IsA("ModuleScript") then
+		local ok, data = pcall(function() return require(shopModule) end)
+		if ok then
+			print("[PB Industrialist] Shop data for " .. model.Name .. ":")
+			if typeof(data) == "table" then
+				for k, v in pairs(data) do
+					print("  " .. tostring(k) .. " = " .. tostring(v))
+				end
+			else
+				print("  " .. tostring(data))
+			end
+			return data
+		else
+			print("[PB Industrialist] Failed to require Shop: " .. tostring(data))
+		end
+	end
+	return nil
+end
+
 -- Buy a building from the shop before placing it
 local function buyBuilding(model)
-	if not PS.Buy then
-		print("[PB Industrialist] No Buy remote found")
-		return false, "No Buy remote"
-	end
+	print("[PB Industrialist] Buying: " .. model.Name)
 
-	local buyClass = PS.Buy.ClassName
-	print("[PB Industrialist] Buy is a " .. buyClass .. " - trying to buy: " .. model.Name)
+	-- Get shop data for debugging
+	local shopData = getShopData(model)
 
-	if buyClass == "RemoteFunction" then
-		-- Try as RemoteFunction with different arg patterns
-		local patterns = {
-			function() return PS.Buy:InvokeServer(model) end,
-			function() return PS.Buy:InvokeServer(model.Name) end,
-			function() return PS.Buy:InvokeServer(model, 1) end,
-			function() return PS.Buy:InvokeServer(model.Name, 1) end,
-		}
-		for i, fn in ipairs(patterns) do
-			local ok, result = pcall(fn)
-			print("[PB Industrialist] Buy pattern " .. i .. ": ok=" .. tostring(ok) .. " result=" .. tostring(result))
-			if ok and result ~= false then
-				return true
+	-- Method 1: Purchasable RemoteFunction (found in ReplicatedStorage)
+	if PurchasableRemote then
+		local pClass = PurchasableRemote.ClassName
+		print("[PB Industrialist] Trying Purchasable [" .. pClass .. "]")
+		if pClass == "RemoteFunction" then
+			local tryArgs = {
+				{model},
+				{model.Name},
+				{model, 1},
+				{model.Name, 1},
+			}
+			for i, args in ipairs(tryArgs) do
+				local ok, result = pcall(function() return PurchasableRemote:InvokeServer(unpack(args)) end)
+				print("[PB Industrialist] Purchasable pattern " .. i .. ": ok=" .. tostring(ok) .. " result=" .. tostring(result))
 			end
-		end
-	else
-		-- RemoteEvent - try different arg patterns
-		local patterns = {
-			function() PS.Buy:FireServer(model) end,
-			function() PS.Buy:FireServer(model.Name) end,
-			function() PS.Buy:FireServer(model, 1) end,
-			function() PS.Buy:FireServer(model.Name, 1) end,
-		}
-		for i, fn in ipairs(patterns) do
-			local ok = pcall(fn)
-			print("[PB Industrialist] Buy pattern " .. i .. ": ok=" .. tostring(ok))
+		else
+			pcall(function() PurchasableRemote:FireServer(model) end)
+			pcall(function() PurchasableRemote:FireServer(model.Name) end)
 		end
 		task.wait(0.1)
-		return true
 	end
-	return false, "All buy patterns failed"
+
+	-- Method 2: Buy RemoteEvent in PlacementSystem
+	if PS.Buy then
+		-- Try with model, name, category+name, shopData
+		pcall(function() PS.Buy:FireServer(model) end)
+		pcall(function() PS.Buy:FireServer(model.Name) end)
+		if model.Parent then
+			pcall(function() PS.Buy:FireServer(model.Parent.Name, model.Name) end)
+			pcall(function() PS.Buy:FireServer(model, model.Parent.Name) end)
+		end
+		if shopData then
+			pcall(function() PS.Buy:FireServer(shopData) end)
+		end
+		task.wait(0.1)
+	end
+
+	-- Method 3: UpdateModelCountSetting if it exists
+	local updateCount = PlacementSystem and PlacementSystem:FindFirstChild("UpdateModelCountSetting")
+	if updateCount then
+		print("[PB Industrialist] Trying UpdateModelCountSetting")
+		pcall(function() updateCount:FireServer(model.Name, 1) end)
+		pcall(function() updateCount:FireServer(model, 1) end)
+		task.wait(0.1)
+	end
+
+	return true
 end
 
 local function placeMachine(buildingName, worldPosition, rotation)
@@ -499,7 +537,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 50, 1, 0)
 versionLabel.Position = UDim2.new(0, 290, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v1.2.4"
+versionLabel.Text = "v1.2.5"
 versionLabel.TextColor3 = COLORS.textDim
 versionLabel.TextSize = 12
 versionLabel.Font = Enum.Font.Gotham
@@ -1104,15 +1142,35 @@ createActionButton(autoTab, "Scan All PlacementSystem Remotes", 1, function()
 	addLog("Found " .. count .. " remotes in ReplicatedStorage")
 end)
 
-createActionButton(autoTab, "Test Buy Remote (single Coal Drill)", 2, function()
+createActionButton(autoTab, "Test Buy + Place (single Coal Drill)", 2, function()
 	local model = findBuilding("Coal Drill")
 	if not model then
 		addLog("Coal Drill not found in building cache")
 		return
 	end
-	addLog("Testing Buy remote with Coal Drill...")
+	addLog("Testing Buy then Place for Coal Drill...")
+	addLog("Check dev console for detailed results")
 	buyBuilding(model)
-	addLog("Check dev console for Buy pattern results")
+	task.wait(0.5)
+	local pos = getPlayerPosition() + Vector3.new(8, 0, 0)
+	local ok, msg = placeMachine("Coal Drill", pos)
+	addLog("Place result: " .. msg)
+end)
+
+createActionButton(autoTab, "Read Shop Module (Coal Drill)", 3, function()
+	local model = findBuilding("Coal Drill")
+	if not model then
+		addLog("Coal Drill not found")
+		return
+	end
+	local data = getShopData(model)
+	if data and typeof(data) == "table" then
+		for k, v in pairs(data) do
+			addLog("  " .. tostring(k) .. " = " .. tostring(v))
+		end
+	else
+		addLog("Shop data: " .. tostring(data))
+	end
 end)
 
 createSectionLabel(autoTab, "Automation", 5)
@@ -1244,7 +1302,7 @@ createActionButton(autoTab, "TP to Nearest Drill", 32, function()
 	end
 end)
 
--- (Capture tab removed in v1.2.4 - using direct PlaceBind)
+-- (Capture tab removed in v1.2.5 - using direct PlaceBind)
 
 -- === LOG TAB ===
 logFrame = Instance.new("ScrollingFrame")
@@ -1313,7 +1371,7 @@ UserInputService.InputBegan:Connect(function(input, gpe)
 end)
 
 -- ===================== STARTUP =====================
-addLog("Pebbleford Hub - Industrialist v1.2.4 loaded")
+addLog("Pebbleford Hub - Industrialist v1.2.5 loaded")
 if PlacementSystem then
 	addLog("PlacementSystem found!")
 	local psChildren = {}
