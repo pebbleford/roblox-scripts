@@ -4,12 +4,12 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("industrialist") then return end
 
 -- ================================================================
--- Pebbleford Hub - Industrialist Auto Farm v1.1.2
+-- Pebbleford Hub - Industrialist Auto Farm v1.1.3
 -- Auto-place farm layouts | Resource monitor | Auto-sell
 -- Auto-wire | Auto-pipe | Remote discovery
 -- ================================================================
 
-print("[PB Industrialist v1.1.2] Loading...")
+print("[PB Industrialist v1.1.3] Loading...")
 
 -- Cleanup old instance
 pcall(function()
@@ -177,7 +177,7 @@ local function recordCapture(remote, method, args)
 	end
 end
 
--- Method 1: hookmetamethod (Synapse, Script-Ware, some Fluxus)
+-- Method 1a: hookmetamethod (Synapse, Script-Ware, some Fluxus)
 local function tryHookMetamethod()
 	if not hookmetamethod then return false end
 	if not newcclosure then return false end
@@ -202,6 +202,47 @@ local function tryHookMetamethod()
 		return true
 	end
 	print("[PB Industrialist] hookmetamethod failed: " .. tostring(err))
+	return false
+end
+
+-- Method 1b: Manual __namecall hook via getmetatable + setreadonly (Xeno, etc.)
+local function tryManualNamecallHook()
+	local ok, err = pcall(function()
+		local mt = getmetatable(game)
+		if not mt then error("getmetatable(game) returned nil") end
+
+		local oldNamecall = mt.__namecall
+
+		if setreadonly then
+			setreadonly(mt, false)
+		elseif make_writeable then
+			make_writeable(mt)
+		else
+			error("no way to make metatable writable")
+		end
+
+		mt.__namecall = newcclosure(function(self, ...)
+			local method = getnamecallmethod()
+			local selfPath = ""
+			pcall(function() selfPath = self:GetFullName() end)
+
+			if selfPath:find("PlacementSystem") and (method == "FireServer" or method == "InvokeServer") then
+				recordCapture(self, method, {...})
+			end
+
+			return oldNamecall(self, ...)
+		end)
+
+		if setreadonly then
+			setreadonly(mt, true)
+		end
+	end)
+
+	if ok then
+		print("[PB Industrialist] Hook method: manual __namecall (getmetatable + setreadonly)")
+		return true
+	end
+	print("[PB Industrialist] Manual namecall hook failed: " .. tostring(err))
 	return false
 end
 
@@ -336,6 +377,13 @@ local function installCaptureHook()
 	-- Try hookmetamethod first (best - captures exact args)
 	if tryHookMetamethod() then
 		method = "hookmetamethod"
+	end
+
+	-- Try manual __namecall hook (Xeno - has getmetatable + setreadonly + getnamecallmethod)
+	if method == "" then
+		if tryManualNamecallHook() then
+			method = "manual namecall"
+		end
 	end
 
 	-- Try hookfunction as extra layer
@@ -752,7 +800,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 50, 1, 0)
 versionLabel.Position = UDim2.new(0, 290, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v1.1.2"
+versionLabel.Text = "v1.1.3"
 versionLabel.TextColor3 = COLORS.textDim
 versionLabel.TextSize = 12
 versionLabel.Font = Enum.Font.Gotham
@@ -1736,7 +1784,7 @@ UserInputService.InputBegan:Connect(function(input, gpe)
 end)
 
 -- ===================== STARTUP =====================
-addLog("Pebbleford Hub - Industrialist v1.1.2 loaded")
+addLog("Pebbleford Hub - Industrialist v1.1.3 loaded")
 if PlacementSystem then
 	addLog("PlacementSystem found!")
 	local psChildren = {}
