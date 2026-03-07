@@ -4,12 +4,12 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("industrialist") then return end
 
 -- ================================================================
--- Pebbleford Hub - Industrialist Auto Farm v1.2.2
+-- Pebbleford Hub - Industrialist Auto Farm v1.2.3
 -- Auto-place farm layouts | Resource monitor | Auto-sell
 -- Direct PlaceBind placement | Auto-wire | Auto-pipe
 -- ================================================================
 
-print("[PB Industrialist v1.2.2] Loading...")
+print("[PB Industrialist v1.2.3] Loading...")
 
 -- Cleanup old instance
 pcall(function()
@@ -223,14 +223,14 @@ end
 local FARM_BLUEPRINTS = {
 	{
 		name = "Coal Starter",
-		description = "3 Coal Drills -> Truck Depot. Simple money maker.",
+		description = "3 Coal Drills -> Truck Depot + Wind Turbine. Simple money maker.",
 		tier = "Early",
 		machines = {
 			{name = "Coal Drill", offset = Vector3.new(0, 0, 0)},
 			{name = "Coal Drill", offset = Vector3.new(8, 0, 0)},
 			{name = "Coal Drill", offset = Vector3.new(16, 0, 0)},
 			{name = "Truck Depot", offset = Vector3.new(8, 0, 16)},
-			{name = "Coal Generator", offset = Vector3.new(-8, 0, 8)},
+			{name = "Wind Turbine 2", offset = Vector3.new(-8, 0, 8)},
 		},
 		pipes = {
 			{from = 1, to = 4},
@@ -276,8 +276,8 @@ local FARM_BLUEPRINTS = {
 			{name = "Truck Depot", offset = Vector3.new(40, 0, 80)},
 			{name = "Truck Depot", offset = Vector3.new(60, 0, 80)},
 			-- Power
-			{name = "Coal Generator", offset = Vector3.new(-12, 0, 32)},
-			{name = "Coal Generator", offset = Vector3.new(76, 0, 32)},
+			{name = "Wind Turbine 2", offset = Vector3.new(-12, 0, 32)},
+			{name = "Wind Turbine 2", offset = Vector3.new(76, 0, 32)},
 		},
 	},
 	{
@@ -331,10 +331,10 @@ local FARM_BLUEPRINTS = {
 			{name = "Van Depot", offset = Vector3.new(20, 0, 80)},
 			{name = "Van Depot", offset = Vector3.new(90, 0, 80)},
 			-- Power
-			{name = "Coal Generator", offset = Vector3.new(-12, 0, 24)},
-			{name = "Coal Generator", offset = Vector3.new(-12, 0, 48)},
-			{name = "Coal Generator", offset = Vector3.new(124, 0, 24)},
-			{name = "Coal Generator", offset = Vector3.new(124, 0, 48)},
+			{name = "Wind Turbine 2", offset = Vector3.new(-12, 0, 24)},
+			{name = "Wind Turbine 2", offset = Vector3.new(-12, 0, 48)},
+			{name = "Wind Turbine 2", offset = Vector3.new(124, 0, 24)},
+			{name = "Wind Turbine 2", offset = Vector3.new(124, 0, 48)},
 		},
 	},
 	{
@@ -359,8 +359,8 @@ local FARM_BLUEPRINTS = {
 			-- Sell
 			{name = "Truck Depot", offset = Vector3.new(30, 0, 80)},
 			-- Power
-			{name = "Coal Generator", offset = Vector3.new(-12, 0, 32)},
-			{name = "Coal Generator", offset = Vector3.new(60, 0, 32)},
+			{name = "Wind Turbine 2", offset = Vector3.new(-12, 0, 32)},
+			{name = "Wind Turbine 2", offset = Vector3.new(60, 0, 32)},
 		},
 	},
 }
@@ -470,7 +470,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 50, 1, 0)
 versionLabel.Position = UDim2.new(0, 290, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v1.2.2"
+versionLabel.Text = "v1.2.3"
 versionLabel.TextColor3 = COLORS.textDim
 versionLabel.TextSize = 12
 versionLabel.Font = Enum.Font.Gotham
@@ -1182,7 +1182,7 @@ createActionButton(autoTab, "TP to Nearest Drill", 32, function()
 	end
 end)
 
--- (Capture tab removed in v1.2.2 - using direct PlaceBind)
+-- (Capture tab removed in v1.2.3 - using direct PlaceBind)
 
 -- === LOG TAB ===
 logFrame = Instance.new("ScrollingFrame")
@@ -1251,7 +1251,7 @@ UserInputService.InputBegan:Connect(function(input, gpe)
 end)
 
 -- ===================== STARTUP =====================
-addLog("Pebbleford Hub - Industrialist v1.2.2 loaded")
+addLog("Pebbleford Hub - Industrialist v1.2.3 loaded")
 if PlacementSystem then
 	addLog("PlacementSystem found!")
 	local psChildren = {}
