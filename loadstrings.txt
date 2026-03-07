@@ -25,7 +25,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scr
 -- 99 Nights in the Forest Hub
 loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/99nights.lua"))()
 
--- Industrialist Auto Farm (v1.0)
+-- Industrialist Auto Farm (v1.2.0)
 loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/industrialist.lua"))()
 
 -- Standalone Scripts (not obfuscated)
