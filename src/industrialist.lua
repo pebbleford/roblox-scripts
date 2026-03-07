@@ -4,12 +4,12 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("industrialist") then return end
 
 -- ================================================================
--- Pebbleford Hub - Industrialist Auto Farm v1.2.7
+-- Pebbleford Hub - Industrialist Auto Farm v1.2.8
 -- Auto-place farm layouts | Resource monitor | Auto-sell
 -- Direct PlaceBind placement | Auto-wire | Auto-pipe
 -- ================================================================
 
-print("[PB Industrialist v1.2.7] Loading...")
+print("[PB Industrialist v1.2.8] Loading...")
 
 -- Cleanup old instance
 pcall(function()
@@ -493,7 +493,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 50, 1, 0)
 versionLabel.Position = UDim2.new(0, 290, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v1.2.7"
+versionLabel.Text = "v1.2.8"
 versionLabel.TextColor3 = COLORS.textDim
 versionLabel.TextSize = 12
 versionLabel.Font = Enum.Font.Gotham
@@ -773,34 +773,58 @@ local function buildFarm(blueprint)
 
 	addLog("Origin: " .. tostring(origin))
 
+	-- Pre-check: verify all building names exist
+	addLog("Checking building names...")
+	local allFound = true
+	for i, machine in ipairs(blueprint.machines) do
+		local model = findBuilding(machine.name)
+		if model then
+			addLog("  OK: " .. machine.name .. " -> " .. model.Name)
+		else
+			addLog("  MISSING: " .. machine.name .. " (not found in game!)")
+			allFound = false
+		end
+	end
+	if not allFound then
+		addLog("WARNING: Some buildings not found! They will be skipped.")
+	end
+
 	-- Place all machines
 	local placedPositions = {}
 	for i, machine in ipairs(blueprint.machines) do
 		local worldPos = origin + machine.offset
 		placedPositions[i] = worldPos
-		addLog("Placing: " .. machine.name .. " at " .. tostring(worldPos))
+		addLog("Placing " .. i .. "/" .. #blueprint.machines .. ": " .. machine.name)
 		local ok, msg = placeMachine(machine.name, worldPos)
 		addLog("  -> " .. msg)
-		task.wait(0.5)
+		task.wait(0.8)
 	end
 
 	-- Connect pipes
 	if blueprint.pipes then
-		task.wait(1)
-		addLog("Connecting pipes...")
-		for _, pipe in ipairs(blueprint.pipes) do
-			connectPipe(placedPositions[pipe.from], placedPositions[pipe.to])
-			task.wait(0.3)
+		task.wait(2)
+		addLog("Connecting " .. #blueprint.pipes .. " pipes...")
+		for j, pipe in ipairs(blueprint.pipes) do
+			local fromPos = placedPositions[pipe.from]
+			local toPos = placedPositions[pipe.to]
+			addLog("  Pipe " .. j .. ": machine " .. pipe.from .. " -> " .. pipe.to)
+			local ok, result = connectPipe(fromPos, toPos)
+			addLog("    ok=" .. tostring(ok) .. " result=" .. tostring(result))
+			task.wait(0.5)
 		end
 	end
 
 	-- Connect wires
 	if blueprint.wires then
-		task.wait(1)
-		addLog("Connecting wires...")
-		for _, wire in ipairs(blueprint.wires) do
-			connectWire(placedPositions[wire.from], placedPositions[wire.to])
-			task.wait(0.3)
+		task.wait(2)
+		addLog("Connecting " .. #blueprint.wires .. " wires...")
+		for j, wire in ipairs(blueprint.wires) do
+			local fromPos = placedPositions[wire.from]
+			local toPos = placedPositions[wire.to]
+			addLog("  Wire " .. j .. ": machine " .. wire.from .. " -> " .. wire.to)
+			local ok, result = connectWire(fromPos, toPos)
+			addLog("    ok=" .. tostring(ok) .. " result=" .. tostring(result))
+			task.wait(0.5)
 		end
 	end
 
@@ -1241,7 +1265,7 @@ createActionButton(autoTab, "TP to Nearest Drill", 32, function()
 	end
 end)
 
--- (Capture tab removed in v1.2.7 - using direct PlaceBind)
+-- (Capture tab removed in v1.2.8 - using direct PlaceBind)
 
 -- === LOG TAB ===
 logFrame = Instance.new("ScrollingFrame")
@@ -1310,7 +1334,7 @@ UserInputService.InputBegan:Connect(function(input, gpe)
 end)
 
 -- ===================== STARTUP =====================
-addLog("Pebbleford Hub - Industrialist v1.2.7 loaded")
+addLog("Pebbleford Hub - Industrialist v1.2.8 loaded")
 if PlacementSystem then
 	addLog("PlacementSystem found!")
 	local psChildren = {}
