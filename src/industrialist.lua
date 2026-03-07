@@ -4,12 +4,12 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("industrialist") then return end
 
 -- ================================================================
--- Pebbleford Hub - Industrialist Auto Farm v1.2.6
+-- Pebbleford Hub - Industrialist Auto Farm v1.2.7
 -- Auto-place farm layouts | Resource monitor | Auto-sell
 -- Direct PlaceBind placement | Auto-wire | Auto-pipe
 -- ================================================================
 
-print("[PB Industrialist v1.2.6] Loading...")
+print("[PB Industrialist v1.2.7] Loading...")
 
 -- Cleanup old instance
 pcall(function()
@@ -131,11 +131,30 @@ local function getPlayerPosition()
 	return Vector3.new(0, 0, 0)
 end
 
--- Buy a building from the shop before placing it
+-- Buy a building from the shop - try multiple methods
 local function buyBuilding(model)
 	if PS.Buy then
+		-- Try both instance and string name
 		pcall(function() PS.Buy:FireServer(model) end)
+		task.wait(0.05)
+		pcall(function() PS.Buy:FireServer(model.Name) end)
+		task.wait(0.05)
 	end
+end
+
+-- Try to place, returns: success, message, serverResult
+local function tryPlace(model, cf)
+	if PS.PlaceBind then
+		local ok, result = pcall(function()
+			return PS.PlaceBind:InvokeServer(model, cf)
+		end)
+		if ok then
+			return true, result
+		else
+			return false, result
+		end
+	end
+	return false, "No PlaceBind"
 end
 
 local function placeMachine(buildingName, worldPosition, rotation)
@@ -144,38 +163,59 @@ local function placeMachine(buildingName, worldPosition, rotation)
 		return false, "Building not found: " .. buildingName
 	end
 
-	-- Buy the building first (game requires purchasing before placing)
-	buyBuilding(model)
-	task.wait(0.15)
-
 	local cf = CFrame.new(worldPosition)
 	if rotation then
 		cf = cf * CFrame.Angles(0, math.rad(rotation), 0)
 	end
 
-	-- Primary method: PlaceBind:InvokeServer(model, CFrame)
-	if PS.PlaceBind then
-		local ok, result = pcall(function()
-			return PS.PlaceBind:InvokeServer(model, cf)
-		end)
-		if ok then
-			return true, "Placed " .. buildingName .. " via PlaceBind"
-		else
-			return false, "PlaceBind error: " .. tostring(result)
+	-- Attempt 1: Try placing directly (might already be owned)
+	local ok, result = tryPlace(model, cf)
+	if ok then
+		-- Check if server indicated success (nil = success from our earlier test)
+		-- If result is a string containing "enough" or false, placement failed
+		local resultStr = tostring(result):lower()
+		if result == nil or (result ~= false and not resultStr:find("enough") and not resultStr:find("fail") and not resultStr:find("error")) then
+			return true, "Placed " .. buildingName .. " (already owned)"
 		end
+		print("[PB Industrialist] Place returned: " .. tostring(result) .. " - trying to buy first")
 	end
 
-	-- Fallback: Place:FireServer(model, CFrame)
-	if PS.Place then
-		local ok = pcall(function()
-			PS.Place:FireServer(model, cf)
-		end)
-		if ok then
-			return true, "Placed " .. buildingName .. " via Place"
+	-- Attempt 2: Buy then place
+	buyBuilding(model)
+	task.wait(0.3)
+
+	ok, result = tryPlace(model, cf)
+	if ok then
+		local resultStr = tostring(result):lower()
+		if result == nil or (result ~= false and not resultStr:find("enough") and not resultStr:find("fail")) then
+			return true, "Placed " .. buildingName .. " (bought + placed)"
 		end
+		print("[PB Industrialist] Still failed after buy: " .. tostring(result))
 	end
 
-	return false, "No placement remote available"
+	-- Attempt 3: Try alternate buy methods then place
+	print("[PB Industrialist] Trying alternate buy methods for " .. buildingName)
+	if PS.Buy then
+		-- Try with category
+		if model.Parent then
+			pcall(function() PS.Buy:FireServer(model.Parent.Name, model.Name) end)
+			task.wait(0.05)
+			pcall(function() PS.Buy:FireServer(model.Name, model.Parent.Name) end)
+			task.wait(0.05)
+		end
+		-- Try with quantity
+		pcall(function() PS.Buy:FireServer(model, 1) end)
+		task.wait(0.05)
+		pcall(function() PS.Buy:FireServer(model.Name, 1) end)
+		task.wait(0.3)
+	end
+
+	ok, result = tryPlace(model, cf)
+	if ok then
+		return true, "Placed " .. buildingName .. " (alt buy)"
+	end
+
+	return false, "Failed to place " .. buildingName .. ": " .. tostring(result)
 end
 
 local function connectPipe(fromPos, toPos)
@@ -453,7 +493,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 50, 1, 0)
 versionLabel.Position = UDim2.new(0, 290, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v1.2.6"
+versionLabel.Text = "v1.2.7"
 versionLabel.TextColor3 = COLORS.textDim
 versionLabel.TextSize = 12
 versionLabel.Font = Enum.Font.Gotham
@@ -1201,7 +1241,7 @@ createActionButton(autoTab, "TP to Nearest Drill", 32, function()
 	end
 end)
 
--- (Capture tab removed in v1.2.6 - using direct PlaceBind)
+-- (Capture tab removed in v1.2.7 - using direct PlaceBind)
 
 -- === LOG TAB ===
 logFrame = Instance.new("ScrollingFrame")
@@ -1270,7 +1310,7 @@ UserInputService.InputBegan:Connect(function(input, gpe)
 end)
 
 -- ===================== STARTUP =====================
-addLog("Pebbleford Hub - Industrialist v1.2.6 loaded")
+addLog("Pebbleford Hub - Industrialist v1.2.7 loaded")
 if PlacementSystem then
 	addLog("PlacementSystem found!")
 	local psChildren = {}
