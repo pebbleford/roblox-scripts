@@ -4,12 +4,12 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("industrialist") then return end
 
 -- ================================================================
--- Pebbleford Hub - Industrialist Auto Farm v1.2.0
+-- Pebbleford Hub - Industrialist Auto Farm v1.2.1
 -- Auto-place farm layouts | Resource monitor | Auto-sell
 -- Direct PlaceBind placement | Auto-wire | Auto-pipe
 -- ================================================================
 
-print("[PB Industrialist v1.2.0] Loading...")
+print("[PB Industrialist v1.2.1] Loading...")
 
 -- Cleanup old instance
 pcall(function()
@@ -148,7 +148,17 @@ local function placeMachine(buildingName, worldPosition, rotation)
 			return PS.PlaceBind:InvokeServer(model, cf)
 		end)
 		if ok then
-			return true, "Placed " .. buildingName .. " via PlaceBind"
+			-- Log the server response so we can see rejections
+			local resultStr = tostring(result)
+			if typeof(result) == "table" then
+				local parts = {}
+				for k, v in pairs(result) do
+					table.insert(parts, tostring(k) .. "=" .. tostring(v))
+				end
+				resultStr = "{" .. table.concat(parts, ", ") .. "}"
+			end
+			print("[PB Industrialist] PlaceBind response: " .. resultStr)
+			return true, "Placed " .. buildingName .. " (server: " .. resultStr .. ")"
 		else
 			return false, "PlaceBind error: " .. tostring(result)
 		end
@@ -442,7 +452,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 50, 1, 0)
 versionLabel.Position = UDim2.new(0, 290, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v1.2.0"
+versionLabel.Text = "v1.2.1"
 versionLabel.TextColor3 = COLORS.textDim
 versionLabel.TextSize = 12
 versionLabel.Font = Enum.Font.Gotham
@@ -1154,7 +1164,7 @@ createActionButton(autoTab, "TP to Nearest Drill", 32, function()
 	end
 end)
 
--- (Capture tab removed in v1.2.0 - using direct PlaceBind)
+-- (Capture tab removed in v1.2.1 - using direct PlaceBind)
 
 -- === LOG TAB ===
 logFrame = Instance.new("ScrollingFrame")
@@ -1223,7 +1233,7 @@ UserInputService.InputBegan:Connect(function(input, gpe)
 end)
 
 -- ===================== STARTUP =====================
-addLog("Pebbleford Hub - Industrialist v1.2.0 loaded")
+addLog("Pebbleford Hub - Industrialist v1.2.1 loaded")
 if PlacementSystem then
 	addLog("PlacementSystem found!")
 	local psChildren = {}
