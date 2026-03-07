@@ -4,12 +4,12 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("industrialist") then return end
 
 -- ================================================================
--- Pebbleford Hub - Industrialist Auto Farm v1.2.1
+-- Pebbleford Hub - Industrialist Auto Farm v1.2.2
 -- Auto-place farm layouts | Resource monitor | Auto-sell
 -- Direct PlaceBind placement | Auto-wire | Auto-pipe
 -- ================================================================
 
-print("[PB Industrialist v1.2.1] Loading...")
+print("[PB Industrialist v1.2.2] Loading...")
 
 -- Cleanup old instance
 pcall(function()
@@ -131,11 +131,29 @@ local function getPlayerPosition()
 	return Vector3.new(0, 0, 0)
 end
 
+-- Buy a building from the shop before placing it
+local function buyBuilding(model)
+	if not PS.Buy then return false, "No Buy remote" end
+	-- Try multiple arg formats since we don't know the exact one
+	local ok, result
+	-- Try: Buy:FireServer(model)
+	ok = pcall(function() PS.Buy:FireServer(model) end)
+	if ok then
+		print("[PB Industrialist] Buy fired for: " .. model.Name)
+		return true
+	end
+	return false, "Buy failed"
+end
+
 local function placeMachine(buildingName, worldPosition, rotation)
 	local model = findBuilding(buildingName)
 	if not model then
 		return false, "Building not found: " .. buildingName
 	end
+
+	-- Buy the building first (game requires purchasing before placing)
+	buyBuilding(model)
+	task.wait(0.15)
 
 	local cf = CFrame.new(worldPosition)
 	if rotation then
@@ -452,7 +470,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 50, 1, 0)
 versionLabel.Position = UDim2.new(0, 290, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v1.2.1"
+versionLabel.Text = "v1.2.2"
 versionLabel.TextColor3 = COLORS.textDim
 versionLabel.TextSize = 12
 versionLabel.Font = Enum.Font.Gotham
@@ -1164,7 +1182,7 @@ createActionButton(autoTab, "TP to Nearest Drill", 32, function()
 	end
 end)
 
--- (Capture tab removed in v1.2.1 - using direct PlaceBind)
+-- (Capture tab removed in v1.2.2 - using direct PlaceBind)
 
 -- === LOG TAB ===
 logFrame = Instance.new("ScrollingFrame")
@@ -1233,7 +1251,7 @@ UserInputService.InputBegan:Connect(function(input, gpe)
 end)
 
 -- ===================== STARTUP =====================
-addLog("Pebbleford Hub - Industrialist v1.2.1 loaded")
+addLog("Pebbleford Hub - Industrialist v1.2.2 loaded")
 if PlacementSystem then
 	addLog("PlacementSystem found!")
 	local psChildren = {}
