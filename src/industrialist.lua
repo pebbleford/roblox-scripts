@@ -4,12 +4,12 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("industrialist") then return end
 
 -- ================================================================
--- Pebbleford Hub - Industrialist Auto Farm v1.1
+-- Pebbleford Hub - Industrialist Auto Farm v1.1.1
 -- Auto-place farm layouts | Resource monitor | Auto-sell
 -- Auto-wire | Auto-pipe | Remote discovery
 -- ================================================================
 
-print("[PB Industrialist v1.1] Loading...")
+print("[PB Industrialist v1.1.1] Loading...")
 
 -- Cleanup old instance
 pcall(function()
@@ -742,7 +742,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 50, 1, 0)
 versionLabel.Position = UDim2.new(0, 290, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v1.1"
+versionLabel.Text = "v1.1.1"
 versionLabel.TextColor3 = COLORS.textDim
 versionLabel.TextSize = 12
 versionLabel.Font = Enum.Font.Gotham
@@ -1726,7 +1726,7 @@ UserInputService.InputBegan:Connect(function(input, gpe)
 end)
 
 -- ===================== STARTUP =====================
-addLog("Pebbleford Hub - Industrialist v1.1 loaded")
+addLog("Pebbleford Hub - Industrialist v1.1.1 loaded")
 if PlacementSystem then
 	addLog("PlacementSystem found!")
 	local psChildren = {}
