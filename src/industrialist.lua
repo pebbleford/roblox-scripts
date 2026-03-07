@@ -4,12 +4,12 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("industrialist") then return end
 
 -- ================================================================
--- Pebbleford Hub - Industrialist Auto Farm v1.1.1
+-- Pebbleford Hub - Industrialist Auto Farm v1.1.2
 -- Auto-place farm layouts | Resource monitor | Auto-sell
 -- Auto-wire | Auto-pipe | Remote discovery
 -- ================================================================
 
-print("[PB Industrialist v1.1.1] Loading...")
+print("[PB Industrialist v1.1.2] Loading...")
 
 -- Cleanup old instance
 pcall(function()
@@ -331,24 +331,34 @@ local function installCaptureHook()
 	-- Clear capture file
 	pcall(function() writefile(captureFile, "=== Pebbleford Hub - Industrialist Capture Log ===\n\n") end)
 
-	-- Try methods in order of reliability
+	local method = ""
+
+	-- Try hookmetamethod first (best - captures exact args)
 	if tryHookMetamethod() then
-		hookInstalled = true
-		return true, "hookmetamethod"
+		method = "hookmetamethod"
 	end
 
-	if tryHookFunction() then
-		hookInstalled = true
-		return true, "hookfunction"
+	-- Try hookfunction as extra layer
+	if method == "" then
+		pcall(function()
+			if tryHookFunction() then
+				method = "hookfunction"
+			end
+		end)
 	end
 
-	-- Universal fallback - always works
-	if tryWorkspaceMonitor() then
-		hookInstalled = true
-		return true, "workspace monitor"
+	-- ALWAYS install workspace monitor as reliable fallback
+	-- This works on every executor regardless
+	tryWorkspaceMonitor()
+
+	if method == "" then
+		method = "workspace monitor"
+	else
+		method = method .. " + workspace monitor"
 	end
 
-	return false, "all methods failed"
+	hookInstalled = true
+	return true, method
 end
 
 -- Get the list of buildings from the game
@@ -742,7 +752,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 50, 1, 0)
 versionLabel.Position = UDim2.new(0, 290, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v1.1.1"
+versionLabel.Text = "v1.1.2"
 versionLabel.TextColor3 = COLORS.textDim
 versionLabel.TextSize = 12
 versionLabel.Font = Enum.Font.Gotham
@@ -1726,7 +1736,7 @@ UserInputService.InputBegan:Connect(function(input, gpe)
 end)
 
 -- ===================== STARTUP =====================
-addLog("Pebbleford Hub - Industrialist v1.1.1 loaded")
+addLog("Pebbleford Hub - Industrialist v1.1.2 loaded")
 if PlacementSystem then
 	addLog("PlacementSystem found!")
 	local psChildren = {}
