@@ -4,12 +4,12 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("industrialist") then return end
 
 -- ================================================================
--- Pebbleford Hub - Industrialist Auto Farm v1.1.3
+-- Pebbleford Hub - Industrialist Auto Farm v1.2.0
 -- Auto-place farm layouts | Resource monitor | Auto-sell
--- Auto-wire | Auto-pipe | Remote discovery
+-- Direct PlaceBind placement | Auto-wire | Auto-pipe
 -- ================================================================
 
-print("[PB Industrialist v1.1.3] Loading...")
+print("[PB Industrialist v1.2.0] Loading...")
 
 -- Cleanup old instance
 pcall(function()
@@ -64,11 +64,11 @@ local currentFarmBuilding = false
 local PlacementSystem = ReplicatedStorage:FindFirstChild("PlacementSystem")
 local PS = {}
 if PlacementSystem then
-	PS.Place = PlacementSystem:FindFirstChild("Place")
-	PS.PlaceBind = PlacementSystem:FindFirstChild("PlaceBind")
+	PS.Place = PlacementSystem:FindFirstChild("Place") -- RemoteEvent
+	PS.PlaceBind = PlacementSystem:FindFirstChild("PlaceBind") -- RemoteFunction (MAIN)
 	PS.OptimizedPlaceBind = PlacementSystem:FindFirstChild("OptimizedPlaceBind")
-	PS.PipeBind = PlacementSystem:FindFirstChild("PipeBind")
-	PS.WireBind = PlacementSystem:FindFirstChild("WireBind")
+	PS.PipeBind = PlacementSystem:FindFirstChild("PipeBind") -- RemoteFunction
+	PS.WireBind = PlacementSystem:FindFirstChild("WireBind") -- RemoteFunction
 	PS.Buy = PlacementSystem:FindFirstChild("Buy")
 	PS.Delete = PlacementSystem:FindFirstChild("Delete")
 	PS.CheckOres = PlacementSystem:FindFirstChild("CheckOres")
@@ -76,475 +76,117 @@ if PlacementSystem then
 	PS.Buildings = PlacementSystem:FindFirstChild("Buildings")
 end
 
--- Captured remote call data from __namecall hook
-local capturedCalls = {}
-local captureActive = false
-local captureFile = "industrialist_capture.txt"
-local hookInstalled = false
-
--- Serialize a value to a readable string
-local function serializeValue(v, depth)
-	depth = depth or 0
-	if depth > 5 then return "..." end
-	local t = typeof(v)
-	if t == "string" then
-		return '"' .. v:sub(1, 200) .. '"'
-	elseif t == "number" or t == "boolean" then
-		return tostring(v)
-	elseif t == "nil" then
-		return "nil"
-	elseif t == "Vector3" then
-		return "Vector3.new(" .. v.X .. ", " .. v.Y .. ", " .. v.Z .. ")"
-	elseif t == "CFrame" then
-		local x, y, z = v.Position.X, v.Position.Y, v.Position.Z
-		local rx, ry, rz = v:ToEulerAnglesXYZ()
-		return "CFrame.new(" .. x .. ", " .. y .. ", " .. z .. ") * CFrame.Angles(" .. rx .. ", " .. ry .. ", " .. rz .. ")"
-	elseif t == "Instance" then
-		return "Instance<" .. v.ClassName .. "> '" .. v:GetFullName() .. "'"
-	elseif t == "Color3" then
-		return "Color3.new(" .. v.R .. ", " .. v.G .. ", " .. v.B .. ")"
-	elseif t == "UDim2" then
-		return "UDim2.new(" .. v.X.Scale .. ", " .. v.X.Offset .. ", " .. v.Y.Scale .. ", " .. v.Y.Offset .. ")"
-	elseif t == "EnumItem" then
-		return tostring(v)
-	elseif t == "table" then
-		local parts = {}
-		local count = 0
-		for k, val in pairs(v) do
-			count = count + 1
-			if count > 20 then
-				table.insert(parts, "... +" .. (count) .. " more")
-				break
+-- Building model cache: maps friendly name -> building model instance
+local buildingCache = {}
+-- Build the building cache from PlacementSystem.Buildings
+local function buildBuildingCache()
+	buildingCache = {}
+	if not PS.Buildings then return end
+	for _, category in ipairs(PS.Buildings:GetChildren()) do
+		for _, building in ipairs(category:GetChildren()) do
+			-- Store by exact name
+			buildingCache[building.Name] = building
+			-- Also store by friendly name with spaces (e.g. "Coal Drill" -> "CoalDrill")
+			local friendly = building.Name:gsub("(%l)(%u)", "%1 %2")
+			if friendly ~= building.Name then
+				buildingCache[friendly] = building
 			end
-			local keyStr
-			if type(k) == "number" then
-				keyStr = "[" .. k .. "]"
-			else
-				keyStr = "[" .. serializeValue(k, depth + 1) .. "]"
-			end
-			table.insert(parts, keyStr .. " = " .. serializeValue(val, depth + 1))
 		end
-		return "{\n" .. string.rep("  ", depth + 1) .. table.concat(parts, ",\n" .. string.rep("  ", depth + 1)) .. "\n" .. string.rep("  ", depth) .. "}"
-	else
-		return "<" .. t .. "> " .. tostring(v)
 	end
 end
 
--- Record a captured call into the capturedCalls table and write to file
-local function recordCapture(remote, method, args)
-	local selfPath = ""
-	pcall(function() selfPath = remote:GetFullName() end)
-
-	local entry = {
-		remote = remote.Name,
-		path = selfPath,
-		method = method,
-		className = remote.ClassName,
-		argCount = #args,
-		args = {},
-		rawArgs = args,
-		timestamp = os.clock(),
-	}
-	for i, v in ipairs(args) do
-		entry.args[i] = {
-			type = typeof(v),
-			value = serializeValue(v),
-			raw = v,
-		}
-	end
-	table.insert(capturedCalls, entry)
-
-	-- Write to file
-	pcall(function()
-		local lines = {}
-		table.insert(lines, "=== CAPTURED: " .. remote.Name .. ":" .. method .. " at " .. os.date("%H:%M:%S") .. " ===")
-		table.insert(lines, "Remote: " .. selfPath .. " (" .. remote.ClassName .. ")")
-		table.insert(lines, "Method: " .. method)
-		table.insert(lines, "Args: " .. #args)
-		for i, v in ipairs(args) do
-			table.insert(lines, "  Arg " .. i .. " [" .. typeof(v) .. "]: " .. serializeValue(v))
+-- Find a building model by name (fuzzy match)
+local function findBuilding(name)
+	-- Exact match first
+	if buildingCache[name] then return buildingCache[name] end
+	-- Try without spaces
+	local noSpaces = name:gsub(" ", "")
+	if buildingCache[noSpaces] then return buildingCache[noSpaces] end
+	-- Try lowercase fuzzy match
+	local lower = name:lower()
+	for cachedName, model in pairs(buildingCache) do
+		if cachedName:lower() == lower or cachedName:lower():gsub(" ", "") == lower:gsub(" ", "") then
+			return model
 		end
-		table.insert(lines, "")
-
-		local existing = ""
-		pcall(function() existing = readfile(captureFile) end)
-		writefile(captureFile, existing .. table.concat(lines, "\n") .. "\n")
-	end)
-
-	print("[PB Capture] " .. remote.Name .. ":" .. method .. " with " .. #args .. " args")
-	for i, v in ipairs(args) do
-		print("  Arg " .. i .. " [" .. typeof(v) .. "]: " .. serializeValue(v))
 	end
+	-- Partial match
+	for cachedName, model in pairs(buildingCache) do
+		if cachedName:lower():find(lower:gsub(" ", ""), 1, true) then
+			return model
+		end
+	end
+	return nil
 end
 
--- Method 1a: hookmetamethod (Synapse, Script-Ware, some Fluxus)
-local function tryHookMetamethod()
-	if not hookmetamethod then return false end
-	if not newcclosure then return false end
 
-	local ok, err = pcall(function()
-		local oldNamecall
-		oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-			local method = getnamecallmethod()
-			local selfPath = ""
-			pcall(function() selfPath = self:GetFullName() end)
+-- ===================== PLACEMENT ENGINE =====================
+-- PlaceBind:InvokeServer(buildingModel, CFrame) is the confirmed working format
 
-			if selfPath:find("PlacementSystem") and (method == "FireServer" or method == "InvokeServer") then
-				recordCapture(self, method, {...})
-			end
-
-			return oldNamecall(self, ...)
-		end))
-	end)
-
-	if ok then
-		print("[PB Industrialist] Hook method: hookmetamethod")
-		return true
+local function getPlayerPosition()
+	local char = LocalPlayer.Character
+	if char then
+		local root = char:FindFirstChild("HumanoidRootPart")
+		if root then return root.Position end
 	end
-	print("[PB Industrialist] hookmetamethod failed: " .. tostring(err))
-	return false
+	return Vector3.new(0, 0, 0)
 end
 
--- Method 1b: Manual __namecall hook via getmetatable + setreadonly (Xeno, etc.)
-local function tryManualNamecallHook()
-	local ok, err = pcall(function()
-		local mt = getmetatable(game)
-		if not mt then error("getmetatable(game) returned nil") end
+local function placeMachine(buildingName, worldPosition, rotation)
+	local model = findBuilding(buildingName)
+	if not model then
+		return false, "Building not found: " .. buildingName
+	end
 
-		local oldNamecall = mt.__namecall
+	local cf = CFrame.new(worldPosition)
+	if rotation then
+		cf = cf * CFrame.Angles(0, math.rad(rotation), 0)
+	end
 
-		if setreadonly then
-			setreadonly(mt, false)
-		elseif make_writeable then
-			make_writeable(mt)
+	-- Primary method: PlaceBind:InvokeServer(model, CFrame)
+	if PS.PlaceBind then
+		local ok, result = pcall(function()
+			return PS.PlaceBind:InvokeServer(model, cf)
+		end)
+		if ok then
+			return true, "Placed " .. buildingName .. " via PlaceBind"
 		else
-			error("no way to make metatable writable")
+			return false, "PlaceBind error: " .. tostring(result)
 		end
+	end
 
-		mt.__namecall = newcclosure(function(self, ...)
-			local method = getnamecallmethod()
-			local selfPath = ""
-			pcall(function() selfPath = self:GetFullName() end)
-
-			if selfPath:find("PlacementSystem") and (method == "FireServer" or method == "InvokeServer") then
-				recordCapture(self, method, {...})
-			end
-
-			return oldNamecall(self, ...)
+	-- Fallback: Place:FireServer(model, CFrame)
+	if PS.Place then
+		local ok = pcall(function()
+			PS.Place:FireServer(model, cf)
 		end)
-
-		if setreadonly then
-			setreadonly(mt, true)
+		if ok then
+			return true, "Placed " .. buildingName .. " via Place"
 		end
-	end)
-
-	if ok then
-		print("[PB Industrialist] Hook method: manual __namecall (getmetatable + setreadonly)")
-		return true
 	end
-	print("[PB Industrialist] Manual namecall hook failed: " .. tostring(err))
-	return false
+
+	return false, "No placement remote available"
 end
 
--- Method 2: hookfunction on each remote (Fluxus, KRNL, some others)
-local function tryHookFunction()
-	if not hookfunction then return false end
-
-	local remotes = {PS.Place, PS.PlaceBind, PS.OptimizedPlaceBind, PS.PipeBind, PS.WireBind, PS.Buy, PS.Delete}
-	local hooked = 0
-
-	for _, remote in ipairs(remotes) do
-		if remote then
-			if remote:IsA("RemoteEvent") then
-				pcall(function()
-					local oldFire
-					oldFire = hookfunction(remote.FireServer, newcclosure(function(self, ...)
-						if self == remote then
-							recordCapture(remote, "FireServer", {...})
-						end
-						return oldFire(self, ...)
-					end))
-					hooked = hooked + 1
-				end)
-			elseif remote:IsA("RemoteFunction") then
-				pcall(function()
-					local oldInvoke
-					oldInvoke = hookfunction(remote.InvokeServer, newcclosure(function(self, ...)
-						if self == remote then
-							recordCapture(remote, "InvokeServer", {...})
-						end
-						return oldInvoke(self, ...)
-					end))
-					hooked = hooked + 1
-				end)
-			end
-		end
-	end
-
-	if hooked > 0 then
-		print("[PB Industrialist] Hook method: hookfunction (" .. hooked .. " remotes)")
-		return true
-	end
-	return false
-end
-
--- Method 3: Workspace monitor - watch for new models appearing after placement
--- No hook needed, works on ANY executor
-local function tryWorkspaceMonitor()
-	print("[PB Industrialist] Hook method: workspace monitor (universal)")
-
-	-- Watch for new models in workspace that appear after hammer use
-	local monitoring = true
-
-	-- Take initial snapshot of workspace models owned by player
-	local function getPlotModels()
-		local models = {}
-		-- Look for the player's plot/base area
-		for _, obj in ipairs(workspace:GetDescendants()) do
-			if obj:IsA("Model") and obj.Parent then
-				local name = obj.Parent.Name:lower()
-				if name:find("plot") or name:find("base") or name:find("build") or name:find("player") then
-					models[obj] = true
-				end
-			end
-		end
-		return models
-	end
-
-	local beforeModels = getPlotModels()
-	local beforeCount = 0
-	for _ in pairs(beforeModels) do beforeCount = beforeCount + 1 end
-
-	-- Monitor for new additions
-	workspace.DescendantAdded:Connect(function(obj)
-		if not monitoring then return end
-		if not obj:IsA("Model") then return end
-
-		task.wait(0.2) -- Let the model fully load
-
-		-- Check if this looks like a placed building
-		local hasParts = false
-		for _, child in ipairs(obj:GetDescendants()) do
-			if child:IsA("BasePart") then hasParts = true break end
-		end
-
-		if hasParts then
-			local pos = Vector3.new(0, 0, 0)
-			pcall(function()
-				local primary = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
-				if primary then pos = primary.Position end
-			end)
-
-			-- Record as a "detected" placement (not a remote capture, but position+name)
-			local entry = {
-				remote = "DETECTED",
-				path = obj:GetFullName(),
-				method = "WorkspaceMonitor",
-				className = "Model",
-				argCount = 2,
-				args = {
-					[1] = {type = "string", value = '"' .. obj.Name .. '"', raw = obj.Name},
-					[2] = {type = "CFrame", value = serializeValue(obj:GetPivot()), raw = obj:GetPivot()},
-				},
-				rawArgs = {obj.Name, obj:GetPivot()},
-				timestamp = os.clock(),
-				modelRef = obj,
-			}
-			table.insert(capturedCalls, entry)
-
-			pcall(function()
-				local existing = ""
-				pcall(function() existing = readfile(captureFile) end)
-				writefile(captureFile, existing .. "=== DETECTED: " .. obj.Name .. " at " .. tostring(pos) .. " ===\n" .. "Path: " .. obj:GetFullName() .. "\n\n")
-			end)
-
-			print("[PB Detect] New building: " .. obj.Name .. " at " .. tostring(pos))
-		end
-	end)
-
-	return true
-end
-
--- Install capture hook - tries multiple methods
-local function installCaptureHook()
-	if hookInstalled then return true, "Already installed" end
-
-	-- Clear capture file
-	pcall(function() writefile(captureFile, "=== Pebbleford Hub - Industrialist Capture Log ===\n\n") end)
-
-	local method = ""
-
-	-- Try hookmetamethod first (best - captures exact args)
-	if tryHookMetamethod() then
-		method = "hookmetamethod"
-	end
-
-	-- Try manual __namecall hook (Xeno - has getmetatable + setreadonly + getnamecallmethod)
-	if method == "" then
-		if tryManualNamecallHook() then
-			method = "manual namecall"
-		end
-	end
-
-	-- Try hookfunction as extra layer
-	if method == "" then
-		pcall(function()
-			if tryHookFunction() then
-				method = "hookfunction"
-			end
+local function connectPipe(fromPos, toPos)
+	if PS.PipeBind then
+		local ok, result = pcall(function()
+			return PS.PipeBind:InvokeServer(fromPos, toPos)
 		end)
+		return ok, tostring(result)
 	end
-
-	-- ALWAYS install workspace monitor as reliable fallback
-	-- This works on every executor regardless
-	tryWorkspaceMonitor()
-
-	if method == "" then
-		method = "workspace monitor"
-	else
-		method = method .. " + workspace monitor"
-	end
-
-	hookInstalled = true
-	return true, method
+	return false, "No PipeBind remote"
 end
 
--- Get the list of buildings from the game
-local function getGameBuildings()
-	local buildings = {}
-	if PS.Buildings then
-		for _, category in ipairs(PS.Buildings:GetChildren()) do
-			if category:IsA("Folder") then
-				for _, building in ipairs(category:GetChildren()) do
-					table.insert(buildings, {
-						name = building.Name,
-						category = category.Name,
-						instance = building,
-						path = building:GetFullName(),
-					})
-				end
-			end
-		end
-	end
-	return buildings
-end
-
--- Replay a captured placement call at a new position
-local function replayPlacement(capturedEntry, newPosition)
-	if not capturedEntry then return false end
-
-	-- If this was captured via hookmetamethod/hookfunction, replay the exact call
-	if capturedEntry.method == "FireServer" or capturedEntry.method == "InvokeServer" then
-		local remote = nil
-		pcall(function()
-			local parts = {}
-			for part in capturedEntry.path:gmatch("[^%.]+") do
-				table.insert(parts, part)
-			end
-			local obj = game
-			for _, part in ipairs(parts) do
-				obj = obj:FindFirstChild(part)
-			end
-			remote = obj
+local function connectWire(fromPos, toPos)
+	if PS.WireBind then
+		local ok, result = pcall(function()
+			return PS.WireBind:InvokeServer(fromPos, toPos)
 		end)
-
-		if not remote then
-			print("[PB Industrialist] Could not find remote: " .. capturedEntry.path)
-			return false
-		end
-
-		-- Rebuild args, replacing position/CFrame with new position
-		local newArgs = {}
-		for i, argData in ipairs(capturedEntry.args) do
-			local raw = capturedEntry.rawArgs[i]
-			if argData.type == "CFrame" then
-				local rx, ry, rz = raw:ToEulerAnglesXYZ()
-				newArgs[i] = CFrame.new(newPosition) * CFrame.Angles(rx, ry, rz)
-			elseif argData.type == "Vector3" then
-				newArgs[i] = newPosition
-			else
-				newArgs[i] = raw
-			end
-		end
-
-		pcall(function()
-			if capturedEntry.method == "FireServer" then
-				remote:FireServer(unpack(newArgs))
-			elseif capturedEntry.method == "InvokeServer" then
-				remote:InvokeServer(unpack(newArgs))
-			end
-		end)
-
-		return true
+		return ok, tostring(result)
 	end
-
-	-- If this was captured via workspace monitor, try calling remotes directly
-	-- We know the building name and need to try common arg patterns
-	if capturedEntry.method == "WorkspaceMonitor" then
-		local buildingName = capturedEntry.rawArgs[1]
-		local cf = CFrame.new(newPosition)
-
-		-- Find the building model in PlacementSystem.Buildings
-		local buildingModel = nil
-		if PS.Buildings then
-			for _, desc in ipairs(PS.Buildings:GetDescendants()) do
-				if desc.Name == buildingName then
-					buildingModel = desc
-					break
-				end
-			end
-		end
-
-		-- Try PlaceBind (RemoteFunction) with common arg patterns
-		if PS.PlaceBind then
-			local tried = false
-			-- Pattern 1: name, CFrame
-			pcall(function() PS.PlaceBind:InvokeServer(buildingName, cf) tried = true end)
-			task.wait(0.05)
-			-- Pattern 2: model reference, CFrame
-			if buildingModel then
-				pcall(function() PS.PlaceBind:InvokeServer(buildingModel, cf) end)
-				task.wait(0.05)
-			end
-			-- Pattern 3: name, position, rotation
-			pcall(function() PS.PlaceBind:InvokeServer(buildingName, newPosition, Vector3.new(0, 0, 0)) end)
-			task.wait(0.05)
-			-- Pattern 4: table with name + cframe
-			pcall(function() PS.PlaceBind:InvokeServer({Name = buildingName, CFrame = cf}) end)
-			task.wait(0.05)
-			-- Pattern 5: table with model + cframe
-			if buildingModel then
-				pcall(function() PS.PlaceBind:InvokeServer({Building = buildingModel, CFrame = cf}) end)
-				task.wait(0.05)
-			end
-			if tried then return true end
-		end
-
-		-- Try OptimizedPlaceBind
-		if PS.OptimizedPlaceBind then
-			pcall(function() PS.OptimizedPlaceBind:InvokeServer(buildingName, cf) end)
-			task.wait(0.05)
-			if buildingModel then
-				pcall(function() PS.OptimizedPlaceBind:InvokeServer(buildingModel, cf) end)
-				task.wait(0.05)
-			end
-		end
-
-		-- Try Place (RemoteEvent)
-		if PS.Place then
-			pcall(function() PS.Place:FireServer(buildingName, cf) end)
-			task.wait(0.05)
-			if buildingModel then
-				pcall(function() PS.Place:FireServer(buildingModel, cf) end)
-				task.wait(0.05)
-			end
-		end
-
-		return true
-	end
-
-	return false
+	return false, "No WireBind remote"
 end
+
 
 -- ===================== FARM BLUEPRINTS =====================
 -- Each blueprint defines machines and their relative positions in a grid
@@ -800,7 +442,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 50, 1, 0)
 versionLabel.Position = UDim2.new(0, 290, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v1.1.3"
+versionLabel.Text = "v1.2.0"
 versionLabel.TextColor3 = COLORS.textDim
 versionLabel.TextSize = 12
 versionLabel.Font = Enum.Font.Gotham
@@ -855,7 +497,7 @@ UserInputService.InputEnded:Connect(function(input)
 end)
 
 -- ===================== TABS =====================
-local tabNames = {"Capture", "Farms", "Auto", "Log"}
+local tabNames = {"Farms", "Auto", "Log"}
 local tabButtons = {}
 local tabFrames = {}
 
@@ -925,7 +567,7 @@ end
 for name, btn in pairs(tabButtons) do
 	btn.MouseButton1Click:Connect(function() switchTab(name) end)
 end
-switchTab("Capture")
+switchTab("Farms")
 
 -- ===================== HELPER: GUI ELEMENTS =====================
 local function createSectionLabel(parent, text, order)
@@ -1061,102 +703,10 @@ local function createInfoLabel(parent, text, order)
 	return lbl
 end
 
--- ===================== PLACEMENT ENGINE =====================
--- Uses captured remote data to replay placements at new positions
-
-local function getPlayerPosition()
-	local char = LocalPlayer.Character
-	if char then
-		local root = char:FindFirstChild("HumanoidRootPart")
-		if root then return root.Position end
-	end
-	return Vector3.new(0, 0, 0)
-end
-
--- Get the last captured Place/PlaceBind call
-local function getLastPlaceCapture()
-	for i = #capturedCalls, 1, -1 do
-		local c = capturedCalls[i]
-		if c.remote == "Place" or c.remote == "PlaceBind" or c.remote == "OptimizedPlaceBind" then
-			return c
-		end
-	end
-	return nil
-end
-
--- Get the last captured PipeBind call
-local function getLastPipeCapture()
-	for i = #capturedCalls, 1, -1 do
-		local c = capturedCalls[i]
-		if c.remote == "PipeBind" then return c end
-	end
-	return nil
-end
-
--- Get the last captured WireBind call
-local function getLastWireCapture()
-	for i = #capturedCalls, 1, -1 do
-		local c = capturedCalls[i]
-		if c.remote == "WireBind" then return c end
-	end
-	return nil
-end
-
-local function tryPlaceMachine(machineName, worldPosition)
-	addLog("Placing: " .. machineName .. " at " .. tostring(worldPosition))
-
-	local capture = getLastPlaceCapture()
-	if not capture then
-		addLog("  -> No captured placement yet! Place something manually first.")
-		return false
-	end
-
-	local ok = replayPlacement(capture, worldPosition)
-	if ok then
-		addLog("  -> Replayed " .. capture.remote .. ":" .. capture.method .. " for " .. machineName)
-	else
-		addLog("  -> Failed to replay placement")
-	end
-	return ok
-end
-
-local function tryConnectPipe(fromPos, toPos)
-	local capture = getLastPipeCapture()
-	if capture and PS.PipeBind then
-		pcall(function()
-			PS.PipeBind:InvokeServer(fromPos, toPos)
-		end)
-		addLog("Piped: " .. tostring(fromPos) .. " -> " .. tostring(toPos))
-	else
-		addLog("No pipe capture yet - connect one pipe manually first")
-	end
-end
-
-local function tryConnectWire(fromPos, toPos)
-	local capture = getLastWireCapture()
-	if capture and PS.WireBind then
-		pcall(function()
-			PS.WireBind:InvokeServer(fromPos, toPos)
-		end)
-		addLog("Wired: " .. tostring(fromPos) .. " -> " .. tostring(toPos))
-	else
-		addLog("No wire capture yet - connect one wire manually first")
-	end
-end
-
 -- ===================== BUILD FARM =====================
 local function buildFarm(blueprint)
 	if currentFarmBuilding then
 		addLog("Already building a farm! Wait for it to finish.")
-		return
-	end
-
-	local capture = getLastPlaceCapture()
-	if not capture then
-		addLog("ERROR: No placement captured yet!")
-		addLog("  1. Click 'Start Capture' in the Capture tab")
-		addLog("  2. Place ONE thing with the hammer")
-		addLog("  3. Then come back and click BUILD")
 		return
 	end
 
@@ -1171,14 +721,15 @@ local function buildFarm(blueprint)
 	)
 
 	addLog("Origin: " .. tostring(origin))
-	addLog("Using captured " .. capture.remote .. " call with " .. capture.argCount .. " args")
 
 	-- Place all machines
 	local placedPositions = {}
 	for i, machine in ipairs(blueprint.machines) do
 		local worldPos = origin + machine.offset
 		placedPositions[i] = worldPos
-		tryPlaceMachine(machine.name, worldPos)
+		addLog("Placing: " .. machine.name .. " at " .. tostring(worldPos))
+		local ok, msg = placeMachine(machine.name, worldPos)
+		addLog("  -> " .. msg)
 		task.wait(0.5)
 	end
 
@@ -1187,7 +738,7 @@ local function buildFarm(blueprint)
 		task.wait(1)
 		addLog("Connecting pipes...")
 		for _, pipe in ipairs(blueprint.pipes) do
-			tryConnectPipe(placedPositions[pipe.from], placedPositions[pipe.to])
+			connectPipe(placedPositions[pipe.from], placedPositions[pipe.to])
 			task.wait(0.3)
 		end
 	end
@@ -1197,7 +748,7 @@ local function buildFarm(blueprint)
 		task.wait(1)
 		addLog("Connecting wires...")
 		for _, wire in ipairs(blueprint.wires) do
-			tryConnectWire(placedPositions[wire.from], placedPositions[wire.to])
+			connectWire(placedPositions[wire.from], placedPositions[wire.to])
 			task.wait(0.3)
 		end
 	end
@@ -1229,143 +780,12 @@ end
 
 -- ===================== POPULATE TABS =====================
 
--- === CAPTURE TAB ===
-local captureTab = tabFrames["Capture"]
-
-createSectionLabel(captureTab, "Step 1: Connect to Game", 0)
-createInfoLabel(captureTab, "This hooks into the game's placement system.", 1)
-createInfoLabel(captureTab, "After starting, place ONE thing with the hammer.", 2)
-createInfoLabel(captureTab, "The script learns the exact remote call format.", 3)
-
-local captureStatusLabel = createInfoLabel(captureTab, "Status: Not started", 4)
-
-local captureLogLabel = createInfoLabel(captureTab, "", 6)
-
-createActionButton(captureTab, "Start Capture (Hook Placement System)", 5, function()
-	local ok, method = installCaptureHook()
-	if ok then
-		captureStatusLabel.Text = "  Status: LISTENING via " .. method .. " - Place something!"
-		captureStatusLabel.TextColor3 = COLORS.success
-		addLog("Capture started via " .. method .. "! Place something with the hammer.")
-
-		if method == "workspace monitor" then
-			addLog("Using universal fallback - will detect new buildings in workspace")
-			addLog("Place something and it will be detected automatically")
-		end
-
-		-- Monitor for captures
-		task.spawn(function()
-			local lastCount = 0
-			while true do
-				task.wait(0.5)
-				if #capturedCalls > lastCount then
-					local latest = capturedCalls[#capturedCalls]
-					captureStatusLabel.Text = "  Status: CAPTURED " .. #capturedCalls .. " calls! Latest: " .. latest.remote .. ":" .. latest.method
-
-					local argSummary = ""
-					for i, a in ipairs(latest.args) do
-						argSummary = argSummary .. "\n    Arg " .. i .. " [" .. a.type .. "]: " .. a.value:sub(1, 80)
-					end
-					captureLogLabel.Text = "  Last capture:" .. argSummary
-					captureLogLabel.Size = UDim2.new(1, -10, 0, 16 + (#latest.args * 16))
-
-					addLog("Captured: " .. latest.remote .. ":" .. latest.method .. " (" .. latest.argCount .. " args)")
-					lastCount = #capturedCalls
-				end
-			end
-		end)
-	else
-		captureStatusLabel.Text = "  Status: FAILED - " .. method
-		captureStatusLabel.TextColor3 = COLORS.danger
-		addLog("ERROR: All capture methods failed")
-	end
-end)
-
-createActionButton(captureTab, "View Capture File", 7, function()
-	local content = ""
-	pcall(function() content = readfile(captureFile) end)
-	if content ~= "" then
-		addLog("=== Capture File Contents ===")
-		for line in content:gmatch("[^\n]+") do
-			addLog(line)
-		end
-	else
-		addLog("No capture file yet - start capture first")
-	end
-end)
-
-createSectionLabel(captureTab, "Step 2: Check Connection", 10)
-
-local psStatusLabel = createInfoLabel(captureTab, "PlacementSystem: checking...", 11)
-
-createActionButton(captureTab, "Check PlacementSystem Status", 12, function()
-	local status = {}
-	if PlacementSystem then
-		table.insert(status, "PlacementSystem: FOUND")
-		for name, ref in pairs(PS) do
-			if ref then
-				local className = ""
-				pcall(function() className = ref.ClassName end)
-				table.insert(status, "  " .. name .. ": " .. className)
-			end
-		end
-	else
-		table.insert(status, "PlacementSystem: NOT FOUND")
-	end
-	for _, s in ipairs(status) do addLog(s) end
-	psStatusLabel.Text = "  " .. status[1]
-	psStatusLabel.TextColor3 = PlacementSystem and COLORS.success or COLORS.danger
-end)
-
-createSectionLabel(captureTab, "Game Buildings", 20)
-createInfoLabel(captureTab, "Machines found in the game's building system:", 21)
-
-createActionButton(captureTab, "List All Buildings", 22, function()
-	local buildings = getGameBuildings()
-	if #buildings > 0 then
-		addLog("=== " .. #buildings .. " buildings found ===")
-		local byCategory = {}
-		for _, b in ipairs(buildings) do
-			byCategory[b.category] = byCategory[b.category] or {}
-			table.insert(byCategory[b.category], b.name)
-		end
-		for cat, names in pairs(byCategory) do
-			addLog("[" .. cat .. "] " .. table.concat(names, ", "))
-		end
-	else
-		addLog("No buildings folder found in PlacementSystem")
-	end
-end)
-
-createSectionLabel(captureTab, "Captured Calls Summary", 30)
-
-createActionButton(captureTab, "Show All Captured Calls", 31, function()
-	if #capturedCalls == 0 then
-		addLog("No calls captured yet")
-		return
-	end
-	for i, c in ipairs(capturedCalls) do
-		addLog("#" .. i .. " " .. c.remote .. ":" .. c.method .. " (" .. c.argCount .. " args)")
-		for j, a in ipairs(c.args) do
-			addLog("  Arg " .. j .. " [" .. a.type .. "]: " .. a.value:sub(1, 100))
-		end
-	end
-end)
-
-createActionButton(captureTab, "Clear Captures", 32, function()
-	capturedCalls = {}
-	captureStatusLabel.Text = "  Status: Cleared - place something to capture again"
-	captureLogLabel.Text = ""
-	pcall(function() writefile(captureFile, "") end)
-	addLog("Captures cleared")
-end)
-
 -- === FARMS TAB ===
 local farmsTab = tabFrames["Farms"]
 
 createSectionLabel(farmsTab, "Farm Blueprints", 0)
-createInfoLabel(farmsTab, "First: Go to Capture tab and place ONE thing.", 1)
-createInfoLabel(farmsTab, "Then come back here, stand at your build spot, and click BUILD.", 2)
+createInfoLabel(farmsTab, "Stand at your build spot and click BUILD.", 1)
+createInfoLabel(farmsTab, "Uses direct PlaceBind to place machines automatically.", 2)
 
 for i, bp in ipairs(FARM_BLUEPRINTS) do
 	local order = i * 10 + 10
@@ -1469,6 +889,25 @@ end
 -- Custom farm section
 createSectionLabel(farmsTab, "Custom Placement", 200)
 
+createActionButton(farmsTab, "List All Available Buildings", 200, function()
+	if not PS.Buildings then
+		addLog("No PlacementSystem.Buildings found")
+		return
+	end
+	local total = 0
+	for _, category in ipairs(PS.Buildings:GetChildren()) do
+		local names = {}
+		for _, building in ipairs(category:GetChildren()) do
+			table.insert(names, building.Name)
+			total = total + 1
+		end
+		if #names > 0 then
+			addLog("[" .. category.Name .. "] " .. table.concat(names, ", "))
+		end
+	end
+	addLog("Total: " .. total .. " buildings")
+end)
+
 local customNameBox = Instance.new("TextBox")
 customNameBox.Size = UDim2.new(1, -10, 0, 30)
 customNameBox.BackgroundColor3 = COLORS.tabBg
@@ -1494,7 +933,7 @@ createActionButton(farmsTab, "Place Single Machine at Position", 202, function()
 		return
 	end
 	local pos = getPlayerPosition()
-	tryPlaceMachine(name, pos)
+	placeMachine(name, pos)
 end)
 
 local customCountBox = Instance.new("TextBox")
@@ -1527,7 +966,7 @@ createActionButton(farmsTab, "Place Row of Machines (8 stud spacing)", 204, func
 	task.spawn(function()
 		currentFarmBuilding = true
 		for i = 0, count - 1 do
-			tryPlaceMachine(name, origin + Vector3.new(i * 8, 0, 0))
+			placeMachine(name, origin + Vector3.new(i * 8, 0, 0))
 			task.wait(0.5)
 		end
 		addLog("Placed row of " .. count .. " " .. name)
@@ -1574,7 +1013,7 @@ createActionButton(farmsTab, "Place Grid of Machines (8 stud spacing)", 206, fun
 		currentFarmBuilding = true
 		for row = 0, rows - 1 do
 			for col = 0, cols - 1 do
-				tryPlaceMachine(name, origin + Vector3.new(col * 8, 0, row * 8))
+				placeMachine(name, origin + Vector3.new(col * 8, 0, row * 8))
 				task.wait(0.5)
 			end
 		end
@@ -1715,7 +1154,7 @@ createActionButton(autoTab, "TP to Nearest Drill", 32, function()
 	end
 end)
 
--- (Remotes tab removed - replaced by Capture tab)
+-- (Capture tab removed in v1.2.0 - using direct PlaceBind)
 
 -- === LOG TAB ===
 logFrame = Instance.new("ScrollingFrame")
@@ -1784,7 +1223,7 @@ UserInputService.InputBegan:Connect(function(input, gpe)
 end)
 
 -- ===================== STARTUP =====================
-addLog("Pebbleford Hub - Industrialist v1.1.3 loaded")
+addLog("Pebbleford Hub - Industrialist v1.2.0 loaded")
 if PlacementSystem then
 	addLog("PlacementSystem found!")
 	local psChildren = {}
@@ -1792,9 +1231,10 @@ if PlacementSystem then
 		if ref then table.insert(psChildren, name) end
 	end
 	addLog("  Connected: " .. table.concat(psChildren, ", "))
+	buildBuildingCache()
+	addLog("  Cached " .. (function() local c = 0 for _ in pairs(buildingCache) do c = c + 1 end return c end)() .. " buildings")
 else
 	addLog("WARNING: PlacementSystem not found in ReplicatedStorage")
 end
-addLog("Go to Capture tab -> Start Capture -> Place one thing with hammer")
-addLog("Then use Farms tab to auto-build!")
+addLog("Stand at your build spot and use the Farms tab to auto-build!")
 addLog("Press Insert to toggle GUI.")
