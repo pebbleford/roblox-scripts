@@ -4,12 +4,12 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("industrialist") then return end
 
 -- ================================================================
--- Pebbleford Hub - Industrialist Auto Farm v1.2.8
+-- Pebbleford Hub - Industrialist Auto Farm v1.2.9
 -- Auto-place farm layouts | Resource monitor | Auto-sell
 -- Direct PlaceBind placement | Auto-wire | Auto-pipe
 -- ================================================================
 
-print("[PB Industrialist v1.2.8] Loading...")
+print("[PB Industrialist v1.2.9] Loading...")
 
 -- Cleanup old instance
 pcall(function()
@@ -218,24 +218,77 @@ local function placeMachine(buildingName, worldPosition, rotation)
 	return false, "Failed to place " .. buildingName .. ": " .. tostring(result)
 end
 
-local function connectPipe(fromPos, toPos)
-	if PS.PipeBind then
-		local ok, result = pcall(function()
-			return PS.PipeBind:InvokeServer(fromPos, toPos)
-		end)
-		return ok, tostring(result)
+-- Find a placed building in workspace near a position
+local function findPlacedBuilding(pos, radius)
+	radius = radius or 10
+	local nearest = nil
+	local nearestDist = radius
+	for _, obj in ipairs(workspace:GetDescendants()) do
+		if obj:IsA("Model") and obj.PrimaryPart then
+			local dist = (obj.PrimaryPart.Position - pos).Magnitude
+			if dist < nearestDist then
+				nearest = obj
+				nearestDist = dist
+			end
+		end
 	end
-	return false, "No PipeBind remote"
+	return nearest
+end
+
+local function connectPipe(fromPos, toPos)
+	if not PS.PipeBind then return false, "No PipeBind remote" end
+
+	-- Find the placed buildings near these positions
+	local fromModel = findPlacedBuilding(fromPos)
+	local toModel = findPlacedBuilding(toPos)
+
+	print("[PB Industrialist] Pipe: from=" .. tostring(fromModel and fromModel.Name or "nil") .. " to=" .. tostring(toModel and toModel.Name or "nil"))
+
+	-- Try multiple arg formats
+	local tryFormats = {}
+	-- Position-based
+	table.insert(tryFormats, function() return PS.PipeBind:InvokeServer(fromPos, toPos) end)
+	table.insert(tryFormats, function() return PS.PipeBind:InvokeServer(CFrame.new(fromPos), CFrame.new(toPos)) end)
+	-- Model-based
+	if fromModel and toModel then
+		table.insert(tryFormats, function() return PS.PipeBind:InvokeServer(fromModel, toModel) end)
+		table.insert(tryFormats, function() return PS.PipeBind:InvokeServer(fromModel.PrimaryPart, toModel.PrimaryPart) end)
+	end
+
+	for i, fn in ipairs(tryFormats) do
+		local ok, result = pcall(fn)
+		print("[PB Industrialist] PipeBind format " .. i .. ": ok=" .. tostring(ok) .. " result=" .. tostring(result))
+		if ok and result ~= false then
+			return true, "Pipe connected (format " .. i .. "): " .. tostring(result)
+		end
+	end
+	return false, "All pipe formats failed"
 end
 
 local function connectWire(fromPos, toPos)
-	if PS.WireBind then
-		local ok, result = pcall(function()
-			return PS.WireBind:InvokeServer(fromPos, toPos)
-		end)
-		return ok, tostring(result)
+	if not PS.WireBind then return false, "No WireBind remote" end
+
+	local fromModel = findPlacedBuilding(fromPos)
+	local toModel = findPlacedBuilding(toPos)
+
+	print("[PB Industrialist] Wire: from=" .. tostring(fromModel and fromModel.Name or "nil") .. " to=" .. tostring(toModel and toModel.Name or "nil"))
+
+	local tryFormats = {}
+	table.insert(tryFormats, function() return PS.WireBind:InvokeServer(fromPos, toPos) end)
+	table.insert(tryFormats, function() return PS.WireBind:InvokeServer(CFrame.new(fromPos), CFrame.new(toPos)) end)
+	if fromModel and toModel then
+		table.insert(tryFormats, function() return PS.WireBind:InvokeServer(fromModel, toModel) end)
+		table.insert(tryFormats, function() return PS.WireBind:InvokeServer(fromModel.PrimaryPart, toModel.PrimaryPart) end)
 	end
-	return false, "No WireBind remote"
+
+	for i, fn in ipairs(tryFormats) do
+		local ok, result = pcall(fn)
+		print("[PB Industrialist] WireBind format " .. i .. ": ok=" .. tostring(ok) .. " result=" .. tostring(result))
+		if ok and result ~= false then
+			return true, "Wire connected (format " .. i .. "): " .. tostring(result)
+		end
+	end
+	return false, "All wire formats failed"
 end
 
 
@@ -246,14 +299,17 @@ end
 local FARM_BLUEPRINTS = {
 	{
 		name = "Coal Starter",
-		description = "3 Coal Drills -> Truck Depot + Wind Turbine. Simple money maker.",
+		description = "3 Coal Drills -> Truck Depot. Wind Turbine + AV Poles for power.",
 		tier = "Early",
 		machines = {
-			{name = "Coal Drill", offset = Vector3.new(0, 0, 0)},
-			{name = "Coal Drill", offset = Vector3.new(8, 0, 0)},
-			{name = "Coal Drill", offset = Vector3.new(16, 0, 0)},
-			{name = "Truck Depot", offset = Vector3.new(8, 0, 16)},
-			{name = "Wind Turbine 2", offset = Vector3.new(-8, 0, 8)},
+			{name = "Coal Drill", offset = Vector3.new(0, 0, 0)},        -- 1
+			{name = "Coal Drill", offset = Vector3.new(8, 0, 0)},        -- 2
+			{name = "Coal Drill", offset = Vector3.new(16, 0, 0)},       -- 3
+			{name = "Truck Depot", offset = Vector3.new(8, 0, 16)},      -- 4
+			{name = "Wind Turbine 2", offset = Vector3.new(-8, 0, 8)},   -- 5
+			{name = "AV Pole", offset = Vector3.new(0, 0, 8)},           -- 6
+			{name = "AV Pole", offset = Vector3.new(8, 0, 8)},           -- 7
+			{name = "AV Pole", offset = Vector3.new(16, 0, 8)},          -- 8
 		},
 		pipes = {
 			{from = 1, to = 4},
@@ -261,10 +317,9 @@ local FARM_BLUEPRINTS = {
 			{from = 3, to = 4},
 		},
 		wires = {
-			{from = 5, to = 1},
-			{from = 5, to = 2},
-			{from = 5, to = 3},
-			{from = 5, to = 4},
+			{from = 5, to = 6},  -- Turbine -> first pole
+			{from = 6, to = 7},  -- Pole chain
+			{from = 7, to = 8},
 		},
 	},
 	{
@@ -273,34 +328,47 @@ local FARM_BLUEPRINTS = {
 		tier = "Early-Mid",
 		machines = {
 			-- Row 1: Drills
-			{name = "Copper Drill", offset = Vector3.new(0, 0, 0)},
-			{name = "Copper Drill", offset = Vector3.new(8, 0, 0)},
-			{name = "Copper Drill", offset = Vector3.new(16, 0, 0)},
-			{name = "Copper Drill", offset = Vector3.new(24, 0, 0)},
-			{name = "Copper Drill", offset = Vector3.new(32, 0, 0)},
-			{name = "Copper Drill", offset = Vector3.new(40, 0, 0)},
-			{name = "Copper Drill", offset = Vector3.new(48, 0, 0)},
-			{name = "Copper Drill", offset = Vector3.new(56, 0, 0)},
-			{name = "Copper Drill", offset = Vector3.new(64, 0, 0)},
+			{name = "Copper Drill", offset = Vector3.new(0, 0, 0)},       -- 1
+			{name = "Copper Drill", offset = Vector3.new(8, 0, 0)},       -- 2
+			{name = "Copper Drill", offset = Vector3.new(16, 0, 0)},      -- 3
+			{name = "Copper Drill", offset = Vector3.new(24, 0, 0)},      -- 4
+			{name = "Copper Drill", offset = Vector3.new(32, 0, 0)},      -- 5
+			{name = "Copper Drill", offset = Vector3.new(40, 0, 0)},      -- 6
+			{name = "Copper Drill", offset = Vector3.new(48, 0, 0)},      -- 7
+			{name = "Copper Drill", offset = Vector3.new(56, 0, 0)},      -- 8
+			{name = "Copper Drill", offset = Vector3.new(64, 0, 0)},      -- 9
 			-- Row 2: Furnaces
-			{name = "Electric Furnace", offset = Vector3.new(8, 0, 16)},
-			{name = "Electric Furnace", offset = Vector3.new(32, 0, 16)},
-			{name = "Electric Furnace", offset = Vector3.new(56, 0, 16)},
+			{name = "Electric Furnace", offset = Vector3.new(8, 0, 16)},   -- 10
+			{name = "Electric Furnace", offset = Vector3.new(32, 0, 16)},  -- 11
+			{name = "Electric Furnace", offset = Vector3.new(56, 0, 16)},  -- 12
 			-- Row 3: Molder
-			{name = "Ingot Molder", offset = Vector3.new(32, 0, 32)},
+			{name = "Ingot Molder", offset = Vector3.new(32, 0, 32)},     -- 13
 			-- Row 4: Presses + Rollers
-			{name = "Press", offset = Vector3.new(16, 0, 48)},
-			{name = "Press", offset = Vector3.new(48, 0, 48)},
-			{name = "Roller", offset = Vector3.new(16, 0, 64)},
-			{name = "Roller", offset = Vector3.new(48, 0, 64)},
+			{name = "Press", offset = Vector3.new(16, 0, 48)},            -- 14
+			{name = "Press", offset = Vector3.new(48, 0, 48)},            -- 15
+			{name = "Roller", offset = Vector3.new(16, 0, 64)},           -- 16
+			{name = "Roller", offset = Vector3.new(48, 0, 64)},           -- 17
 			-- Row 5: Truck Depots
-			{name = "Truck Depot", offset = Vector3.new(0, 0, 80)},
-			{name = "Truck Depot", offset = Vector3.new(20, 0, 80)},
-			{name = "Truck Depot", offset = Vector3.new(40, 0, 80)},
-			{name = "Truck Depot", offset = Vector3.new(60, 0, 80)},
-			-- Power
-			{name = "Wind Turbine 2", offset = Vector3.new(-12, 0, 32)},
-			{name = "Wind Turbine 2", offset = Vector3.new(76, 0, 32)},
+			{name = "Truck Depot", offset = Vector3.new(0, 0, 80)},       -- 18
+			{name = "Truck Depot", offset = Vector3.new(20, 0, 80)},      -- 19
+			{name = "Truck Depot", offset = Vector3.new(40, 0, 80)},      -- 20
+			{name = "Truck Depot", offset = Vector3.new(60, 0, 80)},      -- 21
+			-- Power: Wind Turbines + AV Pole line down the middle
+			{name = "Wind Turbine 2", offset = Vector3.new(-12, 0, 32)},  -- 22
+			{name = "Wind Turbine 2", offset = Vector3.new(76, 0, 32)},   -- 23
+			{name = "AV Pole", offset = Vector3.new(0, 0, 32)},           -- 24
+			{name = "AV Pole", offset = Vector3.new(16, 0, 32)},          -- 25
+			{name = "AV Pole", offset = Vector3.new(32, 0, 32)},          -- 26 (near molder)
+			{name = "AV Pole", offset = Vector3.new(48, 0, 32)},          -- 27
+			{name = "AV Pole", offset = Vector3.new(64, 0, 32)},          -- 28
+		},
+		wires = {
+			{from = 22, to = 24}, -- Left turbine -> first pole
+			{from = 24, to = 25}, -- Pole chain
+			{from = 25, to = 26},
+			{from = 26, to = 27},
+			{from = 27, to = 28},
+			{from = 28, to = 23}, -- Last pole -> right turbine
 		},
 	},
 	{
@@ -309,55 +377,72 @@ local FARM_BLUEPRINTS = {
 		tier = "Mid",
 		machines = {
 			-- Drills row
-			{name = "Iron Drill", offset = Vector3.new(0, 0, 0)},
-			{name = "Iron Drill", offset = Vector3.new(8, 0, 0)},
-			{name = "Iron Drill", offset = Vector3.new(16, 0, 0)},
-			{name = "Iron Drill", offset = Vector3.new(24, 0, 0)},
-			{name = "Iron Drill", offset = Vector3.new(32, 0, 0)},
-			{name = "Iron Drill", offset = Vector3.new(40, 0, 0)},
-			{name = "Iron Drill", offset = Vector3.new(48, 0, 0)},
-			{name = "Iron Drill", offset = Vector3.new(56, 0, 0)},
-			{name = "Iron Drill", offset = Vector3.new(64, 0, 0)},
-			{name = "Iron Drill", offset = Vector3.new(72, 0, 0)},
-			{name = "Iron Drill", offset = Vector3.new(80, 0, 0)},
-			{name = "Iron Drill", offset = Vector3.new(88, 0, 0)},
-			{name = "Iron Drill", offset = Vector3.new(96, 0, 0)},
-			{name = "Iron Drill", offset = Vector3.new(104, 0, 0)},
-			{name = "Iron Drill", offset = Vector3.new(112, 0, 0)},
+			{name = "Iron Drill", offset = Vector3.new(0, 0, 0)},         -- 1
+			{name = "Iron Drill", offset = Vector3.new(8, 0, 0)},         -- 2
+			{name = "Iron Drill", offset = Vector3.new(16, 0, 0)},        -- 3
+			{name = "Iron Drill", offset = Vector3.new(24, 0, 0)},        -- 4
+			{name = "Iron Drill", offset = Vector3.new(32, 0, 0)},        -- 5
+			{name = "Iron Drill", offset = Vector3.new(40, 0, 0)},        -- 6
+			{name = "Iron Drill", offset = Vector3.new(48, 0, 0)},        -- 7
+			{name = "Iron Drill", offset = Vector3.new(56, 0, 0)},        -- 8
+			{name = "Iron Drill", offset = Vector3.new(64, 0, 0)},        -- 9
+			{name = "Iron Drill", offset = Vector3.new(72, 0, 0)},        -- 10
+			{name = "Iron Drill", offset = Vector3.new(80, 0, 0)},        -- 11
+			{name = "Iron Drill", offset = Vector3.new(88, 0, 0)},        -- 12
+			{name = "Iron Drill", offset = Vector3.new(96, 0, 0)},        -- 13
+			{name = "Iron Drill", offset = Vector3.new(104, 0, 0)},       -- 14
+			{name = "Iron Drill", offset = Vector3.new(112, 0, 0)},       -- 15
 			-- Furnaces
-			{name = "Electric Furnace", offset = Vector3.new(8, 0, 16)},
-			{name = "Electric Furnace", offset = Vector3.new(32, 0, 16)},
-			{name = "Electric Furnace", offset = Vector3.new(56, 0, 16)},
-			{name = "Electric Furnace", offset = Vector3.new(80, 0, 16)},
-			{name = "Electric Furnace", offset = Vector3.new(104, 0, 16)},
+			{name = "Electric Furnace", offset = Vector3.new(8, 0, 16)},  -- 16
+			{name = "Electric Furnace", offset = Vector3.new(32, 0, 16)}, -- 17
+			{name = "Electric Furnace", offset = Vector3.new(56, 0, 16)}, -- 18
+			{name = "Electric Furnace", offset = Vector3.new(80, 0, 16)}, -- 19
+			{name = "Electric Furnace", offset = Vector3.new(104, 0, 16)},-- 20
 			-- Molder
-			{name = "Ingot Molder", offset = Vector3.new(56, 0, 32)},
+			{name = "Ingot Molder", offset = Vector3.new(56, 0, 32)},     -- 21
 			-- Sawmills
-			{name = "Sawmill", offset = Vector3.new(0, 0, 48)},
-			{name = "Sawmill", offset = Vector3.new(16, 0, 48)},
-			{name = "Sawmill", offset = Vector3.new(32, 0, 48)},
-			{name = "Sawmill", offset = Vector3.new(48, 0, 48)},
-			{name = "Sawmill", offset = Vector3.new(64, 0, 48)},
-			{name = "Sawmill", offset = Vector3.new(80, 0, 48)},
-			{name = "Sawmill", offset = Vector3.new(96, 0, 48)},
-			{name = "Sawmill", offset = Vector3.new(112, 0, 48)},
+			{name = "Sawmill", offset = Vector3.new(0, 0, 48)},           -- 22
+			{name = "Sawmill", offset = Vector3.new(16, 0, 48)},          -- 23
+			{name = "Sawmill", offset = Vector3.new(32, 0, 48)},          -- 24
+			{name = "Sawmill", offset = Vector3.new(48, 0, 48)},          -- 25
+			{name = "Sawmill", offset = Vector3.new(64, 0, 48)},          -- 26
+			{name = "Sawmill", offset = Vector3.new(80, 0, 48)},          -- 27
+			{name = "Sawmill", offset = Vector3.new(96, 0, 48)},          -- 28
+			{name = "Sawmill", offset = Vector3.new(112, 0, 48)},         -- 29
 			-- Rollers
-			{name = "Roller", offset = Vector3.new(0, 0, 64)},
-			{name = "Roller", offset = Vector3.new(16, 0, 64)},
-			{name = "Roller", offset = Vector3.new(32, 0, 64)},
-			{name = "Roller", offset = Vector3.new(48, 0, 64)},
-			{name = "Roller", offset = Vector3.new(64, 0, 64)},
-			{name = "Roller", offset = Vector3.new(80, 0, 64)},
-			{name = "Roller", offset = Vector3.new(96, 0, 64)},
-			{name = "Roller", offset = Vector3.new(112, 0, 64)},
+			{name = "Roller", offset = Vector3.new(0, 0, 64)},            -- 30
+			{name = "Roller", offset = Vector3.new(16, 0, 64)},           -- 31
+			{name = "Roller", offset = Vector3.new(32, 0, 64)},           -- 32
+			{name = "Roller", offset = Vector3.new(48, 0, 64)},           -- 33
+			{name = "Roller", offset = Vector3.new(64, 0, 64)},           -- 34
+			{name = "Roller", offset = Vector3.new(80, 0, 64)},           -- 35
+			{name = "Roller", offset = Vector3.new(96, 0, 64)},           -- 36
+			{name = "Roller", offset = Vector3.new(112, 0, 64)},          -- 37
 			-- Van Depots
-			{name = "Van Depot", offset = Vector3.new(20, 0, 80)},
-			{name = "Van Depot", offset = Vector3.new(90, 0, 80)},
-			-- Power
-			{name = "Wind Turbine 2", offset = Vector3.new(-12, 0, 24)},
-			{name = "Wind Turbine 2", offset = Vector3.new(-12, 0, 48)},
-			{name = "Wind Turbine 2", offset = Vector3.new(124, 0, 24)},
-			{name = "Wind Turbine 2", offset = Vector3.new(124, 0, 48)},
+			{name = "Van Depot", offset = Vector3.new(20, 0, 80)},        -- 38
+			{name = "Van Depot", offset = Vector3.new(90, 0, 80)},        -- 39
+			-- Power: Wind Turbines + AV Pole line
+			{name = "Wind Turbine 2", offset = Vector3.new(-12, 0, 32)},  -- 40
+			{name = "Wind Turbine 2", offset = Vector3.new(124, 0, 32)},  -- 41
+			{name = "AV Pole", offset = Vector3.new(0, 0, 32)},           -- 42
+			{name = "AV Pole", offset = Vector3.new(16, 0, 32)},          -- 43
+			{name = "AV Pole", offset = Vector3.new(32, 0, 32)},          -- 44
+			{name = "AV Pole", offset = Vector3.new(48, 0, 32)},          -- 45
+			{name = "AV Pole", offset = Vector3.new(64, 0, 32)},          -- 46
+			{name = "AV Pole", offset = Vector3.new(80, 0, 32)},          -- 47
+			{name = "AV Pole", offset = Vector3.new(96, 0, 32)},          -- 48
+			{name = "AV Pole", offset = Vector3.new(112, 0, 32)},         -- 49
+		},
+		wires = {
+			{from = 40, to = 42}, -- Left turbine -> first pole
+			{from = 42, to = 43}, -- Pole chain across the factory
+			{from = 43, to = 44},
+			{from = 44, to = 45},
+			{from = 45, to = 46},
+			{from = 46, to = 47},
+			{from = 47, to = 48},
+			{from = 48, to = 49},
+			{from = 49, to = 41}, -- Last pole -> right turbine
 		},
 	},
 	{
@@ -365,25 +450,34 @@ local FARM_BLUEPRINTS = {
 		description = "Crankshafts + Plastic Casings -> Craft Assemblers. $2,552/unit.",
 		tier = "Mid-Late",
 		machines = {
-			-- Crankshaft line (simplified)
-			{name = "Iron Drill", offset = Vector3.new(0, 0, 0)},
-			{name = "Iron Drill", offset = Vector3.new(8, 0, 0)},
-			{name = "Iron Drill", offset = Vector3.new(16, 0, 0)},
-			{name = "Electric Furnace", offset = Vector3.new(8, 0, 16)},
-			{name = "Ingot Molder", offset = Vector3.new(8, 0, 32)},
-			{name = "Press", offset = Vector3.new(8, 0, 48)},
+			-- Crankshaft line
+			{name = "Iron Drill", offset = Vector3.new(0, 0, 0)},                -- 1
+			{name = "Iron Drill", offset = Vector3.new(8, 0, 0)},                -- 2
+			{name = "Iron Drill", offset = Vector3.new(16, 0, 0)},               -- 3
+			{name = "Electric Furnace", offset = Vector3.new(8, 0, 16)},          -- 4
+			{name = "Ingot Molder", offset = Vector3.new(8, 0, 32)},             -- 5
+			{name = "Press", offset = Vector3.new(8, 0, 48)},                    -- 6
 			-- Plastic line
-			{name = "Oil Pump", offset = Vector3.new(40, 0, 0)},
-			{name = "Oil Pump", offset = Vector3.new(48, 0, 0)},
-			{name = "Plastic Molding Machine", offset = Vector3.new(44, 0, 16)},
+			{name = "Oil Pump", offset = Vector3.new(40, 0, 0)},                 -- 7
+			{name = "Oil Pump", offset = Vector3.new(48, 0, 0)},                 -- 8
+			{name = "Plastic Molding Machine", offset = Vector3.new(44, 0, 16)},  -- 9
 			-- Assemblers
-			{name = "Craft Assembler", offset = Vector3.new(24, 0, 64)},
-			{name = "Craft Assembler", offset = Vector3.new(36, 0, 64)},
+			{name = "Craft Assembler", offset = Vector3.new(24, 0, 64)},         -- 10
+			{name = "Craft Assembler", offset = Vector3.new(36, 0, 64)},         -- 11
 			-- Sell
-			{name = "Truck Depot", offset = Vector3.new(30, 0, 80)},
-			-- Power
-			{name = "Wind Turbine 2", offset = Vector3.new(-12, 0, 32)},
-			{name = "Wind Turbine 2", offset = Vector3.new(60, 0, 32)},
+			{name = "Truck Depot", offset = Vector3.new(30, 0, 80)},             -- 12
+			-- Power: Wind Turbine + AV Poles
+			{name = "Wind Turbine 2", offset = Vector3.new(-12, 0, 32)},         -- 13
+			{name = "AV Pole", offset = Vector3.new(0, 0, 32)},                  -- 14
+			{name = "AV Pole", offset = Vector3.new(16, 0, 32)},                 -- 15
+			{name = "AV Pole", offset = Vector3.new(32, 0, 32)},                 -- 16
+			{name = "AV Pole", offset = Vector3.new(48, 0, 32)},                 -- 17
+		},
+		wires = {
+			{from = 13, to = 14}, -- Turbine -> first pole
+			{from = 14, to = 15}, -- Pole chain
+			{from = 15, to = 16},
+			{from = 16, to = 17},
 		},
 	},
 }
@@ -493,7 +587,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 50, 1, 0)
 versionLabel.Position = UDim2.new(0, 290, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v1.2.8"
+versionLabel.Text = "v1.2.9"
 versionLabel.TextColor3 = COLORS.textDim
 versionLabel.TextSize = 12
 versionLabel.Font = Enum.Font.Gotham
@@ -1265,7 +1359,7 @@ createActionButton(autoTab, "TP to Nearest Drill", 32, function()
 	end
 end)
 
--- (Capture tab removed in v1.2.8 - using direct PlaceBind)
+-- (Capture tab removed in v1.2.9 - using direct PlaceBind)
 
 -- === LOG TAB ===
 logFrame = Instance.new("ScrollingFrame")
@@ -1334,7 +1428,7 @@ UserInputService.InputBegan:Connect(function(input, gpe)
 end)
 
 -- ===================== STARTUP =====================
-addLog("Pebbleford Hub - Industrialist v1.2.8 loaded")
+addLog("Pebbleford Hub - Industrialist v1.2.9 loaded")
 if PlacementSystem then
 	addLog("PlacementSystem found!")
 	local psChildren = {}
