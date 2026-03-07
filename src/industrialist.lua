@@ -130,75 +130,225 @@ local function serializeValue(v, depth)
 	end
 end
 
--- Install __namecall hook to capture PlacementSystem calls
-local function installCaptureHook()
-	if hookInstalled then return true end
+-- Record a captured call into the capturedCalls table and write to file
+local function recordCapture(remote, method, args)
+	local selfPath = ""
+	pcall(function() selfPath = remote:GetFullName() end)
 
-	-- Check if executor supports hookmetamethod
-	if not hookmetamethod then
-		print("[PB Industrialist] hookmetamethod not available - trying alternative")
-		return false
+	local entry = {
+		remote = remote.Name,
+		path = selfPath,
+		method = method,
+		className = remote.ClassName,
+		argCount = #args,
+		args = {},
+		rawArgs = args,
+		timestamp = os.clock(),
+	}
+	for i, v in ipairs(args) do
+		entry.args[i] = {
+			type = typeof(v),
+			value = serializeValue(v),
+			raw = v,
+		}
 	end
+	table.insert(capturedCalls, entry)
 
-	local oldNamecall
-	oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-		local method = getnamecallmethod()
-		local args = {...}
+	-- Write to file
+	pcall(function()
+		local lines = {}
+		table.insert(lines, "=== CAPTURED: " .. remote.Name .. ":" .. method .. " at " .. os.date("%H:%M:%S") .. " ===")
+		table.insert(lines, "Remote: " .. selfPath .. " (" .. remote.ClassName .. ")")
+		table.insert(lines, "Method: " .. method)
+		table.insert(lines, "Args: " .. #args)
+		for i, v in ipairs(args) do
+			table.insert(lines, "  Arg " .. i .. " [" .. typeof(v) .. "]: " .. serializeValue(v))
+		end
+		table.insert(lines, "")
 
-		-- Capture any call to PlacementSystem children
-		local selfPath = ""
-		pcall(function() selfPath = self:GetFullName() end)
+		local existing = ""
+		pcall(function() existing = readfile(captureFile) end)
+		writefile(captureFile, existing .. table.concat(lines, "\n") .. "\n")
+	end)
 
-		if selfPath:find("PlacementSystem") and (method == "FireServer" or method == "InvokeServer") then
-			local entry = {
-				remote = self.Name,
-				path = selfPath,
-				method = method,
-				className = self.ClassName,
-				argCount = #args,
-				args = {},
-				rawArgs = args,
-				timestamp = os.clock(),
-			}
-			for i, v in ipairs(args) do
-				entry.args[i] = {
-					type = typeof(v),
-					value = serializeValue(v),
-					raw = v,
-				}
+	print("[PB Capture] " .. remote.Name .. ":" .. method .. " with " .. #args .. " args")
+	for i, v in ipairs(args) do
+		print("  Arg " .. i .. " [" .. typeof(v) .. "]: " .. serializeValue(v))
+	end
+end
+
+-- Method 1: hookmetamethod (Synapse, Script-Ware, some Fluxus)
+local function tryHookMetamethod()
+	if not hookmetamethod then return false end
+	if not newcclosure then return false end
+
+	local ok, err = pcall(function()
+		local oldNamecall
+		oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+			local method = getnamecallmethod()
+			local selfPath = ""
+			pcall(function() selfPath = self:GetFullName() end)
+
+			if selfPath:find("PlacementSystem") and (method == "FireServer" or method == "InvokeServer") then
+				recordCapture(self, method, {...})
 			end
-			table.insert(capturedCalls, entry)
 
-			-- Write to file
-			pcall(function()
-				local lines = {}
-				table.insert(lines, "=== CAPTURED: " .. self.Name .. ":" .. method .. " at " .. os.date("%H:%M:%S") .. " ===")
-				table.insert(lines, "Remote: " .. selfPath .. " (" .. self.ClassName .. ")")
-				table.insert(lines, "Method: " .. method)
-				table.insert(lines, "Args: " .. #args)
-				for i, v in ipairs(args) do
-					table.insert(lines, "  Arg " .. i .. " [" .. typeof(v) .. "]: " .. serializeValue(v))
-				end
-				table.insert(lines, "")
+			return oldNamecall(self, ...)
+		end))
+	end)
 
-				-- Append to file
-				local existing = ""
-				pcall(function() existing = readfile(captureFile) end)
-				writefile(captureFile, existing .. table.concat(lines, "\n") .. "\n")
-			end)
+	if ok then
+		print("[PB Industrialist] Hook method: hookmetamethod")
+		return true
+	end
+	print("[PB Industrialist] hookmetamethod failed: " .. tostring(err))
+	return false
+end
 
-			print("[PB Capture] " .. self.Name .. ":" .. method .. " with " .. #args .. " args")
-			for i, v in ipairs(args) do
-				print("  Arg " .. i .. " [" .. typeof(v) .. "]: " .. serializeValue(v))
+-- Method 2: hookfunction on each remote (Fluxus, KRNL, some others)
+local function tryHookFunction()
+	if not hookfunction then return false end
+
+	local remotes = {PS.Place, PS.PlaceBind, PS.OptimizedPlaceBind, PS.PipeBind, PS.WireBind, PS.Buy, PS.Delete}
+	local hooked = 0
+
+	for _, remote in ipairs(remotes) do
+		if remote then
+			if remote:IsA("RemoteEvent") then
+				pcall(function()
+					local oldFire
+					oldFire = hookfunction(remote.FireServer, newcclosure(function(self, ...)
+						if self == remote then
+							recordCapture(remote, "FireServer", {...})
+						end
+						return oldFire(self, ...)
+					end))
+					hooked = hooked + 1
+				end)
+			elseif remote:IsA("RemoteFunction") then
+				pcall(function()
+					local oldInvoke
+					oldInvoke = hookfunction(remote.InvokeServer, newcclosure(function(self, ...)
+						if self == remote then
+							recordCapture(remote, "InvokeServer", {...})
+						end
+						return oldInvoke(self, ...)
+					end))
+					hooked = hooked + 1
+				end)
 			end
 		end
+	end
 
-		return oldNamecall(self, ...)
-	end))
+	if hooked > 0 then
+		print("[PB Industrialist] Hook method: hookfunction (" .. hooked .. " remotes)")
+		return true
+	end
+	return false
+end
 
-	hookInstalled = true
-	print("[PB Industrialist] __namecall hook installed! Place something with the hammer.")
+-- Method 3: Workspace monitor - watch for new models appearing after placement
+-- No hook needed, works on ANY executor
+local function tryWorkspaceMonitor()
+	print("[PB Industrialist] Hook method: workspace monitor (universal)")
+
+	-- Watch for new models in workspace that appear after hammer use
+	local monitoring = true
+
+	-- Take initial snapshot of workspace models owned by player
+	local function getPlotModels()
+		local models = {}
+		-- Look for the player's plot/base area
+		for _, obj in ipairs(workspace:GetDescendants()) do
+			if obj:IsA("Model") and obj.Parent then
+				local name = obj.Parent.Name:lower()
+				if name:find("plot") or name:find("base") or name:find("build") or name:find("player") then
+					models[obj] = true
+				end
+			end
+		end
+		return models
+	end
+
+	local beforeModels = getPlotModels()
+	local beforeCount = 0
+	for _ in pairs(beforeModels) do beforeCount = beforeCount + 1 end
+
+	-- Monitor for new additions
+	workspace.DescendantAdded:Connect(function(obj)
+		if not monitoring then return end
+		if not obj:IsA("Model") then return end
+
+		task.wait(0.2) -- Let the model fully load
+
+		-- Check if this looks like a placed building
+		local hasParts = false
+		for _, child in ipairs(obj:GetDescendants()) do
+			if child:IsA("BasePart") then hasParts = true break end
+		end
+
+		if hasParts then
+			local pos = Vector3.new(0, 0, 0)
+			pcall(function()
+				local primary = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+				if primary then pos = primary.Position end
+			end)
+
+			-- Record as a "detected" placement (not a remote capture, but position+name)
+			local entry = {
+				remote = "DETECTED",
+				path = obj:GetFullName(),
+				method = "WorkspaceMonitor",
+				className = "Model",
+				argCount = 2,
+				args = {
+					[1] = {type = "string", value = '"' .. obj.Name .. '"', raw = obj.Name},
+					[2] = {type = "CFrame", value = serializeValue(obj:GetPivot()), raw = obj:GetPivot()},
+				},
+				rawArgs = {obj.Name, obj:GetPivot()},
+				timestamp = os.clock(),
+				modelRef = obj,
+			}
+			table.insert(capturedCalls, entry)
+
+			pcall(function()
+				local existing = ""
+				pcall(function() existing = readfile(captureFile) end)
+				writefile(captureFile, existing .. "=== DETECTED: " .. obj.Name .. " at " .. tostring(pos) .. " ===\n" .. "Path: " .. obj:GetFullName() .. "\n\n")
+			end)
+
+			print("[PB Detect] New building: " .. obj.Name .. " at " .. tostring(pos))
+		end
+	end)
+
 	return true
+end
+
+-- Install capture hook - tries multiple methods
+local function installCaptureHook()
+	if hookInstalled then return true, "Already installed" end
+
+	-- Clear capture file
+	pcall(function() writefile(captureFile, "=== Pebbleford Hub - Industrialist Capture Log ===\n\n") end)
+
+	-- Try methods in order of reliability
+	if tryHookMetamethod() then
+		hookInstalled = true
+		return true, "hookmetamethod"
+	end
+
+	if tryHookFunction() then
+		hookInstalled = true
+		return true, "hookfunction"
+	end
+
+	-- Universal fallback - always works
+	if tryWorkspaceMonitor() then
+		hookInstalled = true
+		return true, "workspace monitor"
+	end
+
+	return false, "all methods failed"
 end
 
 -- Get the list of buildings from the game
@@ -225,50 +375,117 @@ end
 local function replayPlacement(capturedEntry, newPosition)
 	if not capturedEntry then return false end
 
-	local remote = nil
-	-- Find the remote by path
-	pcall(function()
-		local parts = {}
-		for part in capturedEntry.path:gmatch("[^%.]+") do
-			table.insert(parts, part)
-		end
-		local obj = game
-		for _, part in ipairs(parts) do
-			obj = obj:FindFirstChild(part)
-		end
-		remote = obj
-	end)
+	-- If this was captured via hookmetamethod/hookfunction, replay the exact call
+	if capturedEntry.method == "FireServer" or capturedEntry.method == "InvokeServer" then
+		local remote = nil
+		pcall(function()
+			local parts = {}
+			for part in capturedEntry.path:gmatch("[^%.]+") do
+				table.insert(parts, part)
+			end
+			local obj = game
+			for _, part in ipairs(parts) do
+				obj = obj:FindFirstChild(part)
+			end
+			remote = obj
+		end)
 
-	if not remote then
-		print("[PB Industrialist] Could not find remote: " .. capturedEntry.path)
-		return false
+		if not remote then
+			print("[PB Industrialist] Could not find remote: " .. capturedEntry.path)
+			return false
+		end
+
+		-- Rebuild args, replacing position/CFrame with new position
+		local newArgs = {}
+		for i, argData in ipairs(capturedEntry.args) do
+			local raw = capturedEntry.rawArgs[i]
+			if argData.type == "CFrame" then
+				local rx, ry, rz = raw:ToEulerAnglesXYZ()
+				newArgs[i] = CFrame.new(newPosition) * CFrame.Angles(rx, ry, rz)
+			elseif argData.type == "Vector3" then
+				newArgs[i] = newPosition
+			else
+				newArgs[i] = raw
+			end
+		end
+
+		pcall(function()
+			if capturedEntry.method == "FireServer" then
+				remote:FireServer(unpack(newArgs))
+			elseif capturedEntry.method == "InvokeServer" then
+				remote:InvokeServer(unpack(newArgs))
+			end
+		end)
+
+		return true
 	end
 
-	-- Rebuild args, replacing position/CFrame with new position
-	local newArgs = {}
-	for i, argData in ipairs(capturedEntry.args) do
-		local raw = capturedEntry.rawArgs[i]
-		if argData.type == "CFrame" then
-			-- Replace position but keep rotation
-			local rx, ry, rz = raw:ToEulerAnglesXYZ()
-			newArgs[i] = CFrame.new(newPosition) * CFrame.Angles(rx, ry, rz)
-		elseif argData.type == "Vector3" then
-			newArgs[i] = newPosition
-		else
-			newArgs[i] = raw
+	-- If this was captured via workspace monitor, try calling remotes directly
+	-- We know the building name and need to try common arg patterns
+	if capturedEntry.method == "WorkspaceMonitor" then
+		local buildingName = capturedEntry.rawArgs[1]
+		local cf = CFrame.new(newPosition)
+
+		-- Find the building model in PlacementSystem.Buildings
+		local buildingModel = nil
+		if PS.Buildings then
+			for _, desc in ipairs(PS.Buildings:GetDescendants()) do
+				if desc.Name == buildingName then
+					buildingModel = desc
+					break
+				end
+			end
 		end
+
+		-- Try PlaceBind (RemoteFunction) with common arg patterns
+		if PS.PlaceBind then
+			local tried = false
+			-- Pattern 1: name, CFrame
+			pcall(function() PS.PlaceBind:InvokeServer(buildingName, cf) tried = true end)
+			task.wait(0.05)
+			-- Pattern 2: model reference, CFrame
+			if buildingModel then
+				pcall(function() PS.PlaceBind:InvokeServer(buildingModel, cf) end)
+				task.wait(0.05)
+			end
+			-- Pattern 3: name, position, rotation
+			pcall(function() PS.PlaceBind:InvokeServer(buildingName, newPosition, Vector3.new(0, 0, 0)) end)
+			task.wait(0.05)
+			-- Pattern 4: table with name + cframe
+			pcall(function() PS.PlaceBind:InvokeServer({Name = buildingName, CFrame = cf}) end)
+			task.wait(0.05)
+			-- Pattern 5: table with model + cframe
+			if buildingModel then
+				pcall(function() PS.PlaceBind:InvokeServer({Building = buildingModel, CFrame = cf}) end)
+				task.wait(0.05)
+			end
+			if tried then return true end
+		end
+
+		-- Try OptimizedPlaceBind
+		if PS.OptimizedPlaceBind then
+			pcall(function() PS.OptimizedPlaceBind:InvokeServer(buildingName, cf) end)
+			task.wait(0.05)
+			if buildingModel then
+				pcall(function() PS.OptimizedPlaceBind:InvokeServer(buildingModel, cf) end)
+				task.wait(0.05)
+			end
+		end
+
+		-- Try Place (RemoteEvent)
+		if PS.Place then
+			pcall(function() PS.Place:FireServer(buildingName, cf) end)
+			task.wait(0.05)
+			if buildingModel then
+				pcall(function() PS.Place:FireServer(buildingModel, cf) end)
+				task.wait(0.05)
+			end
+		end
+
+		return true
 	end
 
-	-- Fire the remote
-	pcall(function()
-		if capturedEntry.method == "FireServer" then
-			remote:FireServer(unpack(newArgs))
-		elseif capturedEntry.method == "InvokeServer" then
-			remote:InvokeServer(unpack(newArgs))
-		end
-	end)
-
-	return true
+	return false
 end
 
 -- ===================== FARM BLUEPRINTS =====================
@@ -967,14 +1184,16 @@ local captureStatusLabel = createInfoLabel(captureTab, "Status: Not started", 4)
 local captureLogLabel = createInfoLabel(captureTab, "", 6)
 
 createActionButton(captureTab, "Start Capture (Hook Placement System)", 5, function()
-	local ok = installCaptureHook()
+	local ok, method = installCaptureHook()
 	if ok then
-		captureStatusLabel.Text = "  Status: LISTENING - Place something with the hammer!"
+		captureStatusLabel.Text = "  Status: LISTENING via " .. method .. " - Place something!"
 		captureStatusLabel.TextColor3 = COLORS.success
-		addLog("Capture hook installed! Now place something with the hammer tool.")
+		addLog("Capture started via " .. method .. "! Place something with the hammer.")
 
-		-- Clear capture file
-		pcall(function() writefile(captureFile, "=== Pebbleford Hub - Industrialist Capture Log ===\n\n") end)
+		if method == "workspace monitor" then
+			addLog("Using universal fallback - will detect new buildings in workspace")
+			addLog("Place something and it will be detected automatically")
+		end
 
 		-- Monitor for captures
 		task.spawn(function()
@@ -998,10 +1217,9 @@ createActionButton(captureTab, "Start Capture (Hook Placement System)", 5, funct
 			end
 		end)
 	else
-		captureStatusLabel.Text = "  Status: FAILED - hookmetamethod not available"
+		captureStatusLabel.Text = "  Status: FAILED - " .. method
 		captureStatusLabel.TextColor3 = COLORS.danger
-		addLog("ERROR: Your executor doesn't support hookmetamethod")
-		addLog("Try using a different executor (Synapse, Script-Ware, Fluxus)")
+		addLog("ERROR: All capture methods failed")
 	end
 end)
 
