@@ -113,47 +113,49 @@ local hitboxSize = 10
 local killAuraRange = 15
 local gravityValue = 196.2
 
--- Connections
-local aimbotConnection = nil
-local silentAimHook = nil
-local triggerBotConnection = nil
-local espObjects = {}  -- stores all ESP drawing objects per player
-local espUpdateConnection = nil
-local espPlayerAddedConnection = nil
-local espCharConnections = {}
-local fovCircle = nil
-local noRecoilConnection = nil
-local noSpreadConnection = nil
-local rapidFireConnection = nil
-local flyConnection = nil
-local bodyGyro = nil
-local bodyVelocity = nil
-local noclipConnection = nil
-local infJumpConnection = nil
-local spinConnection = nil
-local spinBAV = nil
-local savedPhysProps = {}
-local flingConnection = nil
-local flingConnection2 = nil
-local hitboxConnection = nil
-local emoteTracks = {}
-local emoteConnection = nil
-local autoFireConnection = nil
-local killAuraConnection = nil
-local noFogOrigFogStart = nil
-local noFogOrigFogEnd = nil
-local chamsObjects = {}
-local chamsCharConnections = {}
-local chamsPlayerAddedConnection = nil
-local godConnection = nil
-local savedTransparencies = {}
-local antiAfkConnection = nil
-local bunnyHopConnection = nil
-local walkFlingThread = nil
-local walkFlingProps = {}
-local walkFlingConnection = nil
-local seizureConnection = nil
-local headlessSavedParts = {}
+-- Connections & storage (bundled to stay under Lua 200 local limit)
+local C = {
+	aimbotConnection = nil,
+	silentAimHook = nil,
+	triggerBotConnection = nil,
+	espObjects = {},
+	espUpdateConnection = nil,
+	espPlayerAddedConnection = nil,
+	espCharConnections = {},
+	fovCircle = nil,
+	noRecoilConnection = nil,
+	noSpreadConnection = nil,
+	rapidFireConnection = nil,
+	flyConnection = nil,
+	bodyGyro = nil,
+	bodyVelocity = nil,
+	noclipConnection = nil,
+	infJumpConnection = nil,
+	spinConnection = nil,
+	spinBAV = nil,
+	savedPhysProps = {},
+	flingConnection = nil,
+	flingConnection2 = nil,
+	hitboxConnection = nil,
+	emoteTracks = {},
+	emoteConnection = nil,
+	autoFireConnection = nil,
+	killAuraConnection = nil,
+	noFogOrigFogStart = nil,
+	noFogOrigFogEnd = nil,
+	chamsObjects = {},
+	chamsCharConnections = {},
+	chamsPlayerAddedConnection = nil,
+	godConnection = nil,
+	savedTransparencies = {},
+	antiAfkConnection = nil,
+	bunnyHopConnection = nil,
+	walkFlingThread = nil,
+	walkFlingProps = {},
+	walkFlingConnection = nil,
+	seizureConnection = nil,
+	headlessSavedParts = {},
+}
 local windowVisible = true
 local activeTab = "Main"
 local logLines = {}
@@ -952,7 +954,7 @@ local function startAimbot()
 	end)
 
 	-- Use Heartbeat (fires AFTER camera update) so our CFrame sticks instead of being overwritten
-	aimbotConnection = RunService.Heartbeat:Connect(function()
+	C.aimbotConnection = RunService.Heartbeat:Connect(function()
 		if not aimbotEnabled or not aimbotHolding then return end
 		pcall(function()
 			local cam = workspace.CurrentCamera
@@ -997,7 +999,7 @@ local function startAimbot()
 end
 
 local function stopAimbot()
-	if aimbotConnection then aimbotConnection:Disconnect() aimbotConnection = nil end
+	if C.aimbotConnection then C.aimbotConnection:Disconnect() C.aimbotConnection = nil end
 	if aimbotInputBeganConn then aimbotInputBeganConn:Disconnect() aimbotInputBeganConn = nil end
 	if aimbotInputEndedConn then aimbotInputEndedConn:Disconnect() aimbotInputEndedConn = nil end
 	aimbotHolding = false
@@ -1029,12 +1031,12 @@ local function startSilentAim()
 				return oldNamecall(self, ...)
 			end)
 			setreadonly(mt, true)
-			silentAimHook = true
+			C.silentAimHook = true
 		end
 	end)
 
 	-- Fallback: if no hook available, use camera manipulation (less reliable)
-	if not silentAimHook then
+	if not C.silentAimHook then
 		addLog("[SILENT AIM] Fallback mode (no hook support)", COLORS.textSecondary)
 	end
 	addLog("[SILENT AIM] ON", COLORS.success)
@@ -1048,7 +1050,7 @@ end
 
 -- ===================== TRIGGERBOT =====================
 local function startTriggerBot()
-	triggerBotConnection = RunService.Heartbeat:Connect(function()
+	C.triggerBotConnection = RunService.Heartbeat:Connect(function()
 		if not triggerBotEnabled then return end
 		pcall(function()
 			local mouse = LocalPlayer:GetMouse()
@@ -1074,7 +1076,7 @@ local function startTriggerBot()
 end
 
 local function stopTriggerBot()
-	if triggerBotConnection then triggerBotConnection:Disconnect() triggerBotConnection = nil end
+	if C.triggerBotConnection then C.triggerBotConnection:Disconnect() C.triggerBotConnection = nil end
 	addLog("[TRIGGERBOT] OFF", COLORS.error)
 end
 
@@ -1085,8 +1087,8 @@ local function enableESP()
 
 		local function updateESP()
 			-- Remove old
-			if espObjects[player] then
-				for _, obj in pairs(espObjects[player]) do
+			if C.espObjects[player] then
+				for _, obj in pairs(C.espObjects[player]) do
 					pcall(function()
 						if typeof(obj) == "RBXScriptConnection" then
 							obj:Disconnect()
@@ -1096,7 +1098,7 @@ local function enableESP()
 					end)
 				end
 			end
-			espObjects[player] = {}
+			C.espObjects[player] = {}
 
 			local character = player.Character
 			if not character then return end
@@ -1118,7 +1120,7 @@ local function enableESP()
 			hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 			hl.Adornee = character
 			hl.Parent = character
-			table.insert(espObjects[player], hl)
+			table.insert(C.espObjects[player], hl)
 
 			-- BillboardGui for name + health + distance
 			local head = character:FindFirstChild("Head")
@@ -1129,7 +1131,7 @@ local function enableESP()
 			bb.StudsOffset = Vector3.new(0, 3.5, 0)
 			bb.AlwaysOnTop = true
 			bb.Parent = adornPart
-			table.insert(espObjects[player], bb)
+			table.insert(C.espObjects[player], bb)
 
 			-- Name label
 			if espNameEnabled then
@@ -1154,7 +1156,7 @@ local function enableESP()
 				healthBg.BorderSizePixel = 0
 				healthBg.Parent = bb
 				Instance.new("UICorner", healthBg).CornerRadius = UDim.new(0, 3)
-				table.insert(espObjects[player], healthBg)
+				table.insert(C.espObjects[player], healthBg)
 
 				local healthFill = Instance.new("Frame")
 				local pct = humanoid.Health / humanoid.MaxHealth
@@ -1178,7 +1180,7 @@ local function enableESP()
 						healthFill.BackgroundColor3 = Color3.fromRGB(r2, g2, 0)
 					end)
 				end)
-				table.insert(espObjects[player], healthConn)
+				table.insert(C.espObjects[player], healthConn)
 			end
 
 			-- Distance label
@@ -1207,7 +1209,7 @@ local function enableESP()
 						end
 					end)
 				end)
-				table.insert(espObjects[player], distConn)
+				table.insert(C.espObjects[player], distConn)
 			end
 		end
 
@@ -1217,7 +1219,7 @@ local function enableESP()
 			_wait(1)
 			if espEnabled then updateESP() end
 		end)
-		table.insert(espCharConnections, conn)
+		table.insert(C.espCharConnections, conn)
 	end
 
 	-- Initial ESP for all players
@@ -1226,7 +1228,7 @@ local function enableESP()
 	end
 
 	-- Watch for new players
-	espPlayerAddedConnection = Players.PlayerAdded:Connect(function(player)
+	C.espPlayerAddedConnection = Players.PlayerAdded:Connect(function(player)
 		_wait(2)
 		if espEnabled then addPlayerESP(player) end
 	end)
@@ -1235,12 +1237,12 @@ local function enableESP()
 end
 
 local function disableESP()
-	if espPlayerAddedConnection then espPlayerAddedConnection:Disconnect() espPlayerAddedConnection = nil end
-	for _, conn in ipairs(espCharConnections) do
+	if C.espPlayerAddedConnection then C.espPlayerAddedConnection:Disconnect() C.espPlayerAddedConnection = nil end
+	for _, conn in ipairs(C.espCharConnections) do
 		pcall(function() conn:Disconnect() end)
 	end
-	espCharConnections = {}
-	for player, objects in pairs(espObjects) do
+	C.espCharConnections = {}
+	for player, objects in pairs(C.espObjects) do
 		for _, obj in pairs(objects) do
 			pcall(function()
 				if typeof(obj) == "RBXScriptConnection" then
@@ -1251,14 +1253,14 @@ local function disableESP()
 			end)
 		end
 	end
-	espObjects = {}
+	C.espObjects = {}
 	addLog("[ESP] OFF", COLORS.error)
 end
 
 -- ===================== FOV CIRCLE =====================
 local function createFOVCircle()
 	-- Use a Frame with UICorner to simulate circle (works everywhere)
-	if fovCircle then pcall(function() fovCircle:Destroy() end) end
+	if C.fovCircle then pcall(function() C.fovCircle:Destroy() end) end
 
 	local gui = Instance.new("Frame")
 	gui.Name = "FOVCircle"
@@ -1279,25 +1281,25 @@ local function createFOVCircle()
 	corner.CornerRadius = UDim.new(1, 0)
 	corner.Parent = gui
 
-	fovCircle = gui
+	C.fovCircle = gui
 	addLog("[FOV CIRCLE] ON - Radius: " .. aimbotFOV, COLORS.success)
 end
 
 local function destroyFOVCircle()
-	if fovCircle then pcall(function() fovCircle:Destroy() end) fovCircle = nil end
+	if C.fovCircle then pcall(function() C.fovCircle:Destroy() end) C.fovCircle = nil end
 	addLog("[FOV CIRCLE] OFF", COLORS.error)
 end
 
 local function updateFOVCircleSize()
-	if fovCircle then
-		fovCircle.Size = UDim2.new(0, aimbotFOV * 2, 0, aimbotFOV * 2)
-		fovCircle.Position = UDim2.new(0.5, -aimbotFOV, 0.5, -aimbotFOV)
+	if C.fovCircle then
+		C.fovCircle.Size = UDim2.new(0, aimbotFOV * 2, 0, aimbotFOV * 2)
+		C.fovCircle.Position = UDim2.new(0.5, -aimbotFOV, 0.5, -aimbotFOV)
 	end
 end
 
 -- ===================== GUN MODS: NO RECOIL =====================
 local function startNoRecoil()
-	noRecoilConnection = RunService.RenderStepped:Connect(function()
+	C.noRecoilConnection = RunService.RenderStepped:Connect(function()
 		pcall(function()
 			local character = LocalPlayer.Character
 			if not character then return end
@@ -1315,13 +1317,13 @@ local function startNoRecoil()
 end
 
 local function stopNoRecoil()
-	if noRecoilConnection then noRecoilConnection:Disconnect() noRecoilConnection = nil end
+	if C.noRecoilConnection then C.noRecoilConnection:Disconnect() C.noRecoilConnection = nil end
 	addLog("[NO RECOIL] OFF", COLORS.error)
 end
 
 -- ===================== GUN MODS: NO SPREAD =====================
 local function startNoSpread()
-	noSpreadConnection = RunService.RenderStepped:Connect(function()
+	C.noSpreadConnection = RunService.RenderStepped:Connect(function()
 		pcall(function()
 			local character = LocalPlayer.Character
 			if not character then return end
@@ -1338,13 +1340,13 @@ local function startNoSpread()
 end
 
 local function stopNoSpread()
-	if noSpreadConnection then noSpreadConnection:Disconnect() noSpreadConnection = nil end
+	if C.noSpreadConnection then C.noSpreadConnection:Disconnect() C.noSpreadConnection = nil end
 	addLog("[NO SPREAD] OFF", COLORS.error)
 end
 
 -- ===================== GUN MODS: RAPID FIRE =====================
 local function startRapidFire()
-	rapidFireConnection = RunService.Heartbeat:Connect(function()
+	C.rapidFireConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local character = LocalPlayer.Character
 			if not character then return end
@@ -1361,13 +1363,13 @@ local function startRapidFire()
 end
 
 local function stopRapidFire()
-	if rapidFireConnection then rapidFireConnection:Disconnect() rapidFireConnection = nil end
+	if C.rapidFireConnection then C.rapidFireConnection:Disconnect() C.rapidFireConnection = nil end
 	addLog("[RAPID FIRE] OFF", COLORS.error)
 end
 
 -- ===================== HITBOX EXPANDER =====================
 local function startHitboxExpand()
-	hitboxConnection = RunService.Heartbeat:Connect(function()
+	C.hitboxConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			for _, player in ipairs(Players:GetPlayers()) do
 				if player ~= LocalPlayer and player.Character then
@@ -1387,7 +1389,7 @@ local function startHitboxExpand()
 end
 
 local function stopHitboxExpand()
-	if hitboxConnection then hitboxConnection:Disconnect() hitboxConnection = nil end
+	if C.hitboxConnection then C.hitboxConnection:Disconnect() C.hitboxConnection = nil end
 	-- Restore head sizes
 	pcall(function()
 		for _, player in ipairs(Players:GetPlayers()) do
@@ -1438,15 +1440,15 @@ local function startFly()
 	if not character then return end
 	local hrp = character:FindFirstChild("HumanoidRootPart")
 	if not hrp then return end
-	bodyGyro = Instance.new("BodyGyro")
-	bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-	bodyGyro.P = 9e4
-	bodyGyro.Parent = hrp
-	bodyVelocity = Instance.new("BodyVelocity")
-	bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-	bodyVelocity.Velocity = Vector3.new(0, 0, 0)
-	bodyVelocity.Parent = hrp
-	flyConnection = RunService.Heartbeat:Connect(function()
+	C.bodyGyro = Instance.new("BodyGyro")
+	C.bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+	C.bodyGyro.P = 9e4
+	C.bodyGyro.Parent = hrp
+	C.bodyVelocity = Instance.new("BodyVelocity")
+	C.bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+	C.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+	C.bodyVelocity.Parent = hrp
+	C.flyConnection = RunService.Heartbeat:Connect(function()
 		if not flyEnabled or not hrp or not hrp.Parent then return end
 		local cam = workspace.CurrentCamera
 		local dir = Vector3.new(0, 0, 0)
@@ -1457,22 +1459,22 @@ local function startFly()
 		if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir = dir + Vector3.new(0, 1, 0) end
 		if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then dir = dir - Vector3.new(0, 1, 0) end
 		if dir.Magnitude > 0 then dir = dir.Unit end
-		bodyVelocity.Velocity = dir * flySpeed
-		bodyGyro.CFrame = cam.CFrame
+		C.bodyVelocity.Velocity = dir * flySpeed
+		C.bodyGyro.CFrame = cam.CFrame
 	end)
 	addLog("[FLY] ON - Speed: " .. flySpeed, COLORS.success)
 end
 
 local function stopFly()
-	if flyConnection then flyConnection:Disconnect() flyConnection = nil end
-	if bodyGyro then pcall(function() bodyGyro:Destroy() end) bodyGyro = nil end
-	if bodyVelocity then pcall(function() bodyVelocity:Destroy() end) bodyVelocity = nil end
+	if C.flyConnection then C.flyConnection:Disconnect() C.flyConnection = nil end
+	if C.bodyGyro then pcall(function() C.bodyGyro:Destroy() end) C.bodyGyro = nil end
+	if C.bodyVelocity then pcall(function() C.bodyVelocity:Destroy() end) C.bodyVelocity = nil end
 	addLog("[FLY] OFF", COLORS.error)
 end
 
 -- ===================== NOCLIP LOGIC =====================
 local function startNoclip()
-	noclipConnection = RunService.Stepped:Connect(function()
+	C.noclipConnection = RunService.Stepped:Connect(function()
 		pcall(function()
 			local character = LocalPlayer.Character
 			if not character then return end
@@ -1485,7 +1487,7 @@ local function startNoclip()
 end
 
 local function stopNoclip()
-	if noclipConnection then noclipConnection:Disconnect() noclipConnection = nil end
+	if C.noclipConnection then C.noclipConnection:Disconnect() C.noclipConnection = nil end
 	pcall(function()
 		local character = LocalPlayer.Character
 		if not character then return end
@@ -1521,7 +1523,7 @@ end
 
 -- ===================== INFINITE JUMP LOGIC =====================
 local function startInfJump()
-	infJumpConnection = UserInputService.JumpRequest:Connect(function()
+	C.infJumpConnection = UserInputService.JumpRequest:Connect(function()
 		pcall(function()
 			local character = LocalPlayer.Character
 			if character then
@@ -1534,7 +1536,7 @@ local function startInfJump()
 end
 
 local function stopInfJump()
-	if infJumpConnection then infJumpConnection:Disconnect() infJumpConnection = nil end
+	if C.infJumpConnection then C.infJumpConnection:Disconnect() C.infJumpConnection = nil end
 	addLog("[INF JUMP] OFF", COLORS.error)
 end
 
@@ -1558,10 +1560,10 @@ local function startFling()
 		if not root then return end
 
 		-- Set density to 100 (super heavy = others get launched on contact)
-		savedPhysProps = {}
+		C.savedPhysProps = {}
 		for _, part in ipairs(character:GetDescendants()) do
 			if part:IsA("BasePart") then
-				savedPhysProps[part] = part.CustomPhysicalProperties
+				C.savedPhysProps[part] = part.CustomPhysicalProperties
 				part.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
 			end
 		end
@@ -1571,11 +1573,11 @@ local function startFling()
 		_wait(0.1)
 
 		-- BodyAngularVelocity - spin on ALL axes for chaotic collision
-		spinBAV = Instance.new("BodyAngularVelocity")
-		spinBAV.AngularVelocity = Vector3.new(flingPower, flingPower, flingPower)
-		spinBAV.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-		spinBAV.P = math.huge
-		spinBAV.Parent = root
+		C.spinBAV = Instance.new("BodyAngularVelocity")
+		C.spinBAV.AngularVelocity = Vector3.new(flingPower, flingPower, flingPower)
+		C.spinBAV.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+		C.spinBAV.P = math.huge
+		C.spinBAV.Parent = root
 
 		-- Disable collision on character parts
 		for _, part in ipairs(character:GetDescendants()) do
@@ -1585,7 +1587,7 @@ local function startFling()
 		end
 
 		-- Heartbeat: random velocity perturbation to keep physics active
-		flingConnection = RunService.Heartbeat:Connect(function()
+		C.flingConnection = RunService.Heartbeat:Connect(function()
 			pcall(function()
 				local char = LocalPlayer.Character
 				if not char then return end
@@ -1600,14 +1602,14 @@ local function startFling()
 		end)
 
 		-- Pulse spin on/off for repeated impulse spikes
-		flingConnection2 = _spawn(function()
+		C.flingConnection2 = _spawn(function()
 			while flingEnabled do
-				if spinBAV and spinBAV.Parent then
-					spinBAV.AngularVelocity = Vector3.new(flingPower, flingPower, flingPower)
+				if C.spinBAV and C.spinBAV.Parent then
+					C.spinBAV.AngularVelocity = Vector3.new(flingPower, flingPower, flingPower)
 				end
 				_wait(0.15)
-				if spinBAV and spinBAV.Parent then
-					spinBAV.AngularVelocity = Vector3.new(0, 0, 0)
+				if C.spinBAV and C.spinBAV.Parent then
+					C.spinBAV.AngularVelocity = Vector3.new(0, 0, 0)
 				end
 				_wait(0.05)
 			end
@@ -1622,18 +1624,18 @@ end
 
 local function stopFling()
 	-- Disconnect heartbeat
-	if flingConnection then flingConnection:Disconnect() flingConnection = nil end
+	if C.flingConnection then C.flingConnection:Disconnect() C.flingConnection = nil end
 
 	-- Remove BodyAngularVelocity
-	if spinBAV then pcall(function() spinBAV:Destroy() end) spinBAV = nil end
+	if C.spinBAV then pcall(function() C.spinBAV:Destroy() end) C.spinBAV = nil end
 
 	-- Restore physics properties
 	local character = LocalPlayer.Character
 	if character then
 		for _, part in ipairs(character:GetDescendants()) do
 			if part:IsA("BasePart") then
-				if savedPhysProps[part] then
-					part.CustomPhysicalProperties = savedPhysProps[part]
+				if C.savedPhysProps[part] then
+					part.CustomPhysicalProperties = C.savedPhysProps[part]
 				else
 					part.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
 				end
@@ -1647,14 +1649,14 @@ local function stopFling()
 			end
 		end
 	end
-	savedPhysProps = {}
+	C.savedPhysProps = {}
 
 	addLog("[SPIN FLING] OFF", COLORS.error)
 end
 
 -- ===================== SPIN LOGIC =====================
 local function startSpin()
-	spinConnection = RunService.Heartbeat:Connect(function()
+	C.spinConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local character = LocalPlayer.Character
 			if not character then return end
@@ -1666,18 +1668,18 @@ local function startSpin()
 end
 
 local function stopSpin()
-	if spinConnection then spinConnection:Disconnect() spinConnection = nil end
+	if C.spinConnection then C.spinConnection:Disconnect() C.spinConnection = nil end
 	addLog("[SPIN] OFF", COLORS.error)
 end
 
 -- ===================== EMOTE LOGIC =====================
 local function stopEmote()
 	emoteActive = false
-	if emoteConnection then emoteConnection:Disconnect() emoteConnection = nil end
-	for _, track in ipairs(emoteTracks) do
+	if C.emoteConnection then C.emoteConnection:Disconnect() C.emoteConnection = nil end
+	for _, track in ipairs(C.emoteTracks) do
 		pcall(function() track:Stop() end)
 	end
-	emoteTracks = {}
+	C.emoteTracks = {}
 end
 
 local function playEmote(animId, speed, duration)
@@ -1692,7 +1694,7 @@ local function playEmote(animId, speed, duration)
 		local track = hum:LoadAnimation(anim)
 		track:Play()
 		if speed then track:AdjustSpeed(speed) end
-		table.insert(emoteTracks, track)
+		table.insert(C.emoteTracks, track)
 		emoteActive = true
 		if duration then
 			_spawn(function()
@@ -1726,11 +1728,11 @@ local function playJerkEmote()
 			track2:Play()
 			track1:AdjustSpeed(2)
 			track2:AdjustSpeed(2)
-			table.insert(emoteTracks, track1)
-			table.insert(emoteTracks, track2)
+			table.insert(C.emoteTracks, track1)
+			table.insert(C.emoteTracks, track2)
 
 			-- Loop by replaying when tracks finish
-			emoteConnection = RunService.Heartbeat:Connect(function()
+			C.emoteConnection = RunService.Heartbeat:Connect(function()
 				if not emoteActive then return end
 				pcall(function()
 					if track1.IsPlaying == false then
@@ -1750,9 +1752,9 @@ local function playJerkEmote()
 			local track = hum:LoadAnimation(anim)
 			track:Play()
 			track:AdjustSpeed(0.4)
-			table.insert(emoteTracks, track)
+			table.insert(C.emoteTracks, track)
 
-			emoteConnection = RunService.Heartbeat:Connect(function()
+			C.emoteConnection = RunService.Heartbeat:Connect(function()
 				if not emoteActive then return end
 				pcall(function()
 					if track.TimePosition > 0.72 then
@@ -1768,7 +1770,7 @@ end
 
 -- ===================== KILL AURA =====================
 local function startKillAura()
-	killAuraConnection = RunService.Heartbeat:Connect(function()
+	C.killAuraConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local character = LocalPlayer.Character
 			if not character then return end
@@ -1799,13 +1801,13 @@ local function startKillAura()
 end
 
 local function stopKillAura()
-	if killAuraConnection then killAuraConnection:Disconnect() killAuraConnection = nil end
+	if C.killAuraConnection then C.killAuraConnection:Disconnect() C.killAuraConnection = nil end
 	addLog("[KILL AURA] OFF", COLORS.error)
 end
 
 -- ===================== AUTO FIRE =====================
 local function startAutoFire()
-	autoFireConnection = RunService.Heartbeat:Connect(function()
+	C.autoFireConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			if not autoFireEnabled then return end
 			local character = LocalPlayer.Character
@@ -1819,22 +1821,22 @@ local function startAutoFire()
 end
 
 local function stopAutoFire()
-	if autoFireConnection then autoFireConnection:Disconnect() autoFireConnection = nil end
+	if C.autoFireConnection then C.autoFireConnection:Disconnect() C.autoFireConnection = nil end
 	addLog("[AUTO FIRE] OFF", COLORS.error)
 end
 
 -- ===================== NO FOG =====================
 local function startNoFog()
-	noFogOrigFogStart = Lighting.FogStart
-	noFogOrigFogEnd = Lighting.FogEnd
+	C.noFogOrigFogStart = Lighting.FogStart
+	C.noFogOrigFogEnd = Lighting.FogEnd
 	Lighting.FogStart = 999999
 	Lighting.FogEnd = 9999999
 	addLog("[NO FOG] ON", COLORS.success)
 end
 
 local function stopNoFog()
-	if noFogOrigFogStart then Lighting.FogStart = noFogOrigFogStart end
-	if noFogOrigFogEnd then Lighting.FogEnd = noFogOrigFogEnd end
+	if C.noFogOrigFogStart then Lighting.FogStart = C.noFogOrigFogStart end
+	if C.noFogOrigFogEnd then Lighting.FogEnd = C.noFogOrigFogEnd end
 	addLog("[NO FOG] OFF", COLORS.error)
 end
 
@@ -1843,15 +1845,15 @@ local function enableChams()
 	local function addPlayerChams(player)
 		if player == LocalPlayer then return end
 		local function updateChams()
-			if chamsObjects[player] then
-				for _, obj in pairs(chamsObjects[player]) do
+			if C.chamsObjects[player] then
+				for _, obj in pairs(C.chamsObjects[player]) do
 					pcall(function()
 						if typeof(obj) == "RBXScriptConnection" then obj:Disconnect()
 						else obj:Destroy() end
 					end)
 				end
 			end
-			chamsObjects[player] = {}
+			C.chamsObjects[player] = {}
 			local character = player.Character
 			if not character then return end
 			local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -1870,18 +1872,18 @@ local function enableChams()
 			hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 			hl.Adornee = character
 			hl.Parent = character
-			table.insert(chamsObjects[player], hl)
+			table.insert(C.chamsObjects[player], hl)
 		end
 		updateChams()
 		local conn = player.CharacterAdded:Connect(function()
 			_wait(1)
 			if chamsEnabled then updateChams() end
 		end)
-		table.insert(chamsCharConnections, conn)
+		table.insert(C.chamsCharConnections, conn)
 	end
 
 	for _, player in ipairs(Players:GetPlayers()) do addPlayerChams(player) end
-	chamsPlayerAddedConnection = Players.PlayerAdded:Connect(function(player)
+	C.chamsPlayerAddedConnection = Players.PlayerAdded:Connect(function(player)
 		_wait(2)
 		if chamsEnabled then addPlayerChams(player) end
 	end)
@@ -1889,10 +1891,10 @@ local function enableChams()
 end
 
 local function disableChams()
-	if chamsPlayerAddedConnection then chamsPlayerAddedConnection:Disconnect() chamsPlayerAddedConnection = nil end
-	for _, conn in ipairs(chamsCharConnections) do pcall(function() conn:Disconnect() end) end
-	chamsCharConnections = {}
-	for player, objects in pairs(chamsObjects) do
+	if C.chamsPlayerAddedConnection then C.chamsPlayerAddedConnection:Disconnect() C.chamsPlayerAddedConnection = nil end
+	for _, conn in ipairs(C.chamsCharConnections) do pcall(function() conn:Disconnect() end) end
+	C.chamsCharConnections = {}
+	for player, objects in pairs(C.chamsObjects) do
 		for _, obj in pairs(objects) do
 			pcall(function()
 				if typeof(obj) == "RBXScriptConnection" then obj:Disconnect()
@@ -1900,13 +1902,13 @@ local function disableChams()
 			end)
 		end
 	end
-	chamsObjects = {}
+	C.chamsObjects = {}
 	addLog("[CHAMS] OFF", COLORS.error)
 end
 
 -- ===================== GOD MODE =====================
 local function startGod()
-	godConnection = RunService.Heartbeat:Connect(function()
+	C.godConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local character = LocalPlayer.Character
 			if not character then return end
@@ -1921,7 +1923,7 @@ local function startGod()
 end
 
 local function stopGod()
-	if godConnection then godConnection:Disconnect() godConnection = nil end
+	if C.godConnection then C.godConnection:Disconnect() C.godConnection = nil end
 	pcall(function()
 		local character = LocalPlayer.Character
 		if character then
@@ -1968,20 +1970,20 @@ local function startInvisible()
 		end
 
 		-- Client-side transparency so we can't see ourselves
-		savedTransparencies = {}
+		C.savedTransparencies = {}
 		for _, part in ipairs(character:GetDescendants()) do
 			if part:IsA("BasePart") then
-				savedTransparencies[part] = part.Transparency
+				C.savedTransparencies[part] = part.Transparency
 				part.Transparency = 1
 			elseif part:IsA("Decal") or part:IsA("Texture") then
-				savedTransparencies[part] = part.Transparency
+				C.savedTransparencies[part] = part.Transparency
 				part.Transparency = 1
 			end
 		end
 		for _, acc in ipairs(character:GetChildren()) do
 			if acc:IsA("Accessory") then
 				local handle = acc:FindFirstChild("Handle")
-				if handle then savedTransparencies[handle] = handle.Transparency handle.Transparency = 1 end
+				if handle then C.savedTransparencies[handle] = handle.Transparency handle.Transparency = 1 end
 			end
 		end
 	end)
@@ -1990,10 +1992,10 @@ end
 
 local function stopInvisible()
 	pcall(function()
-		for part, transparency in pairs(savedTransparencies) do
+		for part, transparency in pairs(C.savedTransparencies) do
 			if part and part.Parent then part.Transparency = transparency end
 		end
-		savedTransparencies = {}
+		C.savedTransparencies = {}
 		local character = LocalPlayer.Character
 		if character then
 			local hum = character:FindFirstChildOfClass("Humanoid")
@@ -2011,7 +2013,7 @@ end
 local function startAntiAfk()
 	pcall(function()
 		local VirtualUser = game:GetService("VirtualUser")
-		antiAfkConnection = LocalPlayer.Idled:Connect(function()
+		C.antiAfkConnection = LocalPlayer.Idled:Connect(function()
 			VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
 			_wait(1)
 			VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
@@ -2021,13 +2023,13 @@ local function startAntiAfk()
 end
 
 local function stopAntiAfk()
-	if antiAfkConnection then antiAfkConnection:Disconnect() antiAfkConnection = nil end
+	if C.antiAfkConnection then C.antiAfkConnection:Disconnect() C.antiAfkConnection = nil end
 	addLog("[ANTI-AFK] OFF", COLORS.error)
 end
 
 -- ===================== BUNNY HOP =====================
 local function startBunnyHop()
-	bunnyHopConnection = RunService.Heartbeat:Connect(function()
+	C.bunnyHopConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			if not bunnyHopEnabled then return end
 			local character = LocalPlayer.Character
@@ -2046,7 +2048,7 @@ local function startBunnyHop()
 end
 
 local function stopBunnyHop()
-	if bunnyHopConnection then bunnyHopConnection:Disconnect() bunnyHopConnection = nil end
+	if C.bunnyHopConnection then C.bunnyHopConnection:Disconnect() C.bunnyHopConnection = nil end
 	addLog("[BHOP] OFF", COLORS.error)
 end
 
@@ -2106,16 +2108,16 @@ local function startWalkFling()
 		if not root then return end
 
 		-- Set density to 100
-		walkFlingProps = {}
+		C.walkFlingProps = {}
 		for _, part in ipairs(character:GetDescendants()) do
 			if part:IsA("BasePart") then
-				walkFlingProps[part] = part.CustomPhysicalProperties
+				C.walkFlingProps[part] = part.CustomPhysicalProperties
 				part.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
 			end
 		end
 
 		-- Heartbeat: velocity spikes using AssemblyLinearVelocity
-		walkFlingConnection = RunService.Heartbeat:Connect(function()
+		C.walkFlingConnection = RunService.Heartbeat:Connect(function()
 			pcall(function()
 				local char = LocalPlayer.Character
 				if not char then return end
@@ -2138,13 +2140,13 @@ local function startWalkFling()
 end
 
 local function stopWalkFling()
-	if walkFlingConnection then walkFlingConnection:Disconnect() walkFlingConnection = nil end
+	if C.walkFlingConnection then C.walkFlingConnection:Disconnect() C.walkFlingConnection = nil end
 	local character = LocalPlayer.Character
 	if character then
 		for _, part in ipairs(character:GetDescendants()) do
 			if part:IsA("BasePart") then
-				if walkFlingProps[part] then
-					part.CustomPhysicalProperties = walkFlingProps[part]
+				if C.walkFlingProps[part] then
+					part.CustomPhysicalProperties = C.walkFlingProps[part]
 				else
 					part.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
 				end
@@ -2156,13 +2158,13 @@ local function stopWalkFling()
 			end
 		end
 	end
-	walkFlingProps = {}
+	C.walkFlingProps = {}
 	addLog("[WALK FLING] OFF", COLORS.error)
 end
 
 -- ===================== SEIZURE =====================
 local function startSeizure()
-	seizureConnection = RunService.Heartbeat:Connect(function()
+	C.seizureConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local character = LocalPlayer.Character
 			if not character then return end
@@ -2185,7 +2187,7 @@ local function startSeizure()
 end
 
 local function stopSeizure()
-	if seizureConnection then seizureConnection:Disconnect() seizureConnection = nil end
+	if C.seizureConnection then C.seizureConnection:Disconnect() C.seizureConnection = nil end
 	addLog("[SEIZURE] OFF", COLORS.error)
 end
 
@@ -2196,15 +2198,15 @@ local function startHeadless()
 		if not character then return end
 		local head = character:FindFirstChild("Head")
 		if not head then return end
-		headlessSavedParts = {}
-		headlessSavedParts.headTransparency = head.Transparency
+		C.headlessSavedParts = {}
+		C.headlessSavedParts.headTransparency = head.Transparency
 		head.Transparency = 1
 		for _, child in ipairs(head:GetChildren()) do
 			if child:IsA("Decal") then
-				headlessSavedParts[child] = child.Transparency
+				C.headlessSavedParts[child] = child.Transparency
 				child.Transparency = 1
 			elseif child:IsA("SpecialMesh") then
-				headlessSavedParts[child] = child.Scale
+				C.headlessSavedParts[child] = child.Scale
 				child.Scale = Vector3.new(0, 0, 0)
 			end
 		end
@@ -2214,7 +2216,7 @@ local function startHeadless()
 				if handle then
 					local att = handle:FindFirstChildOfClass("Attachment")
 					if att and (att.Name == "HatAttachment" or att.Name == "HairAttachment" or att.Name == "FaceFrontAttachment" or att.Name == "FaceCenterAttachment") then
-						headlessSavedParts[handle] = handle.Transparency
+						C.headlessSavedParts[handle] = handle.Transparency
 						handle.Transparency = 1
 					end
 				end
@@ -2229,10 +2231,10 @@ local function stopHeadless()
 		local character = LocalPlayer.Character
 		if not character then return end
 		local head = character:FindFirstChild("Head")
-		if head and headlessSavedParts.headTransparency then
-			head.Transparency = headlessSavedParts.headTransparency
+		if head and C.headlessSavedParts.headTransparency then
+			head.Transparency = C.headlessSavedParts.headTransparency
 		end
-		for obj, val in pairs(headlessSavedParts) do
+		for obj, val in pairs(C.headlessSavedParts) do
 			if obj ~= "headTransparency" and typeof(obj) ~= "string" and obj and obj.Parent then
 				if typeof(val) == "Vector3" then
 					obj.Scale = val
@@ -2241,7 +2243,7 @@ local function stopHeadless()
 				end
 			end
 		end
-		headlessSavedParts = {}
+		C.headlessSavedParts = {}
 	end)
 	addLog("[HEADLESS] OFF", COLORS.error)
 end
@@ -3015,8 +3017,8 @@ end)
 -- ===================== RESPAWN HOOKS =====================
 Players.PlayerRemoving:Connect(function(player)
 	-- Clean up ESP for leaving players
-	if espObjects[player] then
-		for _, obj in pairs(espObjects[player]) do
+	if C.espObjects[player] then
+		for _, obj in pairs(C.espObjects[player]) do
 			pcall(function()
 				if typeof(obj) == "RBXScriptConnection" then
 					obj:Disconnect()
@@ -3025,17 +3027,17 @@ Players.PlayerRemoving:Connect(function(player)
 				end
 			end)
 		end
-		espObjects[player] = nil
+		C.espObjects[player] = nil
 	end
 	-- Clean up Chams for leaving players
-	if chamsObjects[player] then
-		for _, obj in pairs(chamsObjects[player]) do
+	if C.chamsObjects[player] then
+		for _, obj in pairs(C.chamsObjects[player]) do
 			pcall(function()
 				if typeof(obj) == "RBXScriptConnection" then obj:Disconnect()
 				else obj:Destroy() end
 			end)
 		end
-		chamsObjects[player] = nil
+		C.chamsObjects[player] = nil
 	end
 end)
 
@@ -3057,8 +3059,8 @@ LocalPlayer.CharacterAdded:Connect(function()
 		_wait(0.3)
 		startFling()
 	end
-	spinBAV = nil
-	savedPhysProps = {}
+	C.spinBAV = nil
+	C.savedPhysProps = {}
 
 	-- Re-enable speed
 	if speedEnabled then
@@ -3143,21 +3145,21 @@ LocalPlayer.CharacterAdded:Connect(function()
 
 	-- Re-enable god mode
 	if godEnabled then
-		if godConnection then godConnection:Disconnect() godConnection = nil end
+		if C.godConnection then C.godConnection:Disconnect() C.godConnection = nil end
 		_wait(0.1)
 		startGod()
 	end
 
 	-- Re-enable invisible
 	if invisibleEnabled then
-		savedTransparencies = {}
+		C.savedTransparencies = {}
 		_wait(0.3)
 		startInvisible()
 	end
 
 	-- Re-enable bunny hop
 	if bunnyHopEnabled then
-		if bunnyHopConnection then bunnyHopConnection:Disconnect() bunnyHopConnection = nil end
+		if C.bunnyHopConnection then C.bunnyHopConnection:Disconnect() C.bunnyHopConnection = nil end
 		_wait(0.1)
 		startBunnyHop()
 	end
@@ -3171,14 +3173,14 @@ LocalPlayer.CharacterAdded:Connect(function()
 
 	-- Re-enable kill aura
 	if killAuraEnabled then
-		if killAuraConnection then killAuraConnection:Disconnect() killAuraConnection = nil end
+		if C.killAuraConnection then C.killAuraConnection:Disconnect() C.killAuraConnection = nil end
 		_wait(0.1)
 		startKillAura()
 	end
 
 	-- Re-enable auto fire
 	if autoFireEnabled then
-		if autoFireConnection then autoFireConnection:Disconnect() autoFireConnection = nil end
+		if C.autoFireConnection then C.autoFireConnection:Disconnect() C.autoFireConnection = nil end
 		_wait(0.1)
 		startAutoFire()
 	end
@@ -3192,7 +3194,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 
 	-- Re-enable headless
 	if headlessEnabled then
-		headlessSavedParts = {}
+		C.headlessSavedParts = {}
 		_wait(0.3)
 		startHeadless()
 	end
@@ -3205,7 +3207,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 
 	-- Re-enable seizure
 	if seizureEnabled then
-		if seizureConnection then seizureConnection:Disconnect() seizureConnection = nil end
+		if C.seizureConnection then C.seizureConnection:Disconnect() C.seizureConnection = nil end
 		_wait(0.1)
 		startSeizure()
 	end
