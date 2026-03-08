@@ -6,7 +6,7 @@ if not keyOk or not keySystem or not keySystem.validate("rivals") then return en
 -- ================================================================
 -- Pebbleford Hub - RIVALS Hub
 -- Dedicated admin for RIVALS FPS
--- v1.4
+-- v1.5
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -340,7 +340,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 40, 1, 0)
 versionLabel.Position = UDim2.new(0, 130, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v1.4"
+versionLabel.Text = "v1.5"
 versionLabel.TextColor3 = COLORS.accent
 versionLabel.Font = Enum.Font.Gotham
 versionLabel.TextSize = 10
@@ -2211,7 +2211,7 @@ do
 	local tab = tabFrames["Main"]
 
 	createSectionLabel(tab, "Info", 1)
-	createInfoLabel(tab, "RIVALS Hub v1.4", 2)
+	createInfoLabel(tab, "RIVALS Hub v1.5", 2)
 	createInfoLabel(tab, "SX The Revival", 3)
 
 	local spacer = Instance.new("Frame")
@@ -3147,7 +3147,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ===================== STARTUP =====================
-addLog("RIVALS Hub v1.4", COLORS.accent)
+addLog("RIVALS Hub v1.5", COLORS.accent)
 addLog("Type ;cmds for command list", COLORS.textSecondary)
 addLog("Use Right Shift to toggle GUI", COLORS.textSecondary)
-print("[RIVALS Hub] v1.4 loaded")
+print("[RIVALS Hub] v1.5 loaded")
