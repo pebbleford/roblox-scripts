@@ -903,8 +903,10 @@ local function startAimbot()
 		end
 	end)
 
-	-- Use Heartbeat (fires AFTER camera update) so our CFrame sticks instead of being overwritten
-	C.aimbotConnection = RunService.Heartbeat:Connect(function()
+	-- BindToRenderStep at priority 301 (Enum.RenderPriority.Camera.Value = 200)
+	-- This runs AFTER the game's camera controller, so our CFrame overwrite sticks.
+	-- Works both hipfire and scoped because we set Camera.CFrame directly.
+	RunService:BindToRenderStep("PebblefordAimbot", 301, function()
 		if not S.aimbotEnabled or not aimbotHolding then return end
 		pcall(function()
 			local cam = workspace.CurrentCamera
@@ -913,43 +915,19 @@ local function startAimbot()
 
 			local targetPos = target.Position
 			local camPos = cam.CFrame.Position
+			local targetCF = CFrame.new(camPos, targetPos)
 
-			-- mousemoverel (most reliable in FPS games - moves actual mouse)
-			local screenPos = cam:WorldToViewportPoint(targetPos)
-			local screenCenter = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
-			local delta = Vector2.new(screenPos.X - screenCenter.X, screenPos.Y - screenCenter.Y)
-
-			-- Apply smoothing with sensitivity multiplier
-			-- Mouse sensitivity in Roblox means 1 pixel of mousemoverel != 1 pixel on screen
-			-- Multiply by 1.5 to compensate for typical sensitivity scaling
-			local sensitivity = 1.5
-			local moveX = (delta.X / S.aimbotSmoothing) * sensitivity
-			local moveY = (delta.Y / S.aimbotSmoothing) * sensitivity
-
-			-- Minimum movement threshold: prevents aimbot from stalling when close to target
-			if math.abs(moveX) < 1 and math.abs(delta.X) > 1 then
-				moveX = delta.X > 0 and 1 or -1
-			end
-			if math.abs(moveY) < 1 and math.abs(delta.Y) > 1 then
-				moveY = delta.Y > 0 and 1 or -1
-			end
-
-			-- Use mousemoverel if available (works on most executors)
-			if mousemoverel then
-				mousemoverel(moveX, moveY)
-			else
-				-- Fallback: direct CFrame set (may be overwritten by game camera)
-				local currentCF = cam.CFrame
-				local targetCF = CFrame.new(camPos, targetPos)
-				cam.CFrame = currentCF:Lerp(targetCF, 1 / S.aimbotSmoothing)
-			end
+			-- Smooth aim: lerp from current camera to target look direction
+			-- Lower smoothing value = snappier aim
+			local alpha = math.clamp(1 / S.aimbotSmoothing, 0.05, 1)
+			cam.CFrame = cam.CFrame:Lerp(targetCF, alpha)
 		end)
 	end)
 	addLog("[AIMBOT] ON (Hold RMB or Q)", COLORS.success)
 end
 
 local function stopAimbot()
-	if C.aimbotConnection then C.aimbotConnection:Disconnect() C.aimbotConnection = nil end
+	pcall(function() RunService:UnbindFromRenderStep("PebblefordAimbot") end)
 	if aimbotInputBeganConn then aimbotInputBeganConn:Disconnect() aimbotInputBeganConn = nil end
 	if aimbotInputEndedConn then aimbotInputEndedConn:Disconnect() aimbotInputEndedConn = nil end
 	aimbotHolding = false
