@@ -6,7 +6,7 @@ if not keyOk or not keySystem or not keySystem.validate("rivals") then return en
 -- ================================================================
 -- Pebbleford Hub - RIVALS Hub
 -- Dedicated admin for RIVALS FPS
--- v1.5
+-- v1.6
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -340,7 +340,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 40, 1, 0)
 versionLabel.Position = UDim2.new(0, 130, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v1.5"
+versionLabel.Text = "v1.6"
 versionLabel.TextColor3 = COLORS.accent
 versionLabel.Font = Enum.Font.Gotham
 versionLabel.TextSize = 10
@@ -903,10 +903,10 @@ local function startAimbot()
 		end
 	end)
 
-	-- BindToRenderStep at priority 301 (Enum.RenderPriority.Camera.Value = 200)
-	-- This runs AFTER the game's camera controller, so our CFrame overwrite sticks.
-	-- Works both hipfire and scoped because we set Camera.CFrame directly.
-	RunService:BindToRenderStep("PebblefordAimbot", 301, function()
+	-- Use RenderStepped:Connect which fires AFTER all BindToRenderStep callbacks.
+	-- This ensures our CFrame overwrite runs after RIVALS' camera controller
+	-- regardless of what priority the game uses. Works hipfire and scoped.
+	C.aimbotConnection = RunService.RenderStepped:Connect(function()
 		if not S.aimbotEnabled or not aimbotHolding then return end
 		pcall(function()
 			local cam = workspace.CurrentCamera
@@ -927,7 +927,7 @@ local function startAimbot()
 end
 
 local function stopAimbot()
-	pcall(function() RunService:UnbindFromRenderStep("PebblefordAimbot") end)
+	if C.aimbotConnection then C.aimbotConnection:Disconnect() C.aimbotConnection = nil end
 	if aimbotInputBeganConn then aimbotInputBeganConn:Disconnect() aimbotInputBeganConn = nil end
 	if aimbotInputEndedConn then aimbotInputEndedConn:Disconnect() aimbotInputEndedConn = nil end
 	aimbotHolding = false
@@ -936,43 +936,74 @@ end
 
 -- ===================== SILENT AIM =====================
 local function startSilentAim()
-	-- Try to hook mouse methods to redirect aim
-	pcall(function()
-		local mt = getrawmetatable(game)
-		if mt and setreadonly then
-			local oldNamecall = mt.__namecall
-			setreadonly(mt, false)
-			mt.__namecall = newcclosure(function(self, ...)
+	-- Hook workspace:Raycast via hookmetamethod to redirect bullets to target
+	-- RIVALS fires raycasts from scripts named "Equipment" and "FighterController"
+	-- We intercept those and redirect the ray direction toward the closest enemy
+	if not C.silentAimHook and hookmetamethod then
+		pcall(function()
+			local oldNamecall
+			oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
 				local method = getnamecallmethod()
-				if S.silentAimEnabled and (method == "FindPartOnRayWithIgnoreList" or method == "FindPartOnRay" or method == "Raycast") then
-					local target = getClosestPlayerInFOV()
-					if target then
-						-- Redirect ray toward target
-						local args = {...}
-						if method == "Raycast" and typeof(args[1]) == "Vector3" then
-							local origin = args[1]
-							local direction = (target.Position - origin).Unit * 1000
-							return oldNamecall(self, origin, direction, select(3, ...))
+				if S.silentAimEnabled and self == workspace and not checkcaller() then
+					if method == "Raycast" then
+						-- Only redirect RIVALS weapon raycasts, not camera/UI raycasts
+						local callingScript = getcallingscript()
+						if callingScript and (callingScript.Name == "Equipment" or callingScript.Name == "FighterController" or callingScript.Name == "PlayerDataController" or callingScript.Name == "ControlsController") then
+							local target = getClosestPlayerInFOV()
+							if target then
+								local args = {... }
+								local origin = args[1]
+								if typeof(origin) == "Vector3" then
+									local direction = (target.Position - origin).Unit * 1000
+									return oldNamecall(self, origin, direction, select(3, ...))
+								end
+							end
 						end
 					end
 				end
 				return oldNamecall(self, ...)
-			end)
-			setreadonly(mt, true)
+			end))
 			C.silentAimHook = true
-		end
-	end)
-
-	-- Fallback: if no hook available, use camera manipulation (less reliable)
-	if not C.silentAimHook then
-		addLog("[SILENT AIM] Fallback mode (no hook support)", COLORS.textSecondary)
+		end)
 	end
-	addLog("[SILENT AIM] ON", COLORS.success)
+
+	-- Fallback: try getrawmetatable if hookmetamethod not available
+	if not C.silentAimHook then
+		pcall(function()
+			local mt = getrawmetatable(game)
+			if mt and setreadonly then
+				local oldNamecall = mt.__namecall
+				setreadonly(mt, false)
+				mt.__namecall = newcclosure(function(self, ...)
+					local method = getnamecallmethod()
+					if S.silentAimEnabled and self == workspace and method == "Raycast" then
+						local target = getClosestPlayerInFOV()
+						if target then
+							local args = {... }
+							if typeof(args[1]) == "Vector3" then
+								local origin = args[1]
+								local direction = (target.Position - origin).Unit * 1000
+								return oldNamecall(self, origin, direction, select(3, ...))
+							end
+						end
+					end
+					return oldNamecall(self, ...)
+				end)
+				setreadonly(mt, true)
+				C.silentAimHook = true
+			end
+		end)
+	end
+
+	if not C.silentAimHook then
+		addLog("[SILENT AIM] No hook support on this executor", COLORS.error)
+	end
+	addLog("[SILENT AIM] ON - bullets redirect to target", COLORS.success)
 end
 
 local function stopSilentAim()
 	S.silentAimEnabled = false
-	-- Note: hooks can't easily be undone, they check S.silentAimEnabled flag
+	-- Hook stays installed but checks the flag, so disabling is instant
 	addLog("[SILENT AIM] OFF", COLORS.error)
 end
 
@@ -2211,7 +2242,7 @@ do
 	local tab = tabFrames["Main"]
 
 	createSectionLabel(tab, "Info", 1)
-	createInfoLabel(tab, "RIVALS Hub v1.5", 2)
+	createInfoLabel(tab, "RIVALS Hub v1.6", 2)
 	createInfoLabel(tab, "SX The Revival", 3)
 
 	local spacer = Instance.new("Frame")
@@ -3147,7 +3178,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ===================== STARTUP =====================
-addLog("RIVALS Hub v1.5", COLORS.accent)
+addLog("RIVALS Hub v1.6", COLORS.accent)
 addLog("Type ;cmds for command list", COLORS.textSecondary)
 addLog("Use Right Shift to toggle GUI", COLORS.textSecondary)
-print("[RIVALS Hub] v1.5 loaded")
+print("[RIVALS Hub] v1.6 loaded")
