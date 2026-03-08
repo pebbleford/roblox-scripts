@@ -42,76 +42,26 @@ local COLORS = {
 	btnClear = Color3.fromRGB(60, 60, 60),
 }
 
--- ===================== STATE =====================
--- Combat
-local aimbotEnabled = false
-local silentAimEnabled = false
-local triggerBotEnabled = false
-local aimbotKey = Enum.UserInputType.MouseButton2  -- Right click to aim
-local aimbotFOV = 200
-local aimbotSmoothing = 2
-local aimbotAimPart = "Head"  -- "Head", "HumanoidRootPart", "Torso"
-local aimbotMaxDist = 300
-local aimbotWallCheck = true
-local teamCheck = true
-
--- ESP
-local espEnabled = false
-local espBoxEnabled = false
-local espTracerEnabled = false
-local espHealthBar = true
-local espNameEnabled = true
-local espDistEnabled = true
-local fovCircleEnabled = false
-
--- Gun Mods
-local noRecoilEnabled = false
-local noSpreadEnabled = false
-local rapidFireEnabled = false
-
--- Player
-local flyEnabled = false
-local noclipEnabled = false
-local speedEnabled = false
-local infJumpEnabled = false
-local fovChangerEnabled = false
-local fullbrightEnabled = false
-local hitboxExpandEnabled = false
-
--- Fun
-local flingEnabled = false
-local walkFlingEnabled = false
-local spinEnabled = false
-local seizureEnabled = false
-local headlessEnabled = false
-local emoteActive = false
-
--- Combat (new)
-local autoFireEnabled = false
-local killAuraEnabled = false
-
--- ESP (new)
-local noFogEnabled = false
-local chamsEnabled = false
-
--- Player (new)
-local godEnabled = false
-local invisibleEnabled = false
-local antiAfkEnabled = false
-local bunnyHopEnabled = false
-local spectating = false
-local selectedPlayer = nil
-
--- Values
-local flySpeed = 80
-local speedValue = 100
-local flingPower = 99999
-local walkFlingPower = 10000
-local jumpPowerValue = 50
-local cameraFOV = 90
-local hitboxSize = 10
-local killAuraRange = 15
-local gravityValue = 196.2
+-- ===================== STATE (bundled to stay under Lua 200 local limit) =====================
+local S = {
+	aimbotEnabled = false, silentAimEnabled = false, triggerBotEnabled = false,
+	aimbotKey = Enum.UserInputType.MouseButton2,
+	aimbotFOV = 200, aimbotSmoothing = 2, aimbotAimPart = "Head",
+	aimbotMaxDist = 300, aimbotWallCheck = true, teamCheck = true,
+	espEnabled = false, espBoxEnabled = false, espTracerEnabled = false,
+	espHealthBar = true, espNameEnabled = true, espDistEnabled = true, fovCircleEnabled = false,
+	noRecoilEnabled = false, noSpreadEnabled = false, rapidFireEnabled = false,
+	flyEnabled = false, noclipEnabled = false, speedEnabled = false, infJumpEnabled = false,
+	fovChangerEnabled = false, fullbrightEnabled = false, hitboxExpandEnabled = false,
+	flingEnabled = false, walkFlingEnabled = false, spinEnabled = false,
+	seizureEnabled = false, headlessEnabled = false, emoteActive = false,
+	autoFireEnabled = false, killAuraEnabled = false,
+	noFogEnabled = false, chamsEnabled = false,
+	godEnabled = false, invisibleEnabled = false, antiAfkEnabled = false,
+	bunnyHopEnabled = false, spectating = false, selectedPlayer = nil,
+	flySpeed = 80, speedValue = 100, flingPower = 99999, walkFlingPower = 10000,
+	jumpPowerValue = 50, cameraFOV = 90, hitboxSize = 10, killAuraRange = 15, gravityValue = 196.2,
+}
 
 -- Connections & storage (bundled to stay under Lua 200 local limit)
 local C = {
@@ -849,13 +799,13 @@ local function isPlayerInMatch(player)
 	if not myRoot or not theirRoot then return false end
 
 	local dist = (myRoot.Position - theirRoot.Position).Magnitude
-	if dist > aimbotMaxDist then return false end
+	if dist > S.aimbotMaxDist then return false end
 
 	return true
 end
 
 local function isTargetVisible(targetPart)
-	if not aimbotWallCheck then return true end
+	if not S.aimbotWallCheck then return true end
 	local cam = workspace.CurrentCamera
 	local origin = cam.CFrame.Position
 	local direction = (targetPart.Position - origin)
@@ -894,7 +844,7 @@ local function isActualTeamMode()
 end
 
 local function shouldSkipTeammate(player)
-	if not teamCheck then return false end
+	if not S.teamCheck then return false end
 	local myTeam = LocalPlayer.Team
 	local theirTeam = player.Team
 	if not myTeam or not theirTeam then return false end
@@ -907,7 +857,7 @@ end
 local function getClosestPlayerInFOV()
 	local cam = workspace.CurrentCamera
 	local closest = nil
-	local closestDist = aimbotFOV
+	local closestDist = S.aimbotFOV
 	local screenCenter = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
 
 	for _, player in ipairs(Players:GetPlayers()) do
@@ -916,7 +866,7 @@ local function getClosestPlayerInFOV()
 
 			if not skipTeam and isPlayerInMatch(player) then
 				local character = player.Character
-				local targetPart = character:FindFirstChild(aimbotAimPart) or character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart")
+				local targetPart = character:FindFirstChild(S.aimbotAimPart) or character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart")
 				if targetPart then
 					local screenPos, onScreen = cam:WorldToViewportPoint(targetPart.Position)
 					if onScreen then
@@ -943,19 +893,19 @@ local aimbotInputEndedConn = nil
 local function startAimbot()
 	-- Track when aimbot key is held (ignore gpe so it works even when game processes the input)
 	aimbotInputBeganConn = UserInputService.InputBegan:Connect(function(input)
-		if input.UserInputType == aimbotKey or input.KeyCode == Enum.KeyCode.Q then
+		if input.UserInputType == S.aimbotKey or input.KeyCode == Enum.KeyCode.Q then
 			aimbotHolding = true
 		end
 	end)
 	aimbotInputEndedConn = UserInputService.InputEnded:Connect(function(input)
-		if input.UserInputType == aimbotKey or input.KeyCode == Enum.KeyCode.Q then
+		if input.UserInputType == S.aimbotKey or input.KeyCode == Enum.KeyCode.Q then
 			aimbotHolding = false
 		end
 	end)
 
 	-- Use Heartbeat (fires AFTER camera update) so our CFrame sticks instead of being overwritten
 	C.aimbotConnection = RunService.Heartbeat:Connect(function()
-		if not aimbotEnabled or not aimbotHolding then return end
+		if not S.aimbotEnabled or not aimbotHolding then return end
 		pcall(function()
 			local cam = workspace.CurrentCamera
 			local target = getClosestPlayerInFOV()
@@ -973,8 +923,8 @@ local function startAimbot()
 			-- Mouse sensitivity in Roblox means 1 pixel of mousemoverel != 1 pixel on screen
 			-- Multiply by 1.5 to compensate for typical sensitivity scaling
 			local sensitivity = 1.5
-			local moveX = (delta.X / aimbotSmoothing) * sensitivity
-			local moveY = (delta.Y / aimbotSmoothing) * sensitivity
+			local moveX = (delta.X / S.aimbotSmoothing) * sensitivity
+			local moveY = (delta.Y / S.aimbotSmoothing) * sensitivity
 
 			-- Minimum movement threshold: prevents aimbot from stalling when close to target
 			if math.abs(moveX) < 1 and math.abs(delta.X) > 1 then
@@ -991,7 +941,7 @@ local function startAimbot()
 				-- Fallback: direct CFrame set (may be overwritten by game camera)
 				local currentCF = cam.CFrame
 				local targetCF = CFrame.new(camPos, targetPos)
-				cam.CFrame = currentCF:Lerp(targetCF, 1 / aimbotSmoothing)
+				cam.CFrame = currentCF:Lerp(targetCF, 1 / S.aimbotSmoothing)
 			end
 		end)
 	end)
@@ -1016,7 +966,7 @@ local function startSilentAim()
 			setreadonly(mt, false)
 			mt.__namecall = newcclosure(function(self, ...)
 				local method = getnamecallmethod()
-				if silentAimEnabled and (method == "FindPartOnRayWithIgnoreList" or method == "FindPartOnRay" or method == "Raycast") then
+				if S.silentAimEnabled and (method == "FindPartOnRayWithIgnoreList" or method == "FindPartOnRay" or method == "Raycast") then
 					local target = getClosestPlayerInFOV()
 					if target then
 						-- Redirect ray toward target
@@ -1043,15 +993,15 @@ local function startSilentAim()
 end
 
 local function stopSilentAim()
-	silentAimEnabled = false
-	-- Note: hooks can't easily be undone, they check silentAimEnabled flag
+	S.silentAimEnabled = false
+	-- Note: hooks can't easily be undone, they check S.silentAimEnabled flag
 	addLog("[SILENT AIM] OFF", COLORS.error)
 end
 
 -- ===================== TRIGGERBOT =====================
 local function startTriggerBot()
 	C.triggerBotConnection = RunService.Heartbeat:Connect(function()
-		if not triggerBotEnabled then return end
+		if not S.triggerBotEnabled then return end
 		pcall(function()
 			local mouse = LocalPlayer:GetMouse()
 			if mouse.Target then
@@ -1134,7 +1084,7 @@ local function enableESP()
 			table.insert(C.espObjects[player], bb)
 
 			-- Name label
-			if espNameEnabled then
+			if S.espNameEnabled then
 				local nameLabel = Instance.new("TextLabel")
 				nameLabel.Size = UDim2.new(1, 0, 0, 16)
 				nameLabel.BackgroundTransparency = 1
@@ -1148,7 +1098,7 @@ local function enableESP()
 			end
 
 			-- Health bar
-			if espHealthBar then
+			if S.espHealthBar then
 				local healthBg = Instance.new("Frame")
 				healthBg.Size = UDim2.new(0.7, 0, 0, 5)
 				healthBg.Position = UDim2.new(0.15, 0, 0, 18)
@@ -1184,7 +1134,7 @@ local function enableESP()
 			end
 
 			-- Distance label
-			if espDistEnabled then
+			if S.espDistEnabled then
 				local distLabel = Instance.new("TextLabel")
 				distLabel.Size = UDim2.new(1, 0, 0, 14)
 				distLabel.Position = UDim2.new(0, 0, 0, 25)
@@ -1217,7 +1167,7 @@ local function enableESP()
 		-- Update on character changes
 		local conn = player.CharacterAdded:Connect(function()
 			_wait(1)
-			if espEnabled then updateESP() end
+			if S.espEnabled then updateESP() end
 		end)
 		table.insert(C.espCharConnections, conn)
 	end
@@ -1230,7 +1180,7 @@ local function enableESP()
 	-- Watch for new players
 	C.espPlayerAddedConnection = Players.PlayerAdded:Connect(function(player)
 		_wait(2)
-		if espEnabled then addPlayerESP(player) end
+		if S.espEnabled then addPlayerESP(player) end
 	end)
 
 	addLog("[ESP] ON", COLORS.success)
@@ -1264,8 +1214,8 @@ local function createFOVCircle()
 
 	local gui = Instance.new("Frame")
 	gui.Name = "FOVCircle"
-	gui.Size = UDim2.new(0, aimbotFOV * 2, 0, aimbotFOV * 2)
-	gui.Position = UDim2.new(0.5, -aimbotFOV, 0.5, -aimbotFOV)
+	gui.Size = UDim2.new(0, S.aimbotFOV * 2, 0, S.aimbotFOV * 2)
+	gui.Position = UDim2.new(0.5, -S.aimbotFOV, 0.5, -S.aimbotFOV)
 	gui.BackgroundTransparency = 0.95
 	gui.BackgroundColor3 = COLORS.accent
 	gui.BorderSizePixel = 0
@@ -1282,7 +1232,7 @@ local function createFOVCircle()
 	corner.Parent = gui
 
 	C.fovCircle = gui
-	addLog("[FOV CIRCLE] ON - Radius: " .. aimbotFOV, COLORS.success)
+	addLog("[FOV CIRCLE] ON - Radius: " .. S.aimbotFOV, COLORS.success)
 end
 
 local function destroyFOVCircle()
@@ -1292,8 +1242,8 @@ end
 
 local function updateFOVCircleSize()
 	if C.fovCircle then
-		C.fovCircle.Size = UDim2.new(0, aimbotFOV * 2, 0, aimbotFOV * 2)
-		C.fovCircle.Position = UDim2.new(0.5, -aimbotFOV, 0.5, -aimbotFOV)
+		C.fovCircle.Size = UDim2.new(0, S.aimbotFOV * 2, 0, S.aimbotFOV * 2)
+		C.fovCircle.Position = UDim2.new(0.5, -S.aimbotFOV, 0.5, -S.aimbotFOV)
 	end
 end
 
@@ -1376,7 +1326,7 @@ local function startHitboxExpand()
 					if not shouldSkipTeammate(player) then
 						local head = player.Character:FindFirstChild("Head")
 						if head and head:IsA("BasePart") then
-							head.Size = Vector3.new(hitboxSize, hitboxSize, hitboxSize)
+							head.Size = Vector3.new(S.hitboxSize, S.hitboxSize, S.hitboxSize)
 							head.Transparency = 0.8
 							head.CanCollide = false
 						end
@@ -1385,7 +1335,7 @@ local function startHitboxExpand()
 			end
 		end)
 	end)
-	addLog("[HITBOX] ON - Size: " .. hitboxSize, COLORS.success)
+	addLog("[HITBOX] ON - Size: " .. S.hitboxSize, COLORS.success)
 end
 
 local function stopHitboxExpand()
@@ -1449,7 +1399,7 @@ local function startFly()
 	C.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
 	C.bodyVelocity.Parent = hrp
 	C.flyConnection = RunService.Heartbeat:Connect(function()
-		if not flyEnabled or not hrp or not hrp.Parent then return end
+		if not S.flyEnabled or not hrp or not hrp.Parent then return end
 		local cam = workspace.CurrentCamera
 		local dir = Vector3.new(0, 0, 0)
 		if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir = dir + cam.CFrame.LookVector end
@@ -1459,10 +1409,10 @@ local function startFly()
 		if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir = dir + Vector3.new(0, 1, 0) end
 		if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then dir = dir - Vector3.new(0, 1, 0) end
 		if dir.Magnitude > 0 then dir = dir.Unit end
-		C.bodyVelocity.Velocity = dir * flySpeed
+		C.bodyVelocity.Velocity = dir * S.flySpeed
 		C.bodyGyro.CFrame = cam.CFrame
 	end)
-	addLog("[FLY] ON - Speed: " .. flySpeed, COLORS.success)
+	addLog("[FLY] ON - Speed: " .. S.flySpeed, COLORS.success)
 end
 
 local function stopFly()
@@ -1504,10 +1454,10 @@ local function startSpeed()
 		local character = LocalPlayer.Character
 		if character then
 			local humanoid = character:FindFirstChildOfClass("Humanoid")
-			if humanoid then origWalkSpeed = humanoid.WalkSpeed humanoid.WalkSpeed = speedValue end
+			if humanoid then origWalkSpeed = humanoid.WalkSpeed humanoid.WalkSpeed = S.speedValue end
 		end
 	end)
-	addLog("[SPEED] ON - WalkSpeed: " .. speedValue, COLORS.success)
+	addLog("[SPEED] ON - WalkSpeed: " .. S.speedValue, COLORS.success)
 end
 
 local function stopSpeed()
@@ -1569,12 +1519,12 @@ local function startFling()
 		end
 
 		-- Enable noclip so we can move freely while spinning
-		if not noclipEnabled then noclipEnabled = true startNoclip() end
+		if not S.noclipEnabled then S.noclipEnabled = true startNoclip() end
 		_wait(0.1)
 
 		-- BodyAngularVelocity - spin on ALL axes for chaotic collision
 		C.spinBAV = Instance.new("BodyAngularVelocity")
-		C.spinBAV.AngularVelocity = Vector3.new(flingPower, flingPower, flingPower)
+		C.spinBAV.AngularVelocity = Vector3.new(S.flingPower, S.flingPower, S.flingPower)
 		C.spinBAV.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
 		C.spinBAV.P = math.huge
 		C.spinBAV.Parent = root
@@ -1603,9 +1553,9 @@ local function startFling()
 
 		-- Pulse spin on/off for repeated impulse spikes
 		C.flingConnection2 = _spawn(function()
-			while flingEnabled do
+			while S.flingEnabled do
 				if C.spinBAV and C.spinBAV.Parent then
-					C.spinBAV.AngularVelocity = Vector3.new(flingPower, flingPower, flingPower)
+					C.spinBAV.AngularVelocity = Vector3.new(S.flingPower, S.flingPower, S.flingPower)
 				end
 				_wait(0.15)
 				if C.spinBAV and C.spinBAV.Parent then
@@ -1674,7 +1624,7 @@ end
 
 -- ===================== EMOTE LOGIC =====================
 local function stopEmote()
-	emoteActive = false
+	S.emoteActive = false
 	if C.emoteConnection then C.emoteConnection:Disconnect() C.emoteConnection = nil end
 	for _, track in ipairs(C.emoteTracks) do
 		pcall(function() track:Stop() end)
@@ -1695,11 +1645,11 @@ local function playEmote(animId, speed, duration)
 		track:Play()
 		if speed then track:AdjustSpeed(speed) end
 		table.insert(C.emoteTracks, track)
-		emoteActive = true
+		S.emoteActive = true
 		if duration then
 			_spawn(function()
 				_wait(duration)
-				if emoteActive then stopEmote() end
+				if S.emoteActive then stopEmote() end
 			end)
 		end
 	end)
@@ -1712,7 +1662,7 @@ local function playJerkEmote()
 		if not character then return end
 		local hum = character:FindFirstChildOfClass("Humanoid")
 		if not hum then return end
-		emoteActive = true
+		S.emoteActive = true
 
 		local isR6 = character:FindFirstChild("Torso") ~= nil
 
@@ -1733,7 +1683,7 @@ local function playJerkEmote()
 
 			-- Loop by replaying when tracks finish
 			C.emoteConnection = RunService.Heartbeat:Connect(function()
-				if not emoteActive then return end
+				if not S.emoteActive then return end
 				pcall(function()
 					if track1.IsPlaying == false then
 						track1:Play()
@@ -1755,7 +1705,7 @@ local function playJerkEmote()
 			table.insert(C.emoteTracks, track)
 
 			C.emoteConnection = RunService.Heartbeat:Connect(function()
-				if not emoteActive then return end
+				if not S.emoteActive then return end
 				pcall(function()
 					if track.TimePosition > 0.72 then
 						track.TimePosition = 0.579
@@ -1782,7 +1732,7 @@ local function startKillAura()
 						local theirChar = player.Character
 						if theirChar then
 							local theirHRP = theirChar:FindFirstChild("HumanoidRootPart")
-							if theirHRP and (myHRP.Position - theirHRP.Position).Magnitude <= killAuraRange then
+							if theirHRP and (myHRP.Position - theirHRP.Position).Magnitude <= S.killAuraRange then
 								local direction = (theirHRP.Position - myHRP.Position)
 								direction = direction.Magnitude > 0.1 and direction.Unit or Vector3.new(0, 1, 0)
 								for _, part in ipairs(theirChar:GetDescendants()) do
@@ -1797,7 +1747,7 @@ local function startKillAura()
 			end
 		end)
 	end)
-	addLog("[KILL AURA] ON - Range: " .. killAuraRange, COLORS.success)
+	addLog("[KILL AURA] ON - Range: " .. S.killAuraRange, COLORS.success)
 end
 
 local function stopKillAura()
@@ -1809,7 +1759,7 @@ end
 local function startAutoFire()
 	C.autoFireConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
-			if not autoFireEnabled then return end
+			if not S.autoFireEnabled then return end
 			local character = LocalPlayer.Character
 			if not character then return end
 			local tool = character:FindFirstChildOfClass("Tool")
@@ -1877,7 +1827,7 @@ local function enableChams()
 		updateChams()
 		local conn = player.CharacterAdded:Connect(function()
 			_wait(1)
-			if chamsEnabled then updateChams() end
+			if S.chamsEnabled then updateChams() end
 		end)
 		table.insert(C.chamsCharConnections, conn)
 	end
@@ -1885,7 +1835,7 @@ local function enableChams()
 	for _, player in ipairs(Players:GetPlayers()) do addPlayerChams(player) end
 	C.chamsPlayerAddedConnection = Players.PlayerAdded:Connect(function(player)
 		_wait(2)
-		if chamsEnabled then addPlayerChams(player) end
+		if S.chamsEnabled then addPlayerChams(player) end
 	end)
 	addLog("[CHAMS] ON", COLORS.success)
 end
@@ -2031,7 +1981,7 @@ end
 local function startBunnyHop()
 	C.bunnyHopConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
-			if not bunnyHopEnabled then return end
+			if not S.bunnyHopEnabled then return end
 			local character = LocalPlayer.Character
 			if not character then return end
 			local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -2080,7 +2030,7 @@ local function spectatePlayer(targetPlayer)
 			local humanoid = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
 			if humanoid then
 				workspace.CurrentCamera.CameraSubject = humanoid
-				spectating = true
+				S.spectating = true
 				addLog("[SPECTATE] Watching " .. targetPlayer.DisplayName, COLORS.success)
 			end
 		end
@@ -2094,7 +2044,7 @@ local function unspectate()
 			local humanoid = myChar:FindFirstChildOfClass("Humanoid")
 			if humanoid then workspace.CurrentCamera.CameraSubject = humanoid end
 		end
-		spectating = false
+		S.spectating = false
 		addLog("[SPECTATE] Stopped", COLORS.error)
 	end)
 end
@@ -2127,7 +2077,7 @@ local function startWalkFling()
 				if not hum then return end
 				local moveDir = hum.MoveDirection
 				if moveDir.Magnitude > 0.1 then
-					rt.AssemblyLinearVelocity = moveDir.Unit * walkFlingPower + Vector3.new(0, 0, 0)
+					rt.AssemblyLinearVelocity = moveDir.Unit * S.walkFlingPower + Vector3.new(0, 0, 0)
 				end
 			end)
 		end)
@@ -2337,29 +2287,29 @@ do
 	createSectionLabel(tab, "Aimbot", 1)
 
 	createToggle(tab, "Aimbot (Hold RMB)", 2, function(on)
-		aimbotEnabled = on
+		S.aimbotEnabled = on
 		if on then startAimbot() else stopAimbot() end
 	end)
-	createSlider(tab, "Aimbot FOV", 50, 500, aimbotFOV, 3, function(val)
-		aimbotFOV = val
+	createSlider(tab, "Aimbot FOV", 50, 500, S.aimbotFOV, 3, function(val)
+		S.aimbotFOV = val
 		updateFOVCircleSize()
 	end)
-	createSlider(tab, "Smoothing", 1, 20, aimbotSmoothing, 4, function(val)
-		aimbotSmoothing = val
+	createSlider(tab, "Smoothing", 1, 20, S.aimbotSmoothing, 4, function(val)
+		S.aimbotSmoothing = val
 	end)
 	createToggle(tab, "Team Check", 5, function(on)
-		teamCheck = on
+		S.teamCheck = on
 		if on then
 			addLog("[TEAM CHECK] ON - Won't target teammates", COLORS.success)
 		else
 			addLog("[TEAM CHECK] OFF - Targeting everyone", COLORS.error)
 		end
 	end).setVisualState(true) -- Default on
-	createSlider(tab, "Max Distance", 50, 1000, aimbotMaxDist, 6, function(val)
-		aimbotMaxDist = val
+	createSlider(tab, "Max Distance", 50, 1000, S.aimbotMaxDist, 6, function(val)
+		S.aimbotMaxDist = val
 	end)
 	createToggle(tab, "Wall Check", 7, function(on)
-		aimbotWallCheck = on
+		S.aimbotWallCheck = on
 		if on then
 			addLog("[WALL CHECK] ON - Only visible targets", COLORS.success)
 		else
@@ -2376,15 +2326,15 @@ do
 	createSectionLabel(tab, "Automation", 9)
 
 	createToggle(tab, "Silent Aim", 10, function(on)
-		silentAimEnabled = on
+		S.silentAimEnabled = on
 		if on then startSilentAim() else stopSilentAim() end
 	end)
 	createToggle(tab, "TriggerBot", 11, function(on)
-		triggerBotEnabled = on
+		S.triggerBotEnabled = on
 		if on then startTriggerBot() else stopTriggerBot() end
 	end)
 	createToggle(tab, "Auto Fire", 12, function(on)
-		autoFireEnabled = on
+		S.autoFireEnabled = on
 		if on then startAutoFire() else stopAutoFire() end
 	end)
 
@@ -2396,22 +2346,22 @@ do
 
 	createSectionLabel(tab, "Aim Part", 14)
 
-	local aimPartLabel = createInfoLabel(tab, "Current: " .. aimbotAimPart, 15)
+	local aimPartLabel = createInfoLabel(tab, "Current: " .. S.aimbotAimPart, 15)
 
 	createActionButton(tab, "Aim: Head", 16, function()
-		aimbotAimPart = "Head"
+		S.aimbotAimPart = "Head"
 		aimPartLabel.Text = "Current: Head"
 		addLog("[AIM PART] Head", COLORS.success)
 	end)
 	createActionButton(tab, "Aim: Torso", 17, function()
-		aimbotAimPart = "HumanoidRootPart"
+		S.aimbotAimPart = "HumanoidRootPart"
 		aimPartLabel.Text = "Current: HumanoidRootPart"
 		addLog("[AIM PART] Torso", COLORS.success)
 	end)
 	createActionButton(tab, "Aim: Random", 18, function()
-		aimbotAimPart = (math.random(1, 2) == 1) and "Head" or "HumanoidRootPart"
-		aimPartLabel.Text = "Current: " .. aimbotAimPart
-		addLog("[AIM PART] Random -> " .. aimbotAimPart, COLORS.success)
+		S.aimbotAimPart = (math.random(1, 2) == 1) and "Head" or "HumanoidRootPart"
+		aimPartLabel.Text = "Current: " .. S.aimbotAimPart
+		addLog("[AIM PART] Random -> " .. S.aimbotAimPart, COLORS.success)
 	end)
 
 	local spacer3 = Instance.new("Frame")
@@ -2423,10 +2373,10 @@ do
 	createSectionLabel(tab, "Kill Zone", 20)
 
 	createToggle(tab, "Kill Aura", 21, function(on)
-		killAuraEnabled = on
+		S.killAuraEnabled = on
 		if on then startKillAura() else stopKillAura() end
 	end)
-	createSlider(tab, "Kill Aura Range", 5, 30, killAuraRange, 22, function(val) killAuraRange = val end)
+	createSlider(tab, "Kill Aura Range", 5, 30, S.killAuraRange, 22, function(val) S.killAuraRange = val end)
 
 	local spacer4 = Instance.new("Frame")
 	spacer4.Size = UDim2.new(1, 0, 0, 4)
@@ -2437,7 +2387,7 @@ do
 	createSectionLabel(tab, "Visual", 24)
 
 	createToggle(tab, "FOV Circle", 25, function(on)
-		fovCircleEnabled = on
+		S.fovCircleEnabled = on
 		if on then createFOVCircle() else destroyFOVCircle() end
 	end)
 end
@@ -2451,26 +2401,26 @@ do
 	createSectionLabel(tab, "Player ESP", 1)
 
 	createToggle(tab, "ESP", 2, function(on)
-		espEnabled = on
+		S.espEnabled = on
 		if on then enableESP() else disableESP() end
 	end)
 	createToggle(tab, "Show Names", 3, function(on)
-		espNameEnabled = on
-		if espEnabled then
+		S.espNameEnabled = on
+		if S.espEnabled then
 			disableESP()
 			enableESP()
 		end
 	end).setVisualState(true) -- Default on
 	createToggle(tab, "Show Health Bars", 4, function(on)
-		espHealthBar = on
-		if espEnabled then
+		S.espHealthBar = on
+		if S.espEnabled then
 			disableESP()
 			enableESP()
 		end
 	end).setVisualState(true) -- Default on
 	createToggle(tab, "Show Distance", 5, function(on)
-		espDistEnabled = on
-		if espEnabled then
+		S.espDistEnabled = on
+		if S.espEnabled then
 			disableESP()
 			enableESP()
 		end
@@ -2485,11 +2435,11 @@ do
 	createSectionLabel(tab, "World", 7)
 
 	createToggle(tab, "Fullbright", 8, function(on)
-		fullbrightEnabled = on
+		S.fullbrightEnabled = on
 		if on then startFullbright() else stopFullbright() end
 	end)
 	createToggle(tab, "No Fog", 9, function(on)
-		noFogEnabled = on
+		S.noFogEnabled = on
 		if on then startNoFog() else stopNoFog() end
 	end)
 
@@ -2502,7 +2452,7 @@ do
 	createSectionLabel(tab, "Chams", 11)
 
 	createToggle(tab, "Chams (Through Walls)", 12, function(on)
-		chamsEnabled = on
+		S.chamsEnabled = on
 		if on then enableChams() else disableChams() end
 	end)
 end
@@ -2516,15 +2466,15 @@ do
 	createSectionLabel(tab, "Weapon Mods", 1)
 
 	createToggle(tab, "No Recoil", 2, function(on)
-		noRecoilEnabled = on
+		S.noRecoilEnabled = on
 		if on then startNoRecoil() else stopNoRecoil() end
 	end)
 	createToggle(tab, "No Spread", 3, function(on)
-		noSpreadEnabled = on
+		S.noSpreadEnabled = on
 		if on then startNoSpread() else stopNoSpread() end
 	end)
 	createToggle(tab, "Rapid Fire", 4, function(on)
-		rapidFireEnabled = on
+		S.rapidFireEnabled = on
 		if on then startRapidFire() else stopRapidFire() end
 	end)
 
@@ -2537,11 +2487,11 @@ do
 	createSectionLabel(tab, "Hitbox", 6)
 
 	createToggle(tab, "Hitbox Expander", 7, function(on)
-		hitboxExpandEnabled = on
+		S.hitboxExpandEnabled = on
 		if on then startHitboxExpand() else stopHitboxExpand() end
 	end)
-	createSlider(tab, "Hitbox Size", 2, 30, hitboxSize, 8, function(val)
-		hitboxSize = val
+	createSlider(tab, "Hitbox Size", 2, 30, S.hitboxSize, 8, function(val)
+		S.hitboxSize = val
 	end)
 end
 
@@ -2554,17 +2504,17 @@ do
 	createSectionLabel(tab, "Movement", 1)
 
 	createToggle(tab, "Fly", 2, function(on)
-		flyEnabled = on
+		S.flyEnabled = on
 		if on then startFly() else stopFly() end
 	end)
-	createSlider(tab, "Fly Speed", 10, 500, flySpeed, 3, function(val) flySpeed = val end)
+	createSlider(tab, "Fly Speed", 10, 500, S.flySpeed, 3, function(val) S.flySpeed = val end)
 	createToggle(tab, "Speed Boost", 4, function(on)
-		speedEnabled = on
+		S.speedEnabled = on
 		if on then startSpeed() else stopSpeed() end
 	end)
-	createSlider(tab, "Walk Speed", 16, 500, speedValue, 5, function(val)
-		speedValue = val
-		if speedEnabled then
+	createSlider(tab, "Walk Speed", 16, 500, S.speedValue, 5, function(val)
+		S.speedValue = val
+		if S.speedEnabled then
 			pcall(function()
 				local character = LocalPlayer.Character
 				if character then
@@ -2575,19 +2525,19 @@ do
 		end
 	end)
 	createToggle(tab, "Noclip", 6, function(on)
-		noclipEnabled = on
+		S.noclipEnabled = on
 		if on then startNoclip() else stopNoclip() end
 	end)
 	createToggle(tab, "Infinite Jump", 7, function(on)
-		infJumpEnabled = on
+		S.infJumpEnabled = on
 		if on then startInfJump() else stopInfJump() end
 	end)
-	createSlider(tab, "Jump Power", 10, 500, jumpPowerValue, 8, function(val)
-		jumpPowerValue = val
+	createSlider(tab, "Jump Power", 10, 500, S.jumpPowerValue, 8, function(val)
+		S.jumpPowerValue = val
 		setJumpPower(val)
 	end)
 	createToggle(tab, "Bunny Hop", 9, function(on)
-		bunnyHopEnabled = on
+		S.bunnyHopEnabled = on
 		if on then startBunnyHop() else stopBunnyHop() end
 	end)
 
@@ -2600,15 +2550,15 @@ do
 	createSectionLabel(tab, "Survival", 11)
 
 	createToggle(tab, "God Mode", 12, function(on)
-		godEnabled = on
+		S.godEnabled = on
 		if on then startGod() else stopGod() end
 	end)
 	createToggle(tab, "Invisible", 13, function(on)
-		invisibleEnabled = on
+		S.invisibleEnabled = on
 		if on then startInvisible() else stopInvisible() end
 	end)
 	createToggle(tab, "Anti-AFK", 14, function(on)
-		antiAfkEnabled = on
+		S.antiAfkEnabled = on
 		if on then startAntiAfk() else stopAntiAfk() end
 	end)
 
@@ -2621,7 +2571,7 @@ do
 	createSectionLabel(tab, "Physics", 16)
 
 	createSlider(tab, "Gravity", 0, 1000, 196, 17, function(val)
-		gravityValue = val
+		S.gravityValue = val
 		setGravity(val)
 	end)
 
@@ -2633,8 +2583,8 @@ do
 
 	createSectionLabel(tab, "Camera", 19)
 
-	createSlider(tab, "Camera FOV", 50, 120, cameraFOV, 20, function(val)
-		cameraFOV = val
+	createSlider(tab, "Camera FOV", 50, 120, S.cameraFOV, 20, function(val)
+		S.cameraFOV = val
 		setGameFOV(val)
 	end)
 
@@ -2649,11 +2599,11 @@ do
 	local selectedPlayerLabel = createInfoLabel(tab, "Selected: None", 23)
 
 	createActionButton(tab, "Teleport to Player", 24, function()
-		if selectedPlayer then teleportToPlayer(selectedPlayer)
+		if S.selectedPlayer then teleportToPlayer(S.selectedPlayer)
 		else addLog("[TP] No player selected!", COLORS.error) end
 	end)
 	createActionButton(tab, "Spectate Player", 25, function()
-		if selectedPlayer then spectatePlayer(selectedPlayer)
+		if S.selectedPlayer then spectatePlayer(S.selectedPlayer)
 		else addLog("[SPECTATE] No player selected!", COLORS.error) end
 	end)
 	createActionButton(tab, "Unspectate", 26, function()
@@ -2702,10 +2652,10 @@ do
 				addCorner(btn, 4)
 				btn.MouseEnter:Connect(function() btn.BackgroundColor3 = COLORS.bgSecondary end)
 				btn.MouseLeave:Connect(function()
-					btn.BackgroundColor3 = (selectedPlayer == player) and COLORS.accentDark or COLORS.tabBg
+					btn.BackgroundColor3 = (S.selectedPlayer == player) and COLORS.accentDark or COLORS.tabBg
 				end)
 				btn.MouseButton1Click:Connect(function()
-					selectedPlayer = player
+					S.selectedPlayer = player
 					selectedPlayerLabel.Text = "Selected: " .. player.DisplayName
 					addLog("[SELECT] " .. player.DisplayName, COLORS.accent)
 					-- Update button colors
@@ -2721,8 +2671,8 @@ do
 	refreshPlayerList()
 	Players.PlayerAdded:Connect(function() _wait(1) refreshPlayerList() end)
 	Players.PlayerRemoving:Connect(function(player)
-		if selectedPlayer == player then
-			selectedPlayer = nil
+		if S.selectedPlayer == player then
+			S.selectedPlayer = nil
 			selectedPlayerLabel.Text = "Selected: None"
 		end
 		_wait(0.5)
@@ -2739,23 +2689,23 @@ do
 	createSectionLabel(tab, "Fling", 1)
 
 	local spinFlingToggle = createToggle(tab, "Spin Fling", 2, function(on)
-		if on and walkFlingEnabled then
-			walkFlingEnabled = false
+		if on and S.walkFlingEnabled then
+			S.walkFlingEnabled = false
 			stopWalkFling()
 		end
-		flingEnabled = on
+		S.flingEnabled = on
 		if on then startFling() else stopFling() end
 	end)
-	createSlider(tab, "Fling Power", 1000, 99999, flingPower, 3, function(val) flingPower = val end)
+	createSlider(tab, "Fling Power", 1000, 99999, S.flingPower, 3, function(val) S.flingPower = val end)
 	local walkFlingToggle = createToggle(tab, "Walk Fling", 4, function(on)
-		if on and flingEnabled then
-			flingEnabled = false
+		if on and S.flingEnabled then
+			S.flingEnabled = false
 			stopFling()
 		end
-		walkFlingEnabled = on
+		S.walkFlingEnabled = on
 		if on then startWalkFling() else stopWalkFling() end
 	end)
-	createSlider(tab, "Walk Fling Power", 1000, 50000, walkFlingPower, 5, function(val) walkFlingPower = val end)
+	createSlider(tab, "Walk Fling Power", 1000, 50000, S.walkFlingPower, 5, function(val) S.walkFlingPower = val end)
 
 	local spacer = Instance.new("Frame")
 	spacer.Size = UDim2.new(1, 0, 0, 4)
@@ -2766,11 +2716,11 @@ do
 	createSectionLabel(tab, "Visual", 7)
 
 	createToggle(tab, "Spin", 8, function(on)
-		spinEnabled = on
+		S.spinEnabled = on
 		if on then startSpin() else stopSpin() end
 	end)
 	createToggle(tab, "Seizure", 9, function(on)
-		seizureEnabled = on
+		S.seizureEnabled = on
 		if on then startSeizure() else stopSeizure() end
 	end)
 
@@ -2783,11 +2733,11 @@ do
 	createSectionLabel(tab, "Character", 11)
 
 	createActionButton(tab, "Headless", 12, function()
-		if headlessEnabled then
-			headlessEnabled = false
+		if S.headlessEnabled then
+			S.headlessEnabled = false
 			stopHeadless()
 		else
-			headlessEnabled = true
+			S.headlessEnabled = true
 			startHeadless()
 		end
 	end)
@@ -2823,43 +2773,43 @@ end
 local commands = {}
 
 -- Combat
-commands["aimbot"] = function() aimbotEnabled = true startAimbot() end
-commands["unaimbot"] = function() aimbotEnabled = false stopAimbot() end
-commands["silentaim"] = function() silentAimEnabled = true startSilentAim() end
-commands["unsilentaim"] = function() silentAimEnabled = false stopSilentAim() end
-commands["triggerbot"] = function() triggerBotEnabled = true startTriggerBot() end
-commands["untriggerbot"] = function() triggerBotEnabled = false stopTriggerBot() end
+commands["aimbot"] = function() S.aimbotEnabled = true startAimbot() end
+commands["unaimbot"] = function() S.aimbotEnabled = false stopAimbot() end
+commands["silentaim"] = function() S.silentAimEnabled = true startSilentAim() end
+commands["unsilentaim"] = function() S.silentAimEnabled = false stopSilentAim() end
+commands["triggerbot"] = function() S.triggerBotEnabled = true startTriggerBot() end
+commands["untriggerbot"] = function() S.triggerBotEnabled = false stopTriggerBot() end
 
 -- ESP
-commands["esp"] = function() espEnabled = true enableESP() end
-commands["unesp"] = function() espEnabled = false disableESP() end
+commands["esp"] = function() S.espEnabled = true enableESP() end
+commands["unesp"] = function() S.espEnabled = false disableESP() end
 
 -- Gun Mods
-commands["norecoil"] = function() noRecoilEnabled = true startNoRecoil() end
-commands["unnorecoil"] = function() noRecoilEnabled = false stopNoRecoil() end
-commands["nospread"] = function() noSpreadEnabled = true startNoSpread() end
-commands["unnospread"] = function() noSpreadEnabled = false stopNoSpread() end
-commands["rapidfire"] = function() rapidFireEnabled = true startRapidFire() end
-commands["unrapidfire"] = function() rapidFireEnabled = false stopRapidFire() end
+commands["norecoil"] = function() S.noRecoilEnabled = true startNoRecoil() end
+commands["unnorecoil"] = function() S.noRecoilEnabled = false stopNoRecoil() end
+commands["nospread"] = function() S.noSpreadEnabled = true startNoSpread() end
+commands["unnospread"] = function() S.noSpreadEnabled = false stopNoSpread() end
+commands["rapidfire"] = function() S.rapidFireEnabled = true startRapidFire() end
+commands["unrapidfire"] = function() S.rapidFireEnabled = false stopRapidFire() end
 
 -- Hitbox
 commands["hitbox"] = function(args)
 	local v = tonumber(args[1])
-	if v then hitboxSize = v end
-	hitboxExpandEnabled = true
+	if v then S.hitboxSize = v end
+	S.hitboxExpandEnabled = true
 	startHitboxExpand()
 end
-commands["unhitbox"] = function() hitboxExpandEnabled = false stopHitboxExpand() end
+commands["unhitbox"] = function() S.hitboxExpandEnabled = false stopHitboxExpand() end
 
 -- World
-commands["fullbright"] = function() fullbrightEnabled = true startFullbright() end
-commands["unfullbright"] = function() fullbrightEnabled = false stopFullbright() end
+commands["fullbright"] = function() S.fullbrightEnabled = true startFullbright() end
+commands["unfullbright"] = function() S.fullbrightEnabled = false stopFullbright() end
 
 -- FOV
 commands["fov"] = function(args)
 	local v = tonumber(args[1])
 	if v then
-		cameraFOV = v
+		S.cameraFOV = v
 		setGameFOV(v)
 		addLog("[FOV] Set to " .. v, COLORS.success)
 	else
@@ -2868,58 +2818,58 @@ commands["fov"] = function(args)
 end
 
 -- Movement
-commands["fly"] = function() flyEnabled = true startFly() end
-commands["unfly"] = function() flyEnabled = false stopFly() end
-commands["noclip"] = function() noclipEnabled = true startNoclip() end
-commands["unnoclip"] = function() noclipEnabled = false stopNoclip() end
+commands["fly"] = function() S.flyEnabled = true startFly() end
+commands["unfly"] = function() S.flyEnabled = false stopFly() end
+commands["noclip"] = function() S.noclipEnabled = true startNoclip() end
+commands["unnoclip"] = function() S.noclipEnabled = false stopNoclip() end
 commands["speed"] = function(args)
 	local v = tonumber(args[1])
-	if v then speedValue = v end
-	speedEnabled = true
+	if v then S.speedValue = v end
+	S.speedEnabled = true
 	startSpeed()
 end
-commands["unspeed"] = function() speedEnabled = false stopSpeed() end
-commands["infjump"] = function() infJumpEnabled = true startInfJump() end
-commands["uninfjump"] = function() infJumpEnabled = false stopInfJump() end
+commands["unspeed"] = function() S.speedEnabled = false stopSpeed() end
+commands["infjump"] = function() S.infJumpEnabled = true startInfJump() end
+commands["uninfjump"] = function() S.infJumpEnabled = false stopInfJump() end
 
 -- Fun
-commands["fling"] = function() flingEnabled = true startFling() end
-commands["unfling"] = function() flingEnabled = false stopFling() end
-commands["spin"] = function() spinEnabled = true startSpin() end
-commands["unspin"] = function() spinEnabled = false stopSpin() end
+commands["fling"] = function() S.flingEnabled = true startFling() end
+commands["unfling"] = function() S.flingEnabled = false stopFling() end
+commands["spin"] = function() S.spinEnabled = true startSpin() end
+commands["unspin"] = function() S.spinEnabled = false stopSpin() end
 
 -- Combat (new)
-commands["autofire"] = function() autoFireEnabled = true startAutoFire() end
-commands["unautofire"] = function() autoFireEnabled = false stopAutoFire() end
-commands["killaura"] = function() killAuraEnabled = true startKillAura() end
-commands["unkillaura"] = function() killAuraEnabled = false stopKillAura() end
+commands["autofire"] = function() S.autoFireEnabled = true startAutoFire() end
+commands["unautofire"] = function() S.autoFireEnabled = false stopAutoFire() end
+commands["killaura"] = function() S.killAuraEnabled = true startKillAura() end
+commands["unkillaura"] = function() S.killAuraEnabled = false stopKillAura() end
 commands["aimpart"] = function(args)
 	local part = args[1] and args[1]:lower()
-	if part == "head" then aimbotAimPart = "Head"
-	elseif part == "torso" or part == "body" then aimbotAimPart = "HumanoidRootPart"
-	elseif part == "random" then aimbotAimPart = (math.random(1, 2) == 1) and "Head" or "HumanoidRootPart"
+	if part == "head" then S.aimbotAimPart = "Head"
+	elseif part == "torso" or part == "body" then S.aimbotAimPart = "HumanoidRootPart"
+	elseif part == "random" then S.aimbotAimPart = (math.random(1, 2) == 1) and "Head" or "HumanoidRootPart"
 	else addLog("[CMD] Usage: ;aimpart head/torso/random", COLORS.error) return end
-	addLog("[AIM PART] Set to " .. aimbotAimPart, COLORS.success)
+	addLog("[AIM PART] Set to " .. S.aimbotAimPart, COLORS.success)
 end
 
 -- ESP (new)
-commands["nofog"] = function() noFogEnabled = true startNoFog() end
-commands["unnofog"] = function() noFogEnabled = false stopNoFog() end
-commands["chams"] = function() chamsEnabled = true enableChams() end
-commands["unchams"] = function() chamsEnabled = false disableChams() end
+commands["nofog"] = function() S.noFogEnabled = true startNoFog() end
+commands["unnofog"] = function() S.noFogEnabled = false stopNoFog() end
+commands["chams"] = function() S.chamsEnabled = true enableChams() end
+commands["unchams"] = function() S.chamsEnabled = false disableChams() end
 
 -- Player (new)
-commands["god"] = function() godEnabled = true startGod() end
-commands["ungod"] = function() godEnabled = false stopGod() end
-commands["invisible"] = function() invisibleEnabled = true startInvisible() end
-commands["uninvisible"] = function() invisibleEnabled = false stopInvisible() end
-commands["antiafk"] = function() antiAfkEnabled = true startAntiAfk() end
-commands["unantiafk"] = function() antiAfkEnabled = false stopAntiAfk() end
-commands["bhop"] = function() bunnyHopEnabled = true startBunnyHop() end
-commands["unbhop"] = function() bunnyHopEnabled = false stopBunnyHop() end
+commands["god"] = function() S.godEnabled = true startGod() end
+commands["ungod"] = function() S.godEnabled = false stopGod() end
+commands["invisible"] = function() S.invisibleEnabled = true startInvisible() end
+commands["uninvisible"] = function() S.invisibleEnabled = false stopInvisible() end
+commands["antiafk"] = function() S.antiAfkEnabled = true startAntiAfk() end
+commands["unantiafk"] = function() S.antiAfkEnabled = false stopAntiAfk() end
+commands["bhop"] = function() S.bunnyHopEnabled = true startBunnyHop() end
+commands["unbhop"] = function() S.bunnyHopEnabled = false stopBunnyHop() end
 commands["gravity"] = function(args)
 	local v = tonumber(args[1])
-	if v then gravityValue = v setGravity(v) addLog("[GRAVITY] Set to " .. v, COLORS.success)
+	if v then S.gravityValue = v setGravity(v) addLog("[GRAVITY] Set to " .. v, COLORS.success)
 	else addLog("[CMD] Usage: ;gravity [value]", COLORS.error) end
 end
 commands["tp"] = function(args)
@@ -2936,14 +2886,14 @@ commands["unspectate"] = function() unspectate() end
 
 -- Fun (new)
 commands["walkfling"] = function()
-	if flingEnabled then flingEnabled = false stopFling() end
-	walkFlingEnabled = true startWalkFling()
+	if S.flingEnabled then S.flingEnabled = false stopFling() end
+	S.walkFlingEnabled = true startWalkFling()
 end
-commands["unwalkfling"] = function() walkFlingEnabled = false stopWalkFling() end
-commands["seizure"] = function() seizureEnabled = true startSeizure() end
-commands["unseizure"] = function() seizureEnabled = false stopSeizure() end
-commands["headless"] = function() headlessEnabled = true startHeadless() end
-commands["unheadless"] = function() headlessEnabled = false stopHeadless() end
+commands["unwalkfling"] = function() S.walkFlingEnabled = false stopWalkFling() end
+commands["seizure"] = function() S.seizureEnabled = true startSeizure() end
+commands["unseizure"] = function() S.seizureEnabled = false stopSeizure() end
+commands["headless"] = function() S.headlessEnabled = true startHeadless() end
+commands["unheadless"] = function() S.headlessEnabled = false stopHeadless() end
 
 -- Emotes
 commands["emote1"] = function() playJerkEmote() end
@@ -3045,7 +2995,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 	_wait(0.5)
 
 	-- Re-enable fly
-	if flyEnabled then
+	if S.flyEnabled then
 		stopFly()
 		_wait(0.3)
 		if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
@@ -3054,7 +3004,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 	end
 
 	-- Re-enable fling
-	if flingEnabled then
+	if S.flingEnabled then
 		stopFling()
 		_wait(0.3)
 		startFling()
@@ -3063,157 +3013,157 @@ LocalPlayer.CharacterAdded:Connect(function()
 	C.savedPhysProps = {}
 
 	-- Re-enable speed
-	if speedEnabled then
+	if S.speedEnabled then
 		_wait(0.3)
 		startSpeed()
 	end
 
 	-- Re-enable noclip
-	if noclipEnabled then
+	if S.noclipEnabled then
 		_wait(0.1)
 		startNoclip()
 	end
 
 	-- Re-enable infinite jump
-	if infJumpEnabled then
+	if S.infJumpEnabled then
 		_wait(0.1)
 		stopInfJump()
 		startInfJump()
 	end
 
 	-- Re-apply jump power
-	if jumpPowerValue ~= 50 then
+	if S.jumpPowerValue ~= 50 then
 		_wait(0.3)
-		setJumpPower(jumpPowerValue)
+		setJumpPower(S.jumpPowerValue)
 	end
 
 	-- Re-enable aimbot
-	if aimbotEnabled then
+	if S.aimbotEnabled then
 		stopAimbot()
 		_wait(0.2)
 		startAimbot()
 	end
 
 	-- Re-enable ESP
-	if espEnabled then
+	if S.espEnabled then
 		disableESP()
 		_wait(0.5)
 		enableESP()
 	end
 
 	-- Re-enable gun mods
-	if noRecoilEnabled then
+	if S.noRecoilEnabled then
 		stopNoRecoil()
 		_wait(0.1)
 		startNoRecoil()
 	end
-	if noSpreadEnabled then
+	if S.noSpreadEnabled then
 		stopNoSpread()
 		_wait(0.1)
 		startNoSpread()
 	end
-	if rapidFireEnabled then
+	if S.rapidFireEnabled then
 		stopRapidFire()
 		_wait(0.1)
 		startRapidFire()
 	end
 
 	-- Re-enable hitbox expander
-	if hitboxExpandEnabled then
+	if S.hitboxExpandEnabled then
 		stopHitboxExpand()
 		_wait(0.2)
 		startHitboxExpand()
 	end
 
 	-- Re-apply camera FOV
-	if cameraFOV ~= 90 then
+	if S.cameraFOV ~= 90 then
 		_wait(0.3)
-		setGameFOV(cameraFOV)
+		setGameFOV(S.cameraFOV)
 	end
 
 	-- Re-enable fullbright
-	if fullbrightEnabled then
+	if S.fullbrightEnabled then
 		_wait(0.2)
 		startFullbright()
 	end
 
 	-- Re-enable no fog
-	if noFogEnabled then
+	if S.noFogEnabled then
 		_wait(0.1)
 		startNoFog()
 	end
 
 	-- Re-enable god mode
-	if godEnabled then
+	if S.godEnabled then
 		if C.godConnection then C.godConnection:Disconnect() C.godConnection = nil end
 		_wait(0.1)
 		startGod()
 	end
 
 	-- Re-enable invisible
-	if invisibleEnabled then
+	if S.invisibleEnabled then
 		C.savedTransparencies = {}
 		_wait(0.3)
 		startInvisible()
 	end
 
 	-- Re-enable bunny hop
-	if bunnyHopEnabled then
+	if S.bunnyHopEnabled then
 		if C.bunnyHopConnection then C.bunnyHopConnection:Disconnect() C.bunnyHopConnection = nil end
 		_wait(0.1)
 		startBunnyHop()
 	end
 
 	-- Re-enable walk fling
-	if walkFlingEnabled then
+	if S.walkFlingEnabled then
 		stopWalkFling()
 		_wait(0.5)
 		startWalkFling()
 	end
 
 	-- Re-enable kill aura
-	if killAuraEnabled then
+	if S.killAuraEnabled then
 		if C.killAuraConnection then C.killAuraConnection:Disconnect() C.killAuraConnection = nil end
 		_wait(0.1)
 		startKillAura()
 	end
 
 	-- Re-enable auto fire
-	if autoFireEnabled then
+	if S.autoFireEnabled then
 		if C.autoFireConnection then C.autoFireConnection:Disconnect() C.autoFireConnection = nil end
 		_wait(0.1)
 		startAutoFire()
 	end
 
 	-- Re-enable chams
-	if chamsEnabled then
+	if S.chamsEnabled then
 		disableChams()
 		_wait(0.5)
 		enableChams()
 	end
 
 	-- Re-enable headless
-	if headlessEnabled then
+	if S.headlessEnabled then
 		C.headlessSavedParts = {}
 		_wait(0.3)
 		startHeadless()
 	end
 
 	-- Re-apply gravity
-	if gravityValue ~= 196.2 then
+	if S.gravityValue ~= 196.2 then
 		_wait(0.1)
-		setGravity(gravityValue)
+		setGravity(S.gravityValue)
 	end
 
 	-- Re-enable seizure
-	if seizureEnabled then
+	if S.seizureEnabled then
 		if C.seizureConnection then C.seizureConnection:Disconnect() C.seizureConnection = nil end
 		_wait(0.1)
 		startSeizure()
 	end
 
 	-- Unspectate on death
-	if spectating then
+	if S.spectating then
 		unspectate()
 	end
 end)
