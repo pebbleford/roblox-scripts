@@ -41,8 +41,23 @@ if isMobile then
 end
 
 -- ===================== SCREEN GUI =====================
+-- Resolve the most reliable GUI container for the current executor.
+-- Mobile executors often block CoreGui parenting, so prefer gethui() and
+-- fall back through CoreGui to PlayerGui.
+local function getGuiParent()
+	if typeof(gethui) == "function" then
+		local ok, hui = pcall(gethui)
+		if ok and hui then return hui end
+	end
+	local ok, cg = pcall(function() return game:GetService("CoreGui") end)
+	if ok and cg then return cg end
+	return LocalPlayer:WaitForChild("PlayerGui")
+end
+
+local guiParent = getGuiParent()
+
 pcall(function()
-	local old = game:GetService("CoreGui"):FindFirstChild("SXPrivateTP")
+	local old = guiParent:FindFirstChild("SXPrivateTP")
 	if old then old:Destroy() end
 end)
 pcall(function()
@@ -55,7 +70,11 @@ screenGui.Name = "SXPrivateTP"
 screenGui.ResetOnSpawn = false
 screenGui.DisplayOrder = 999
 screenGui.IgnoreGuiInset = true
-pcall(function() screenGui.Parent = game:GetService("CoreGui") end)
+if typeof(syn) == "table" and syn.protect_gui then pcall(syn.protect_gui, screenGui) end
+pcall(function() screenGui.Parent = guiParent end)
+if not screenGui.Parent then
+	pcall(function() screenGui.Parent = game:GetService("CoreGui") end)
+end
 if not screenGui.Parent then
 	screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 end
