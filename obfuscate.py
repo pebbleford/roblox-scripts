@@ -31,6 +31,7 @@ SCRIPTS = [
     "mm2.lua",
     "prisonlife.lua",
     "industrialist.lua",
+    "psteleport.lua",
 ]
 
 def random_var(length=8):
