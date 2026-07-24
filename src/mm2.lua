@@ -183,6 +183,149 @@ local uiState = {
 	origGlobalShadows = nil,
 }
 
+-- ===================== BUNDLE STATE TABLES (populated by later feature bundles) =====================
+local visualEspState = {
+	enabled = false,
+	-- per-feature enabled flags (Bundle 1 - ESP Suite)
+	boxEnabled = false,
+	cornerBoxEnabled = false,
+	tracersEnabled = false,
+	skeletonEnabled = false,
+	chamsEnabled = false,
+	offscreenArrowsEnabled = false,
+	snaplineMurdererEnabled = false,
+	-- tunables
+	tracerOrigin = "bottom", -- "bottom" | "top" | "mouse"
+	tracerThickness = 1,
+	-- runtime objects
+	driverConnection = nil,
+	drawings = {},   -- [player] = { box=Square, corners={Line*8}, tracer=Line, skel={Line*}, arrow=Triangle/Line }
+	highlights = {}, -- [player] = Highlight (ChamsESP)
+	snaplineDrawing = nil, -- single tracer Line to murderer
+}
+
+local coinDomState = {
+	enabled = false,
+	-- Coin Aura (teleport-to-each-in-radius collector)
+	auraEnabled = false,
+	auraRadius = 50,
+	auraThread = nil,
+	auraCollected = 0,
+	-- Coin tracers (Drawing lines from screen bottom-center to each coin)
+	tracersEnabled = false,
+	tracerConnection = nil,
+	tracerLines = {}, -- pooled Line drawings, reused frame to frame
+	-- Live coin counter
+	counterLabel = nil,
+	counterThread = nil,
+}
+
+local sheriffState = {
+	enabled = false,
+	-- Sheriff aimbot (client-side camera aim math; generic, no remote)
+	aimbotEnabled = false,
+	holdToAim = true,        -- only lock while the aim key is held; false = lock while toggle on
+	aimKey = "E",            -- hold key for aim lock
+	aimKeyDown = false,
+	targetHead = true,       -- aim Head (fallback HumanoidRootPart)
+	smoothing = 0.2,         -- camera CFrame:Lerp alpha (0..1)
+	fov = 120,               -- FOV circle radius in pixels (target gating)
+	prediction = 0.1,        -- linear lead factor (Humanoid.MoveDirection * WalkSpeed * this)
+	reach = 1,               -- murderer HRP hitbox size multiplier
+	aimConnection = nil,
+	-- FOV circle (Drawing)
+	fovCircleEnabled = false,
+	fovCircle = nil,
+	fovConnection = nil,
+	-- Gun reach / hitbox expander on the murderer
+	reachEnabled = false,
+	reachConnection = nil,
+	savedMurdererPart = nil,
+	savedMurdererSize = nil,
+	-- RECON-GATED (require MM2's real shoot remote): logic built, fire stubbed
+	silentAimEnabled = false,
+	silentConnection = nil,
+	autoShootEnabled = false,
+	autoShootConnection = nil,
+	lastFire = 0,
+	lastSilentLog = 0,
+}
+
+local qolState = {
+	enabled = false,
+	-- FPS counter / watermark
+	watermarkEnabled = true,
+	watermarkLabel = nil,
+	watermarkConn = nil,
+	fps = 60,
+	fpsThrottle = 0,
+	-- FPS booster / low graphics
+	fpsBoostEnabled = false,
+	origQualityLevel = nil,
+	origGlobalShadows = nil,
+	origWaterWaveSize = nil,
+	-- Freecam
+	freecamEnabled = false,
+	freecamConn = nil,
+	freecamPos = nil,
+	freecamYaw = 0,
+	freecamPitch = 0,
+	freecamSpeed = 60,
+	-- Click TP
+	clickTpEnabled = false,
+	clickTpConn = nil,
+	mouse = nil,
+	-- Save / Load position
+	savedPos = nil,
+	-- Auto-rejoin on death
+	autoRejoinEnabled = false,
+	autoRejoinConn = nil,
+	-- Chat spy / logger
+	chatSpyEnabled = false,
+	chatSpyConns = {},
+	-- Keybinds UI
+	capturingBind = nil,
+	bindButtons = {},
+	bindInfoLabel = nil,
+	-- Feature search
+	searchQuery = "",
+	-- respawn hook (assigned by Bundle 4 do-block)
+	onRespawn = nil,
+}
+
+local configState = {
+	enabled = false,
+	values = {},
+	registry = {},
+}
+
+-- Bundle 5 - EXTRAS grab-bag (ghost/dodge/trap-avoid/hip-height/join-logger/UI keybind)
+local extrasState = {
+	enabled = false,
+	-- Ghost mode (local-visual: noclip + transparency)
+	ghostEnabled = false,
+	ghostConnection = nil,
+	ghostTransparency = 0.6,
+	-- Auto-dodge murderer knife (pure movement nudge, no remote)
+	dodgeEnabled = false,
+	dodgeConnection = nil,
+	dodgeDistance = 12,
+	dodgeCooldown = 0.6,
+	lastDodge = 0,
+	-- Trap auto-avoid (reuses name-based trap detection from Trapdoor ESP)
+	trapAvoidEnabled = false,
+	trapAvoidConnection = nil,
+	trapAvoidRadius = 10,
+	lastTrapNudge = 0,
+	-- Hip height (re-applied on respawn; 2 = leave default)
+	hipHeightValue = 2,
+	-- Player-join logger
+	joinLoggerEnabled = false,
+	joinLoggerConn = nil,
+	-- respawn hook (assigned by the Bundle 5 do-block)
+	onRespawn = nil,
+}
+
 -- ===================== MOBILE / RESIZE DETECTION =====================
 local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled and not UserInputService.MouseEnabled
 local screenSize = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1920, 1080)
@@ -558,7 +701,7 @@ tabBarDivider.BackgroundColor3 = COLORS.border
 tabBarDivider.BorderSizePixel = 0
 tabBarDivider.Parent = tabBar
 
-local tabNames = {"Main", "Combat", "ESP", "Farming", "Player", "Fun"}
+local tabNames = {"Main", "Combat", "ESP", "Farming", "Player", "Fun", "Config"}
 local tabButtons = {}
 local tabFrames = {}
 
@@ -915,6 +1058,118 @@ local function addLog(msg, color)
 		end
 		logFrame.CanvasSize = UDim2.new(0, 0, 0, #uiState.logLines * 16)
 		logFrame.CanvasPosition = Vector2.new(0, math.max(0, #uiState.logLines * 16 - logFrame.AbsoluteSize.Y))
+	end
+end
+
+-- =====================================================================
+-- ===================== SHARED CORES (Bundle 0) =======================
+-- Self-contained helpers reused by later feature bundles.
+-- =====================================================================
+
+-- ---- (a) safeDrawing: Drawing.new wrapper + world-to-screen ----
+local function newDrawing(kind, props)
+	if not Drawing then return nil end
+	local ok, d = pcall(function()
+		local obj = Drawing.new(kind)
+		for k, v in pairs(props or {}) do
+			obj[k] = v
+		end
+		return obj
+	end)
+	return ok and d or nil
+end
+
+local function worldToScreen(pos)
+	local ok, vec, onScreen = pcall(function()
+		local v, on = Camera:WorldToViewportPoint(pos)
+		return v, on
+	end)
+	if not ok or not vec then
+		return Vector2.new(0, 0), false, 0
+	end
+	return Vector2.new(vec.X, vec.Y), onScreen, vec.Z
+end
+
+-- ---- (b) keybind registry (single global InputBegan handler) ----
+local keybinds = {}
+
+local function bindKey(name, keyCodeName, fn)
+	keybinds[name] = {key = keyCodeName, fn = fn}
+end
+
+local function setKeybind(name, keyCodeName)
+	if keybinds[name] then
+		keybinds[name].key = keyCodeName
+	else
+		keybinds[name] = {key = keyCodeName, fn = nil}
+	end
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+	pcall(function()
+		local pressed = input.KeyCode.Name
+		for _, bind in pairs(keybinds) do
+			if bind.key == pressed and bind.fn then
+				bind.fn()
+			end
+		end
+	end)
+end)
+
+-- ---- (c) config core: save/load a flat feature->value map ----
+local HttpService = game:GetService("HttpService")
+local CONFIG_FILE = "MM2Hub_config.json"
+
+function configState.saveConfig()
+	-- snapshot every registered feature toggle state into configState.values
+	configState.values = configState.values or {}
+	if configState.registry then
+		for name, entry in pairs(configState.registry) do
+			pcall(function()
+				if entry and entry.get then
+					configState.values[name] = entry.get()
+				end
+			end)
+		end
+	end
+	local ok = pcall(function()
+		if not writefile then error("no writefile") end
+		local json = HttpService:JSONEncode(configState.values or {})
+		writefile(CONFIG_FILE, json)
+	end)
+	if ok then
+		addLog("[CONFIG] Saved to " .. CONFIG_FILE, COLORS.success)
+	else
+		addLog("[CONFIG] Snapshot kept in memory (no file IO)", COLORS.error)
+	end
+end
+
+function configState.loadConfig()
+	local ok = pcall(function()
+		if not (isfile and readfile) then error("no file IO") end
+		if not isfile(CONFIG_FILE) then error("no config file") end
+		local json = readfile(CONFIG_FILE)
+		local decoded = HttpService:JSONDecode(json)
+		if type(decoded) == "table" then
+			configState.values = decoded
+		end
+	end)
+	-- apply loaded values through the registered setters (best-effort)
+	local applied = 0
+	if configState.registry and type(configState.values) == "table" then
+		for name, entry in pairs(configState.registry) do
+			if configState.values[name] ~= nil and entry and entry.set then
+				local oks = pcall(function() entry.set(configState.values[name]) end)
+				if oks then applied = applied + 1 end
+			end
+		end
+	end
+	if ok then
+		addLog("[CONFIG] Loaded from " .. CONFIG_FILE .. " (" .. applied .. " applied)", COLORS.success)
+	else
+		addLog("[CONFIG] Applied in-memory config (" .. applied .. " applied)", COLORS.error)
 	end
 end
 
@@ -1759,6 +2014,173 @@ end
 local function stopAutoCoinFarm()
 	farmState.autoCoinFarmEnabled = false
 	addLog("[FARM] OFF - Farmed " .. farmState.coinsFarmed .. " coins", COLORS.error)
+end
+
+-- ===================== COIN DOMINATION (Bundle 2) =====================
+-- Coin Aura: every ~0.1s sweep the HumanoidRootPart to each coin inside a
+-- radius, briefly touch it to collect, then snap back to the start position.
+-- Re-reads LocalPlayer.Character every iteration so it survives respawn on
+-- its own (no re-enable needed in the CharacterAdded handler).
+function coinDomState.startCoinAura()
+	coinDomState.auraCollected = 0
+	coinDomState.auraThread = _spawn(function()
+		while coinDomState.auraEnabled do
+			pcall(function()
+				local char = LocalPlayer.Character
+				local root = char and char:FindFirstChild("HumanoidRootPart")
+				if not root then return end
+				local coins = getCoins()
+				if #coins == 0 then return end
+				local origin = root.CFrame
+				local radius = coinDomState.auraRadius
+				local touched = 0
+				for _, coin in ipairs(coins) do
+					if not coinDomState.auraEnabled then break end
+					pcall(function()
+						char = LocalPlayer.Character
+						root = char and char:FindFirstChild("HumanoidRootPart")
+						if root and coin and coin.Parent and coin.Transparency < 1 then
+							local dist = (coin.Position - origin.Position).Magnitude
+							if dist <= radius then
+								root.CFrame = coin.CFrame + Vector3.new(0, 2, 0)
+								_wait(0.03)
+								touched = touched + 1
+								coinDomState.auraCollected = coinDomState.auraCollected + 1
+							end
+						end
+					end)
+				end
+				-- Return to the sweep origin so the aura is non-disruptive
+				char = LocalPlayer.Character
+				root = char and char:FindFirstChild("HumanoidRootPart")
+				if root and touched > 0 then
+					root.CFrame = origin
+				end
+			end)
+			_wait(0.1)
+		end
+	end)
+	addLog("[COIN] Aura ON - radius " .. coinDomState.auraRadius, COLORS.success)
+end
+
+function coinDomState.stopCoinAura()
+	coinDomState.auraEnabled = false
+	addLog("[COIN] Aura OFF - collected " .. coinDomState.auraCollected, COLORS.error)
+end
+
+-- TP through EVERY coin once to vacuum the whole map, then return to start.
+function coinDomState.tpThroughAllCoins()
+	_spawn(function()
+		pcall(function()
+			local char = LocalPlayer.Character
+			local root = char and char:FindFirstChild("HumanoidRootPart")
+			if not root then
+				addLog("[COIN] No character for TP sweep", COLORS.error)
+				return
+			end
+			local coins = getCoins()
+			if #coins == 0 then
+				addLog("[COIN] No coins found to sweep", COLORS.textSecondary)
+				return
+			end
+			local origin = root.CFrame
+			local swept = 0
+			for _, coin in ipairs(coins) do
+				pcall(function()
+					char = LocalPlayer.Character
+					root = char and char:FindFirstChild("HumanoidRootPart")
+					if root and coin and coin.Parent and coin.Transparency < 1 then
+						root.CFrame = coin.CFrame + Vector3.new(0, 2, 0)
+						swept = swept + 1
+						_wait(0.06)
+					end
+				end)
+			end
+			char = LocalPlayer.Character
+			root = char and char:FindFirstChild("HumanoidRootPart")
+			if root then root.CFrame = origin end
+			addLog("[COIN] Swept " .. swept .. " coins", COLORS.success)
+		end)
+	end)
+end
+
+-- Coin tracers: pooled Drawing lines from screen bottom-center to each coin.
+function coinDomState.clearCoinTracers()
+	for _, line in ipairs(coinDomState.tracerLines) do
+		pcall(function() line.Visible = false end)
+	end
+end
+
+function coinDomState.startCoinTracers()
+	if not Drawing then
+		addLog("[COIN] Tracers need the executor Drawing API (recon required)", COLORS.error)
+		coinDomState.tracersEnabled = false
+		return
+	end
+	if coinDomState.tracerConnection then
+		pcall(function() coinDomState.tracerConnection:Disconnect() end)
+		coinDomState.tracerConnection = nil
+	end
+	coinDomState.tracerConnection = RunService.RenderStepped:Connect(function()
+		pcall(function()
+			if not coinDomState.tracersEnabled then return end
+			local coins = getCoins()
+			local vp = Camera.ViewportSize
+			local originX, originY = vp.X / 2, vp.Y
+			local used = 0
+			for _, coin in ipairs(coins) do
+				pcall(function()
+					if coin and coin.Parent and coin.Transparency < 1 then
+						local s, onScreen, depth = worldToScreen(coin.Position)
+						if onScreen and depth > 0 then
+							used = used + 1
+							local line = coinDomState.tracerLines[used]
+							if not line then
+								line = newDrawing("Line", {Thickness = 1, Transparency = 1, Color = COLORS.accent})
+								coinDomState.tracerLines[used] = line
+							end
+							if line then
+								line.From = Vector2.new(originX, originY)
+								line.To = s
+								line.Color = COLORS.accent
+								line.Visible = true
+							end
+						end
+					end
+				end)
+			end
+			-- Hide any pooled lines left over from a busier frame
+			for i = used + 1, #coinDomState.tracerLines do
+				pcall(function() coinDomState.tracerLines[i].Visible = false end)
+			end
+		end)
+	end)
+	addLog("[COIN] Tracers ON", COLORS.success)
+end
+
+function coinDomState.stopCoinTracers()
+	coinDomState.tracersEnabled = false
+	if coinDomState.tracerConnection then
+		pcall(function() coinDomState.tracerConnection:Disconnect() end)
+		coinDomState.tracerConnection = nil
+	end
+	coinDomState.clearCoinTracers()
+	addLog("[COIN] Tracers OFF", COLORS.error)
+end
+
+-- Live counter of coins remaining on the map.
+function coinDomState.startCoinCounter()
+	if coinDomState.counterThread then return end
+	coinDomState.counterThread = _spawn(function()
+		while true do
+			pcall(function()
+				if coinDomState.counterLabel then
+					coinDomState.counterLabel.Text = "Coins Remaining: " .. #getCoins()
+				end
+			end)
+			_wait(0.5)
+		end
+	end)
 end
 
 -- ===================== ANTI-AFK =====================
@@ -2922,6 +3344,272 @@ do
 end
 
 -- =====================================================================
+-- ============ BUNDLE 3: COMBAT / SHERIFF AIM ASSIST =================
+-- Client-side aim MATH for the user's own MM2 helper. Aiming / camera /
+-- Drawing / part-scaling are all generic and fully implemented here.
+-- Silent Aim and Auto-Shoot are RECON-GATED: the target-selection and
+-- when-to-fire logic is built, but the actual shot is stubbed because
+-- MM2's real shoot remote is NOT confirmed in this code.
+-- =====================================================================
+
+local SH = {}
+SH.STUB_MSG = "Auto-Shoot / Silent Aim needs the game's real shoot remote (recon required)"
+
+-- Aim part: prefer Head, fall back to HumanoidRootPart
+function SH.sheriffGetAimPart(player)
+	if not player then return nil end
+	local char = player.Character
+	if not char then return nil end
+	if sheriffState.targetHead then
+		local head = char:FindFirstChild("Head")
+		if head then return head end
+	end
+	return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head")
+end
+
+-- Linear target prediction: lead the aim point by the target's movement
+function SH.sheriffPredictedPos(part, player)
+	local pos = part.Position
+	pcall(function()
+		local char = player.Character
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		if hum and hum.MoveDirection.Magnitude > 0 then
+			pos = pos + (hum.MoveDirection * hum.WalkSpeed) * sheriffState.prediction
+		else
+			pos = pos + part.AssemblyLinearVelocity * sheriffState.prediction
+		end
+	end)
+	return pos
+end
+
+-- Closest-target selection honoring the FOV circle and role (prefer murderer)
+function SH.sheriffSelectTarget()
+	local vp = Camera.ViewportSize
+	local screenCenter = Vector2.new(vp.X / 2, vp.Y / 2)
+	local function fovDist(player)
+		local part = SH.sheriffGetAimPart(player)
+		if not part then return nil, nil end
+		local sp, onScreen = worldToScreen(part.Position)
+		if not onScreen then return nil, nil end
+		local d = (sp - screenCenter).Magnitude
+		if d > sheriffState.fov then return nil, nil end
+		return d, part
+	end
+	-- Prefer the confirmed murderer if within the FOV circle
+	if roleState.murdererPlayer and roleState.murdererPlayer ~= LocalPlayer then
+		local d, part = fovDist(roleState.murdererPlayer)
+		if d ~= nil then return roleState.murdererPlayer, part end
+	end
+	-- Otherwise closest player within the FOV circle (excluding self)
+	local best, bestPart, bestDist = nil, nil, math.huge
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer then
+			local d, part = fovDist(player)
+			if d ~= nil and d < bestDist then
+				best, bestPart, bestDist = player, part, d
+			end
+		end
+	end
+	return best, bestPart
+end
+
+-- Should the aim lock be applied this frame? (hold key OR toggle-lock)
+function SH.sheriffAimActive()
+	if not sheriffState.aimbotEnabled then return false end
+	if sheriffState.holdToAim then return sheriffState.aimKeyDown end
+	return true
+end
+
+-- Track the hold key state (generic keyboard input, no remote)
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	pcall(function()
+		if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode.Name == sheriffState.aimKey then
+			sheriffState.aimKeyDown = true
+		end
+	end)
+end)
+UserInputService.InputEnded:Connect(function(input)
+	pcall(function()
+		if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode.Name == sheriffState.aimKey then
+			sheriffState.aimKeyDown = false
+		end
+	end)
+end)
+
+-- Sheriff aimbot: lerp the camera CFrame toward the (predicted) aim point
+function SH.startSheriffAimbot()
+	if sheriffState.aimConnection then return end
+	sheriffState.aimConnection = RunService.RenderStepped:Connect(function()
+		pcall(function()
+			if not SH.sheriffAimActive() then return end
+			if roleState.myRole ~= "Sheriff" then return end
+			local target, part = SH.sheriffSelectTarget()
+			if not target or not part then return end
+			local aimPos = SH.sheriffPredictedPos(part, target)
+			local camPos = Camera.CFrame.Position
+			local goalCF = CFrame.lookAt(camPos, aimPos)
+			local alpha = math.clamp(sheriffState.smoothing, 0.01, 1)
+			Camera.CFrame = Camera.CFrame:Lerp(goalCF, alpha)
+		end)
+	end)
+	addLog("[SHERIFF] Aimbot ON (Sheriff only, hold " .. sheriffState.aimKey .. ")", COLORS.success)
+end
+
+function SH.stopSheriffAimbot()
+	if sheriffState.aimConnection then
+		sheriffState.aimConnection:Disconnect()
+		sheriffState.aimConnection = nil
+	end
+	addLog("[SHERIFF] Aimbot OFF", COLORS.textSecondary)
+end
+
+-- FOV circle: screen-centered Drawing circle; targets outside it are ignored
+function SH.startSheriffFovCircle()
+	if sheriffState.fovCircle or sheriffState.fovConnection then return end
+	sheriffState.fovCircle = newDrawing("Circle", {
+		Thickness = 1,
+		NumSides = 64,
+		Radius = sheriffState.fov,
+		Filled = false,
+		Transparency = 1,
+		Color = COLORS.accent,
+	})
+	if not sheriffState.fovCircle then
+		addLog("[SHERIFF] FOV circle needs the executor Drawing API (recon required)", COLORS.error)
+		return
+	end
+	sheriffState.fovConnection = RunService.RenderStepped:Connect(function()
+		pcall(function()
+			if not sheriffState.fovCircle then return end
+			local vp = Camera.ViewportSize
+			sheriffState.fovCircle.Radius = sheriffState.fov
+			sheriffState.fovCircle.Position = Vector2.new(vp.X / 2, vp.Y / 2)
+			sheriffState.fovCircle.Visible = true
+		end)
+	end)
+end
+
+function SH.stopSheriffFovCircle()
+	if sheriffState.fovConnection then
+		sheriffState.fovConnection:Disconnect()
+		sheriffState.fovConnection = nil
+	end
+	if sheriffState.fovCircle then
+		pcall(function()
+			sheriffState.fovCircle.Visible = false
+			sheriffState.fovCircle:Remove()
+		end)
+		sheriffState.fovCircle = nil
+	end
+end
+
+-- Gun reach / hitbox expander on the murderer (generic BasePart scaling)
+function SH.restoreMurdererHitbox()
+	if sheriffState.savedMurdererPart and sheriffState.savedMurdererSize then
+		pcall(function() sheriffState.savedMurdererPart.Size = sheriffState.savedMurdererSize end)
+	end
+	sheriffState.savedMurdererPart = nil
+	sheriffState.savedMurdererSize = nil
+end
+
+function SH.startSheriffReach()
+	if sheriffState.reachConnection then return end
+	sheriffState.reachConnection = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			local m = roleState.murdererPlayer
+			if not m or not m.Character then return end
+			local hrp = m.Character:FindFirstChild("HumanoidRootPart")
+			if not hrp then return end
+			-- Re-save originals whenever the target part changes (respawn / new murderer)
+			if sheriffState.savedMurdererPart ~= hrp then
+				if sheriffState.savedMurdererPart and sheriffState.savedMurdererSize then
+					pcall(function() sheriffState.savedMurdererPart.Size = sheriffState.savedMurdererSize end)
+				end
+				sheriffState.savedMurdererPart = hrp
+				sheriffState.savedMurdererSize = hrp.Size
+			end
+			local desired = sheriffState.savedMurdererSize * sheriffState.reach
+			if hrp.Size ~= desired then
+				hrp.Size = desired
+			end
+		end)
+	end)
+	addLog("[SHERIFF] Gun reach ON (scales murderer hitbox)", COLORS.success)
+end
+
+function SH.stopSheriffReach()
+	if sheriffState.reachConnection then
+		sheriffState.reachConnection:Disconnect()
+		sheriffState.reachConnection = nil
+	end
+	SH.restoreMurdererHitbox()
+	addLog("[SHERIFF] Gun reach OFF", COLORS.textSecondary)
+end
+
+-- ------- RECON-GATED: shoot logic is built, the fire call is stubbed -------
+function SH.sheriffFireStub()
+	-- Do NOT fire any guessed remote. MM2's real shoot remote is unconfirmed.
+	addLog(SH.STUB_MSG, COLORS.error)
+end
+
+-- Auto-Shoot Murderer as Sheriff: decide WHEN to fire, then hit the stub
+function SH.startSheriffAutoShoot()
+	if sheriffState.autoShootConnection then return end
+	sheriffState.autoShootConnection = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			if not sheriffState.autoShootEnabled then return end
+			if roleState.myRole ~= "Sheriff" then return end
+			local target, part = SH.sheriffSelectTarget()
+			-- Only auto-shoot the confirmed murderer, within the FOV circle, alive
+			if not target or not part then return end
+			if target ~= roleState.murdererPlayer then return end
+			local hum = target.Character and target.Character:FindFirstChildOfClass("Humanoid")
+			if hum and hum.Health <= 0 then return end
+			local now = tick()
+			if now - sheriffState.lastFire < 2.5 then return end
+			sheriffState.lastFire = now
+			SH.sheriffFireStub() -- RECON-GATED: replaces the real gun/shoot remote fire
+		end)
+	end)
+end
+
+function SH.stopSheriffAutoShoot()
+	if sheriffState.autoShootConnection then
+		sheriffState.autoShootConnection:Disconnect()
+		sheriffState.autoShootConnection = nil
+	end
+end
+
+-- Silent Aim: compute the hidden hit target (no camera move); redirect is stubbed
+function SH.startSheriffSilentAim()
+	if sheriffState.silentConnection then return end
+	sheriffState.silentConnection = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			if not sheriffState.silentAimEnabled then return end
+			if roleState.myRole ~= "Sheriff" then return end
+			local target, part = SH.sheriffSelectTarget()
+			if not target or not part then return end
+			-- The predicted point the shot would be silently redirected to.
+			-- Actually redirecting a shot requires hooking/firing MM2's real
+			-- shoot remote, which is recon-gated, so we hit the stub instead.
+			local _aimPos = SH.sheriffPredictedPos(part, target)
+			local now = tick()
+			if now - sheriffState.lastSilentLog < 2.5 then return end
+			sheriffState.lastSilentLog = now
+			SH.sheriffFireStub()
+		end)
+	end)
+end
+
+function SH.stopSheriffSilentAim()
+	if sheriffState.silentConnection then
+		sheriffState.silentConnection:Disconnect()
+		sheriffState.silentConnection = nil
+	end
+end
+
+-- =====================================================================
 -- ======================== BUILD COMBAT TAB ==========================
 -- =====================================================================
 do
@@ -3073,6 +3761,94 @@ do
 	createInfoLabel(tab, "Auto Shoot only works as Sheriff", 24)
 	createInfoLabel(tab, "Kill All / Kill Player only work as Murderer", 25)
 	createInfoLabel(tab, "Bring Gun teleports gun to you", 26)
+
+	-- ---------------- Bundle 3: Aim Assist ----------------
+	local spacerAA = Instance.new("Frame")
+	spacerAA.Size = UDim2.new(1, 0, 0, 4)
+	spacerAA.BackgroundTransparency = 1
+	spacerAA.LayoutOrder = 27
+	spacerAA.Parent = tab
+
+	createSectionLabel(tab, "Aim Assist", 28)
+
+	createToggle(tab, "Sheriff Aimbot", 29, function(on)
+		sheriffState.aimbotEnabled = on
+		if on then
+			if not roleState.roleCheckEnabled then startRoleCheck() end
+			SH.startSheriffAimbot()
+		else
+			SH.stopSheriffAimbot()
+		end
+	end)
+	createToggle(tab, "Hold Key To Aim (E)", 30, function(on)
+		sheriffState.holdToAim = on
+		if on then
+			addLog("[SHERIFF] Aim locks only while holding " .. sheriffState.aimKey, COLORS.textSecondary)
+		else
+			addLog("[SHERIFF] Aim locks continuously while aimbot is ON", COLORS.textSecondary)
+		end
+	end).setVisualState(true)
+	createToggle(tab, "Aim Head (else HRP)", 31, function(on)
+		sheriffState.targetHead = on
+	end).setVisualState(true)
+	createToggle(tab, "FOV Circle", 32, function(on)
+		sheriffState.fovCircleEnabled = on
+		if on then SH.startSheriffFovCircle() else SH.stopSheriffFovCircle() end
+	end)
+	createToggle(tab, "Gun Reach (Murderer Hitbox)", 33, function(on)
+		sheriffState.reachEnabled = on
+		if on then
+			if not roleState.roleCheckEnabled then startRoleCheck() end
+			SH.startSheriffReach()
+		else
+			SH.stopSheriffReach()
+		end
+	end)
+
+	createSlider(tab, "Aim Smoothing %", 1, 100, 20, 34, function(v)
+		sheriffState.smoothing = v / 100
+	end)
+	createSlider(tab, "FOV Radius", 20, 500, 120, 35, function(v)
+		sheriffState.fov = v
+	end)
+	createSlider(tab, "Prediction %", 0, 100, 10, 36, function(v)
+		sheriffState.prediction = v / 100
+	end)
+	createSlider(tab, "Gun Reach x", 1, 10, 1, 37, function(v)
+		sheriffState.reach = v
+	end)
+
+	local spacerAA2 = Instance.new("Frame")
+	spacerAA2.Size = UDim2.new(1, 0, 0, 4)
+	spacerAA2.BackgroundTransparency = 1
+	spacerAA2.LayoutOrder = 38
+	spacerAA2.Parent = tab
+
+	createSectionLabel(tab, "Recon-Gated (needs game remote)", 39)
+
+	createToggle(tab, "Silent Aim (recon)", 40, function(on)
+		sheriffState.silentAimEnabled = on
+		if on then
+			if not roleState.roleCheckEnabled then startRoleCheck() end
+			SH.startSheriffSilentAim()
+			SH.sheriffFireStub()
+		else
+			SH.stopSheriffSilentAim()
+		end
+	end)
+	createToggle(tab, "Auto-Shoot Murderer as Sheriff (recon)", 41, function(on)
+		sheriffState.autoShootEnabled = on
+		if on then
+			if not roleState.roleCheckEnabled then startRoleCheck() end
+			SH.startSheriffAutoShoot()
+			SH.sheriffFireStub()
+		else
+			SH.stopSheriffAutoShoot()
+		end
+	end)
+
+	createInfoLabel(tab, "Aimbot/FOV/Reach are client-side and active", 42)
+	createInfoLabel(tab, "Silent Aim + Auto-Shoot are stubbed (no remote)", 43)
 end
 
 -- =====================================================================
@@ -3170,6 +3946,481 @@ do
 end
 
 -- =====================================================================
+-- ==================== BUNDLE 1: ESP SUITE ============================
+-- Box / Corner-box / Tracers / Skeleton / Chams / Off-screen arrows /
+-- Snapline-to-murderer. All generic Drawing/Highlight overlays driven
+-- by ONE RenderStepped loop. Functions are scoped inside this do-block
+-- so they do not inflate the top-level local register count.
+-- =====================================================================
+do
+	local tab = tabFrames["ESP"]
+	local VE = {}
+
+	-- role -> color (falls back to white for innocent/unknown)
+	function VE.vespRoleColor(player)
+		local ok, role = pcall(getPlayerRole, player)
+		if ok then
+			if role == "Murderer" then return ROLE_COLORS.Murderer end
+			if role == "Sheriff" then return ROLE_COLORS.Sheriff end
+		end
+		return COLORS.textPrimary
+	end
+
+	-- lazily fetch the per-player drawing container
+	function VE.vespGet(player)
+		local t = visualEspState.drawings[player]
+		if not t then
+			t = {}
+			visualEspState.drawings[player] = t
+		end
+		return t
+	end
+
+	-- current tracer origin point in screen space
+	function VE.vespOrigin(viewport)
+		local o = visualEspState.tracerOrigin
+		if o == "top" then
+			return Vector2.new(viewport.X * 0.5, 0)
+		elseif o == "mouse" then
+			local ok, m = pcall(function() return UserInputService:GetMouseLocation() end)
+			if ok and m then return Vector2.new(m.X, m.Y) end
+		end
+		return Vector2.new(viewport.X * 0.5, viewport.Y)
+	end
+
+	-- skeleton limb connection tables
+	local VESP_R6_PAIRS = {
+		{"Head", "Torso"},
+		{"Torso", "Left Arm"}, {"Torso", "Right Arm"},
+		{"Torso", "Left Leg"}, {"Torso", "Right Leg"},
+	}
+	local VESP_R15_PAIRS = {
+		{"Head", "UpperTorso"}, {"UpperTorso", "LowerTorso"},
+		{"UpperTorso", "LeftUpperArm"}, {"LeftUpperArm", "LeftLowerArm"}, {"LeftLowerArm", "LeftHand"},
+		{"UpperTorso", "RightUpperArm"}, {"RightUpperArm", "RightLowerArm"}, {"RightLowerArm", "RightHand"},
+		{"LowerTorso", "LeftUpperLeg"}, {"LeftUpperLeg", "LeftLowerLeg"}, {"LeftLowerLeg", "LeftFoot"},
+		{"LowerTorso", "RightUpperLeg"}, {"RightUpperLeg", "RightLowerLeg"}, {"RightLowerLeg", "RightFoot"},
+	}
+
+	function VE.vespRemoveDrawing(d)
+		if d then pcall(function() d:Remove() end) end
+	end
+
+	-- destroy every overlay object for one player (on leave)
+	function VE.vespRemovePlayer(player)
+		local t = visualEspState.drawings[player]
+		if t then
+			VE.vespRemoveDrawing(t.box)
+			if t.corners then for _, l in ipairs(t.corners) do VE.vespRemoveDrawing(l) end end
+			VE.vespRemoveDrawing(t.tracer)
+			if t.skel then for _, l in ipairs(t.skel) do VE.vespRemoveDrawing(l) end end
+			VE.vespRemoveDrawing(t.arrow)
+			visualEspState.drawings[player] = nil
+		end
+		local hl = visualEspState.highlights[player]
+		if hl then
+			pcall(function() hl:Destroy() end)
+			visualEspState.highlights[player] = nil
+		end
+	end
+
+	-- clear one overlay type across all players (called on toggle OFF)
+	function VE.vespClearOverlay(kind)
+		for _, t in pairs(visualEspState.drawings) do
+			if kind == "box" then VE.vespRemoveDrawing(t.box) t.box = nil end
+			if kind == "corners" then
+				if t.corners then for _, l in ipairs(t.corners) do VE.vespRemoveDrawing(l) end end
+				t.corners = nil
+			end
+			if kind == "tracer" then VE.vespRemoveDrawing(t.tracer) t.tracer = nil end
+			if kind == "skeleton" then
+				if t.skel then for _, l in ipairs(t.skel) do VE.vespRemoveDrawing(l) end end
+				t.skel = nil
+			end
+			if kind == "arrow" then VE.vespRemoveDrawing(t.arrow) t.arrow = nil end
+		end
+		if kind == "chams" then
+			for _, hl in pairs(visualEspState.highlights) do pcall(function() hl:Destroy() end) end
+			visualEspState.highlights = {}
+		end
+		if kind == "snapline" then
+			VE.vespRemoveDrawing(visualEspState.snaplineDrawing)
+			visualEspState.snaplineDrawing = nil
+		end
+	end
+
+	-- build / refresh the 8 corner segments for a box
+	function VE.vespDrawCorners(t, x, y, w, h, color, thickness)
+		if not Drawing then return end
+		if not t.corners then
+			t.corners = {}
+			for i = 1, 8 do
+				t.corners[i] = newDrawing("Line", {Thickness = thickness, Transparency = 1})
+			end
+		end
+		local len = math.min(w, h) * 0.28
+		if len < 1 then len = 1 end
+		local c = t.corners
+		local function seg(idx, fx, fy, tx, ty)
+			local l = c[idx]
+			if l then
+				l.From = Vector2.new(fx, fy)
+				l.To = Vector2.new(tx, ty)
+				l.Color = color
+				l.Thickness = thickness
+				l.Visible = true
+			end
+		end
+		local x2, y2 = x + w, y + h
+		seg(1, x, y, x + len, y)      seg(2, x, y, x, y + len)        -- top-left
+		seg(3, x2, y, x2 - len, y)    seg(4, x2, y, x2, y + len)      -- top-right
+		seg(5, x, y2, x + len, y2)    seg(6, x, y2, x, y2 - len)      -- bottom-left
+		seg(7, x2, y2, x2 - len, y2)  seg(8, x2, y2, x2, y2 - len)    -- bottom-right
+	end
+
+	function VE.vespHideCorners(t)
+		if t.corners then for _, l in ipairs(t.corners) do if l then l.Visible = false end end end
+	end
+
+	-- off-screen arrow (Triangle, falls back to Line)
+	function VE.vespDrawArrow(t, ndir, pos, color, big)
+		if not Drawing then return end
+		if not t.arrow then
+			t.arrow = newDrawing("Triangle", {Thickness = 1, Filled = true, Transparency = 1})
+			if not t.arrow then
+				t.arrow = newDrawing("Line", {Thickness = 2, Transparency = 1})
+			end
+		end
+		local a = t.arrow
+		if not a then return end
+		local perp = Vector2.new(-ndir.Y, ndir.X)
+		local size = big and 22 or 14
+		local tip = pos + ndir * size
+		local baseL = pos - ndir * (size * 0.4) + perp * (size * 0.6)
+		local baseR = pos - ndir * (size * 0.4) - perp * (size * 0.6)
+		local okTri = pcall(function()
+			a.PointA = tip
+			a.PointB = baseL
+			a.PointC = baseR
+		end)
+		if not okTri then
+			pcall(function()
+				a.From = pos - ndir * size
+				a.To = tip
+			end)
+		end
+		pcall(function()
+			a.Color = color
+			a.Visible = true
+		end)
+	end
+
+	-- ONE per-frame driver: redraws enabled overlays, hides the rest
+	function VE.vespUpdate()
+		pcall(function()
+			local viewport = Camera.ViewportSize
+			local thickness = visualEspState.tracerThickness or 1
+			if thickness < 1 then thickness = 1 end
+			local originPt = VE.vespOrigin(viewport)
+
+			for _, player in ipairs(Players:GetPlayers()) do
+				if player ~= LocalPlayer then
+					pcall(function()
+						local char = player.Character
+						local hrp = char and char:FindFirstChild("HumanoidRootPart")
+						local t = VE.vespGet(player)
+						local color = VE.vespRoleColor(player)
+
+						if not char or not hrp then
+							if t.box then t.box.Visible = false end
+							VE.vespHideCorners(t)
+							if t.tracer then t.tracer.Visible = false end
+							if t.skel then for _, l in ipairs(t.skel) do if l then l.Visible = false end end end
+							if t.arrow then t.arrow.Visible = false end
+							return
+						end
+
+						local head = char:FindFirstChild("Head")
+						local rootPos = hrp.Position
+						local topWorld = head and (head.Position + Vector3.new(0, head.Size.Y * 0.5 + 0.4, 0)) or (rootPos + Vector3.new(0, 3, 0))
+						local botWorld = rootPos - Vector3.new(0, 3, 0)
+						local rootS, _, rootDepth = worldToScreen(rootPos)
+						local topS, _, topDepth = worldToScreen(topWorld)
+						local botS, _, botDepth = worldToScreen(botWorld)
+
+						local inFront = rootDepth > 0
+						local onScreen = inFront and rootS.X >= 0 and rootS.X <= viewport.X and rootS.Y >= 0 and rootS.Y <= viewport.Y
+
+						-- 2D box from projected head-top & feet-bottom
+						local bx, by, bw, bh
+						if inFront and topDepth > 0 and botDepth > 0 then
+							bh = math.abs(botS.Y - topS.Y)
+							if bh < 4 then bh = 4 end
+							bw = bh * 0.42
+							local cx = (topS.X + botS.X) * 0.5
+							bx = cx - bw * 0.5
+							by = math.min(topS.Y, botS.Y)
+						end
+
+						-- BOX
+						if visualEspState.boxEnabled and bx then
+							if not t.box and Drawing then
+								t.box = newDrawing("Square", {Thickness = thickness, Filled = false, Transparency = 1})
+							end
+							if t.box then
+								t.box.Position = Vector2.new(bx, by)
+								t.box.Size = Vector2.new(bw, bh)
+								t.box.Color = color
+								t.box.Thickness = thickness
+								t.box.Visible = true
+							end
+						elseif t.box then
+							t.box.Visible = false
+						end
+
+						-- CORNER BOX
+						if visualEspState.cornerBoxEnabled and bx then
+							VE.vespDrawCorners(t, bx, by, bw, bh, color, thickness)
+						elseif t.corners then
+							VE.vespHideCorners(t)
+						end
+
+						-- TRACER
+						if visualEspState.tracersEnabled and inFront then
+							if not t.tracer and Drawing then
+								t.tracer = newDrawing("Line", {Thickness = thickness, Transparency = 1})
+							end
+							if t.tracer then
+								t.tracer.From = originPt
+								t.tracer.To = Vector2.new(rootS.X, rootS.Y)
+								t.tracer.Color = color
+								t.tracer.Thickness = thickness
+								t.tracer.Visible = true
+							end
+						elseif t.tracer then
+							t.tracer.Visible = false
+						end
+
+						-- SKELETON
+						if visualEspState.skeletonEnabled and inFront then
+							local hum = char:FindFirstChildOfClass("Humanoid")
+							local isR15 = hum and hum.RigType == Enum.HumanoidRigType.R15
+							local limbPairs = isR15 and VESP_R15_PAIRS or VESP_R6_PAIRS
+							if not t.skel and Drawing then
+								t.skel = {}
+								for i = 1, #VESP_R15_PAIRS do
+									t.skel[i] = newDrawing("Line", {Thickness = thickness, Transparency = 1})
+								end
+							end
+							if t.skel then
+								for i, pr in ipairs(limbPairs) do
+									local pa = char:FindFirstChild(pr[1])
+									local pb = char:FindFirstChild(pr[2])
+									local l = t.skel[i]
+									if l then
+										if pa and pb and pa:IsA("BasePart") and pb:IsA("BasePart") then
+											local sa, _, da = worldToScreen(pa.Position)
+											local sb, _, db = worldToScreen(pb.Position)
+											if da > 0 and db > 0 then
+												l.From = Vector2.new(sa.X, sa.Y)
+												l.To = Vector2.new(sb.X, sb.Y)
+												l.Color = color
+												l.Thickness = thickness
+												l.Visible = true
+											else
+												l.Visible = false
+											end
+										else
+											l.Visible = false
+										end
+									end
+								end
+								for i = #limbPairs + 1, #t.skel do
+									if t.skel[i] then t.skel[i].Visible = false end
+								end
+							end
+						elseif t.skel then
+							for _, l in ipairs(t.skel) do if l then l.Visible = false end end
+						end
+
+						-- CHAMS (Highlight, independent of Drawing API)
+						if visualEspState.chamsEnabled then
+							local hl = visualEspState.highlights[player]
+							local valid = false
+							if hl then
+								pcall(function() valid = (hl.Parent ~= nil and hl.Adornee == char) end)
+							end
+							if not valid then
+								if hl then pcall(function() hl:Destroy() end) end
+								hl = Instance.new("Highlight")
+								hl.Name = "ChamsESP"
+								hl.FillTransparency = 0.5
+								hl.OutlineTransparency = 0
+								hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+								hl.Adornee = char
+								hl.Parent = char
+								visualEspState.highlights[player] = hl
+							end
+							pcall(function()
+								hl.FillColor = color
+								hl.OutlineColor = color
+							end)
+						end
+
+						-- OFF-SCREEN ARROW
+						if visualEspState.offscreenArrowsEnabled and not onScreen then
+							local center = Vector2.new(viewport.X * 0.5, viewport.Y * 0.5)
+							local target = Vector2.new(rootS.X, rootS.Y)
+							local dir = inFront and (target - center) or (center - target)
+							local mag = dir.Magnitude
+							local ndir = (mag < 0.001) and Vector2.new(0, -1) or (dir / mag)
+							local radius = math.min(viewport.X, viewport.Y) * 0.34
+							local pos = center + ndir * radius
+							local isMurderer = (roleState.murdererPlayer == player)
+							VE.vespDrawArrow(t, ndir, pos, isMurderer and ROLE_COLORS.Murderer or color, isMurderer)
+						elseif t.arrow then
+							t.arrow.Visible = false
+						end
+					end)
+				end
+			end
+
+			-- SNAPLINE to murderer (single line)
+			if visualEspState.snaplineMurdererEnabled then
+				local mp = roleState.murdererPlayer
+				local mchar = mp and mp ~= LocalPlayer and mp.Character
+				local mhrp = mchar and mchar:FindFirstChild("HumanoidRootPart")
+				local shown = false
+				if mhrp then
+					local s, _, depth = worldToScreen(mhrp.Position)
+					if depth > 0 then
+						if not visualEspState.snaplineDrawing and Drawing then
+							visualEspState.snaplineDrawing = newDrawing("Line", {Thickness = thickness, Transparency = 1})
+						end
+						local ln = visualEspState.snaplineDrawing
+						if ln then
+							ln.From = originPt
+							ln.To = Vector2.new(s.X, s.Y)
+							ln.Color = ROLE_COLORS.Murderer
+							ln.Thickness = thickness
+							ln.Visible = true
+							shown = true
+						end
+					end
+				end
+				if not shown and visualEspState.snaplineDrawing then
+					visualEspState.snaplineDrawing.Visible = false
+				end
+			end
+		end)
+	end
+
+	function VE.vespAnyEnabled()
+		return visualEspState.boxEnabled or visualEspState.cornerBoxEnabled or visualEspState.tracersEnabled
+			or visualEspState.skeletonEnabled or visualEspState.chamsEnabled
+			or visualEspState.offscreenArrowsEnabled or visualEspState.snaplineMurdererEnabled
+	end
+
+	function VE.vespStartDriver()
+		if visualEspState.driverConnection then return end
+		visualEspState.driverConnection = RunService.RenderStepped:Connect(VE.vespUpdate)
+	end
+
+	function VE.vespStopDriver()
+		if visualEspState.driverConnection then
+			visualEspState.driverConnection:Disconnect()
+			visualEspState.driverConnection = nil
+		end
+	end
+
+	function VE.vespSync()
+		if VE.vespAnyEnabled() then VE.vespStartDriver() else VE.vespStopDriver() end
+	end
+
+	-- per-player cleanup when a player leaves
+	Players.PlayerRemoving:Connect(function(player)
+		pcall(function() VE.vespRemovePlayer(player) end)
+	end)
+
+	-- ---------------------------- UI ----------------------------
+	local suiteSpacer = Instance.new("Frame")
+	suiteSpacer.Size = UDim2.new(1, 0, 0, 4)
+	suiteSpacer.BackgroundTransparency = 1
+	suiteSpacer.LayoutOrder = 29
+	suiteSpacer.Parent = tab
+
+	createSectionLabel(tab, "ESP Suite", 30)
+
+	createToggle(tab, "Box ESP", 31, function(on)
+		visualEspState.boxEnabled = on
+		if not on then VE.vespClearOverlay("box") end
+		VE.vespSync()
+		addLog(on and "[BOX ESP] ON" or "[BOX ESP] OFF", on and COLORS.success or COLORS.error)
+	end)
+	createToggle(tab, "Corner Box", 32, function(on)
+		visualEspState.cornerBoxEnabled = on
+		if not on then VE.vespClearOverlay("corners") end
+		VE.vespSync()
+		addLog(on and "[CORNER BOX] ON" or "[CORNER BOX] OFF", on and COLORS.success or COLORS.error)
+	end)
+	createToggle(tab, "Tracers", 33, function(on)
+		visualEspState.tracersEnabled = on
+		if not on then VE.vespClearOverlay("tracer") end
+		VE.vespSync()
+		addLog(on and "[TRACERS] ON" or "[TRACERS] OFF", on and COLORS.success or COLORS.error)
+	end)
+	createToggle(tab, "Skeleton ESP", 34, function(on)
+		visualEspState.skeletonEnabled = on
+		if not on then VE.vespClearOverlay("skeleton") end
+		VE.vespSync()
+		addLog(on and "[SKELETON ESP] ON" or "[SKELETON ESP] OFF", on and COLORS.success or COLORS.error)
+	end)
+	createToggle(tab, "Chams", 35, function(on)
+		visualEspState.chamsEnabled = on
+		if not on then VE.vespClearOverlay("chams") end
+		VE.vespSync()
+		addLog(on and "[CHAMS] ON" or "[CHAMS] OFF", on and COLORS.success or COLORS.error)
+	end)
+	createToggle(tab, "Off-Screen Arrows", 36, function(on)
+		visualEspState.offscreenArrowsEnabled = on
+		if not on then VE.vespClearOverlay("arrow") end
+		VE.vespSync()
+		addLog(on and "[OFFSCREEN ARROWS] ON" or "[OFFSCREEN ARROWS] OFF", on and COLORS.success or COLORS.error)
+	end)
+	createToggle(tab, "Snapline to Murderer", 37, function(on)
+		visualEspState.snaplineMurdererEnabled = on
+		if on then
+			if not roleState.roleCheckEnabled then startRoleCheck() end
+		else
+			VE.vespClearOverlay("snapline")
+		end
+		VE.vespSync()
+		addLog(on and "[SNAPLINE] ON" or "[SNAPLINE] OFF", on and COLORS.success or COLORS.error)
+	end)
+
+	createSlider(tab, "Tracer Thickness", 1, 6, 1, 38, function(value)
+		visualEspState.tracerThickness = value
+	end)
+
+	local originBtn
+	originBtn = createActionButton(tab, "Tracer Origin: Bottom", 39, function()
+		local order = {"bottom", "top", "mouse"}
+		local labels = {bottom = "Bottom", top = "Top", mouse = "Mouse"}
+		local cur = visualEspState.tracerOrigin
+		local idx = 1
+		for i, v in ipairs(order) do if v == cur then idx = i end end
+		idx = idx % #order + 1
+		visualEspState.tracerOrigin = order[idx]
+		if originBtn then originBtn.Text = "Tracer Origin: " .. labels[order[idx]] end
+		addLog("[TRACER ORIGIN] " .. labels[order[idx]], COLORS.textSecondary)
+	end)
+
+	createInfoLabel(tab, "ESP Suite uses the executor Drawing API for lines/boxes.", 40)
+	createInfoLabel(tab, "Colors: Red=Murderer, Blue=Sheriff, White=Innocent.", 41)
+	createInfoLabel(tab, "Chams uses Highlight (works even without Drawing API).", 42)
+end
+
+-- =====================================================================
 -- ======================== BUILD FARMING TAB ==========================
 -- =====================================================================
 do
@@ -3218,6 +4469,41 @@ do
 	createInfoLabel(tab, "Bring Coins teleports coins to you", 13)
 	createInfoLabel(tab, "Auto Collect fires touch events on coins", 14)
 	createInfoLabel(tab, "Anti-AFK prevents idle kick", 15)
+end
+
+-- =====================================================================
+-- ============== BUILD FARMING TAB - COIN DOMINATION (B2) =============
+-- =====================================================================
+do
+	local tab = tabFrames["Farming"]
+
+	local cdSpacer = Instance.new("Frame")
+	cdSpacer.Size = UDim2.new(1, 0, 0, 4)
+	cdSpacer.BackgroundTransparency = 1
+	cdSpacer.LayoutOrder = 19
+	cdSpacer.Parent = tab
+
+	createSectionLabel(tab, "Coin Domination", 20)
+
+	createToggle(tab, "Coin Aura", 21, function(on)
+		coinDomState.auraEnabled = on
+		if on then coinDomState.startCoinAura() else coinDomState.stopCoinAura() end
+	end)
+	createSlider(tab, "Aura Radius", 10, 300, coinDomState.auraRadius, 22, function(val)
+		coinDomState.auraRadius = val
+	end)
+	createActionButton(tab, "TP Through All Coins", 23, function()
+		coinDomState.tpThroughAllCoins()
+	end)
+	createToggle(tab, "Coin Tracers", 24, function(on)
+		coinDomState.tracersEnabled = on
+		if on then coinDomState.startCoinTracers() else coinDomState.stopCoinTracers() end
+	end)
+	coinDomState.counterLabel = createInfoLabel(tab, "Coins Remaining: ...", 25)
+	coinDomState.startCoinCounter()
+
+	createInfoLabel(tab, "Aura sweeps to coins in radius then returns", 26)
+	createInfoLabel(tab, "TP sweep vacuums every coin on the map once", 27)
 end
 
 -- =====================================================================
@@ -3502,6 +4788,743 @@ do
 		stopEmote()
 		addLog("[EMOTE] Stopped", COLORS.error)
 	end)
+end
+
+-- ======================== CONFIG TAB =============================
+do
+	local tab = tabFrames["Config"]
+
+	createSectionLabel(tab, "Config", 1)
+	createActionButton(tab, "Save Config", 2, configState.saveConfig)
+	createActionButton(tab, "Load Config", 3, configState.loadConfig)
+end
+
+-- =====================================================================
+-- ============ BUNDLE 4: QoL + UI OVERHAUL (Config tab) ==============
+-- All generic (camera/movement/settings/Drawing/chat-read). No remotes.
+-- =====================================================================
+(function()
+	local configTab = tabFrames["Config"]
+
+	-- ---- config registry helper (toggles register name+get+set) ----
+	local function registerConfigToggle(name, getFn, setFn)
+		configState.registry = configState.registry or {}
+		configState.registry[name] = {get = getFn, set = setFn}
+	end
+
+	-- ---- feature search (best-effort hide/show of control rows) ----
+	local function labelTextOf(obj)
+		if obj:IsA("TextButton") then return obj.Text end
+		if obj:IsA("Frame") then
+			-- skip panels that host their own scrolling content (log, player list)
+			for _, c in ipairs(obj:GetChildren()) do
+				if c:IsA("ScrollingFrame") then return nil end
+			end
+			for _, c in ipairs(obj:GetChildren()) do
+				if c:IsA("TextLabel") then return c.Text end
+			end
+		end
+		return nil
+	end
+
+	local function filterFeatures(query)
+		query = tostring(query or ""):lower()
+		qolState.searchQuery = query
+		for _, frame in pairs(tabFrames) do
+			for _, child in ipairs(frame:GetChildren()) do
+				pcall(function()
+					if child.Name == "QoLSearchRow" then return end
+					if child:IsA("ScrollingFrame") then return end
+					if child:IsA("TextButton") or child:IsA("Frame") then
+						local txt = labelTextOf(child)
+						if txt then
+							if query == "" then
+								child.Visible = true
+							else
+								child.Visible = (txt:lower():find(query, 1, true) ~= nil)
+							end
+						end
+					end
+				end)
+			end
+		end
+	end
+
+	-- ---- FPS booster / low graphics ----
+	local function startFpsBoost()
+		pcall(function()
+			local s = settings()
+			if qolState.origQualityLevel == nil then qolState.origQualityLevel = s.Rendering.QualityLevel end
+			s.Rendering.QualityLevel = Enum.QualityLevel.Level01
+		end)
+		pcall(function()
+			if qolState.origGlobalShadows == nil then qolState.origGlobalShadows = Lighting.GlobalShadows end
+			Lighting.GlobalShadows = false
+		end)
+		pcall(function()
+			if qolState.origWaterWaveSize == nil then qolState.origWaterWaveSize = workspace.Terrain.WaterWaveSize end
+			workspace.Terrain.WaterWaveSize = 0
+			workspace.Terrain.WaterWaveSpeed = 0
+		end)
+		pcall(function()
+			for _, d in ipairs(workspace:GetDescendants()) do
+				if d:IsA("BasePart") then
+					pcall(function() d.Material = Enum.Material.SmoothPlastic end)
+				elseif d:IsA("Decal") or d:IsA("Texture") then
+					pcall(function() d.Transparency = 1 end)
+				end
+			end
+		end)
+		addLog("[QoL] FPS Booster ON (low graphics)", COLORS.success)
+	end
+	local function stopFpsBoost()
+		pcall(function()
+			local s = settings()
+			if qolState.origQualityLevel ~= nil then s.Rendering.QualityLevel = qolState.origQualityLevel end
+		end)
+		pcall(function()
+			if qolState.origGlobalShadows ~= nil then Lighting.GlobalShadows = qolState.origGlobalShadows end
+		end)
+		pcall(function()
+			if qolState.origWaterWaveSize ~= nil then workspace.Terrain.WaterWaveSize = qolState.origWaterWaveSize end
+		end)
+		addLog("[QoL] FPS Booster OFF (materials/decals stay)", COLORS.textSecondary)
+	end
+
+	-- ---- Freecam (detach camera, WASD/arrows/space/ctrl to fly) ----
+	local function startFreecam()
+		pcall(function()
+			local cf = Camera.CFrame
+			qolState.freecamPos = cf.Position
+			local rx, ry = cf:ToEulerAnglesYXZ()
+			qolState.freecamPitch = rx
+			qolState.freecamYaw = ry
+			Camera.CameraType = Enum.CameraType.Scriptable
+		end)
+		if qolState.freecamConn then qolState.freecamConn:Disconnect() qolState.freecamConn = nil end
+		qolState.freecamConn = RunService.RenderStepped:Connect(function(dt)
+			pcall(function()
+				if not qolState.freecamEnabled then return end
+				dt = (dt and dt > 0) and dt or 0.016
+				local rotSpeed = 1.8 * dt
+				if UserInputService:IsKeyDown(Enum.KeyCode.Left) then qolState.freecamYaw = qolState.freecamYaw + rotSpeed end
+				if UserInputService:IsKeyDown(Enum.KeyCode.Right) then qolState.freecamYaw = qolState.freecamYaw - rotSpeed end
+				if UserInputService:IsKeyDown(Enum.KeyCode.Up) then qolState.freecamPitch = math.clamp(qolState.freecamPitch + rotSpeed, -1.4, 1.4) end
+				if UserInputService:IsKeyDown(Enum.KeyCode.Down) then qolState.freecamPitch = math.clamp(qolState.freecamPitch - rotSpeed, -1.4, 1.4) end
+				local baseCF = CFrame.new(qolState.freecamPos) * CFrame.Angles(0, qolState.freecamYaw, 0) * CFrame.Angles(qolState.freecamPitch, 0, 0)
+				local moveSpeed = qolState.freecamSpeed * dt
+				local dir = Vector3.new(0, 0, 0)
+				if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir = dir + baseCF.LookVector end
+				if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir = dir - baseCF.LookVector end
+				if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir = dir + baseCF.RightVector end
+				if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir = dir - baseCF.RightVector end
+				if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir = dir + Vector3.new(0, 1, 0) end
+				if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then dir = dir - Vector3.new(0, 1, 0) end
+				if dir.Magnitude > 0 then qolState.freecamPos = qolState.freecamPos + dir.Unit * moveSpeed end
+				Camera.CFrame = CFrame.new(qolState.freecamPos) * CFrame.Angles(0, qolState.freecamYaw, 0) * CFrame.Angles(qolState.freecamPitch, 0, 0)
+			end)
+		end)
+		addLog("[QoL] Freecam ON (WASD move, arrows look, Space/Ctrl up-down)", COLORS.success)
+	end
+	local function stopFreecam()
+		if qolState.freecamConn then qolState.freecamConn:Disconnect() qolState.freecamConn = nil end
+		pcall(function()
+			Camera.CameraType = Enum.CameraType.Custom
+			local char = LocalPlayer.Character
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+			if hum then Camera.CameraSubject = hum end
+		end)
+		addLog("[QoL] Freecam OFF", COLORS.textSecondary)
+	end
+
+	-- ---- Click-TP (click a spot to teleport HRP there) ----
+	local function startClickTp()
+		if qolState.mouse == nil then
+			pcall(function() qolState.mouse = LocalPlayer:GetMouse() end)
+		end
+		if qolState.clickTpConn then return end
+		qolState.clickTpConn = UserInputService.InputBegan:Connect(function(input, gp)
+			if gp then return end
+			if not qolState.clickTpEnabled then return end
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				pcall(function()
+					local char = LocalPlayer.Character
+					local hrp = char and char:FindFirstChild("HumanoidRootPart")
+					if hrp and qolState.mouse then
+						local hit = qolState.mouse.Hit
+						if hit then hrp.CFrame = CFrame.new(hit.Position + Vector3.new(0, 3, 0)) end
+					end
+				end)
+			end
+		end)
+		addLog("[QoL] Click TP ON (click ground to teleport)", COLORS.success)
+	end
+	local function stopClickTp()
+		if qolState.clickTpConn then qolState.clickTpConn:Disconnect() qolState.clickTpConn = nil end
+		addLog("[QoL] Click TP OFF", COLORS.textSecondary)
+	end
+
+	-- ---- Save / Load position ----
+	local function savePosition()
+		pcall(function()
+			local char = LocalPlayer.Character
+			local hrp = char and char:FindFirstChild("HumanoidRootPart")
+			if hrp then
+				qolState.savedPos = hrp.CFrame
+				addLog("[QoL] Position saved", COLORS.success)
+			else
+				addLog("[QoL] No character to save", COLORS.error)
+			end
+		end)
+	end
+	local function loadPosition()
+		pcall(function()
+			local char = LocalPlayer.Character
+			local hrp = char and char:FindFirstChild("HumanoidRootPart")
+			if hrp and qolState.savedPos then
+				hrp.CFrame = qolState.savedPos
+				addLog("[QoL] Teleported to saved position", COLORS.success)
+			else
+				addLog("[QoL] No saved position", COLORS.error)
+			end
+		end)
+	end
+
+	-- ---- Auto-rejoin on death ----
+	local function startAutoRejoin()
+		if qolState.autoRejoinConn then qolState.autoRejoinConn:Disconnect() qolState.autoRejoinConn = nil end
+		pcall(function()
+			local char = LocalPlayer.Character
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+			if hum then
+				qolState.autoRejoinConn = hum.Died:Connect(function()
+					if qolState.autoRejoinEnabled then
+						pcall(function() TeleportService:Teleport(game.PlaceId, LocalPlayer) end)
+					end
+				end)
+			end
+		end)
+	end
+	local function stopAutoRejoin()
+		if qolState.autoRejoinConn then qolState.autoRejoinConn:Disconnect() qolState.autoRejoinConn = nil end
+	end
+
+	-- ---- Chat spy / logger (legacy Chatted + TextChatService) ----
+	local function stopChatSpy()
+		for _, c in ipairs(qolState.chatSpyConns) do pcall(function() c:Disconnect() end) end
+		qolState.chatSpyConns = {}
+	end
+	local function startChatSpy()
+		stopChatSpy()
+		-- legacy per-player Chatted
+		pcall(function()
+			local function hook(p)
+				local ok, conn = pcall(function()
+					return p.Chatted:Connect(function(msg)
+						if qolState.chatSpyEnabled then
+							addLog("[CHAT] " .. p.Name .. ": " .. tostring(msg), COLORS.textSecondary)
+						end
+					end)
+				end)
+				if ok and conn then table.insert(qolState.chatSpyConns, conn) end
+			end
+			for _, p in ipairs(Players:GetPlayers()) do hook(p) end
+			table.insert(qolState.chatSpyConns, Players.PlayerAdded:Connect(function(p) hook(p) end))
+		end)
+		-- modern TextChatService
+		pcall(function()
+			local TCS = game:GetService("TextChatService")
+			if TCS and TCS.MessageReceived then
+				local conn = TCS.MessageReceived:Connect(function(message)
+					if qolState.chatSpyEnabled then
+						local name = "?"
+						pcall(function() if message.TextSource then name = message.TextSource.Name end end)
+						addLog("[CHAT] " .. name .. ": " .. tostring(message.Text), COLORS.textSecondary)
+					end
+				end)
+				table.insert(qolState.chatSpyConns, conn)
+			end
+		end)
+		addLog("[QoL] Chat Spy ON", COLORS.success)
+	end
+
+	-- ---- Keybinds (reuse infra keybind registry) ----
+	local KEYBIND_FEATURES = {"Fly", "Noclip", "Speed", "Aimbot", "UIToggle"}
+
+	local function updateBindInfo()
+		if not qolState.bindInfoLabel then return end
+		local parts = {}
+		for _, feat in ipairs(KEYBIND_FEATURES) do
+			local k = (keybinds[feat] and keybinds[feat].key) or "-"
+			table.insert(parts, feat .. ":" .. k)
+		end
+		qolState.bindInfoLabel.Text = table.concat(parts, "  ")
+	end
+
+	bindKey("Fly", "F", function()
+		moveState.flyEnabled = not moveState.flyEnabled
+		if moveState.flyEnabled then startFly() else stopFly() end
+		addLog("[KEYBIND] Fly " .. (moveState.flyEnabled and "ON" or "OFF"), COLORS.accent)
+	end)
+	bindKey("Noclip", "N", function()
+		moveState.noclipEnabled = not moveState.noclipEnabled
+		if moveState.noclipEnabled then startNoclip() else stopNoclip() end
+		addLog("[KEYBIND] Noclip " .. (moveState.noclipEnabled and "ON" or "OFF"), COLORS.accent)
+	end)
+	bindKey("Speed", "G", function()
+		moveState.speedEnabled = not moveState.speedEnabled
+		if moveState.speedEnabled then startSpeed() else stopSpeed() end
+		addLog("[KEYBIND] Speed " .. (moveState.speedEnabled and "ON" or "OFF"), COLORS.accent)
+	end)
+	bindKey("Aimbot", "H", function()
+		sheriffState.aimbotEnabled = not sheriffState.aimbotEnabled
+		if sheriffState.aimbotEnabled then SH.startSheriffAimbot() else SH.stopSheriffAimbot() end
+		addLog("[KEYBIND] Aimbot " .. (sheriffState.aimbotEnabled and "ON" or "OFF"), COLORS.accent)
+	end)
+	bindKey("UIToggle", "K", function()
+		uiState.windowVisible = not uiState.windowVisible
+		mainWindow.Visible = uiState.windowVisible
+		toggleBtn.Visible = not uiState.windowVisible
+	end)
+
+	-- capture the next key press when a Bind button is armed
+	UserInputService.InputBegan:Connect(function(input, gp)
+		if not qolState.capturingBind then return end
+		if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+		local feat = qolState.capturingBind
+		qolState.capturingBind = nil
+		local keyName = input.KeyCode.Name
+		setKeybind(feat, keyName)
+		if qolState.bindButtons[feat] then
+			qolState.bindButtons[feat].Text = "Bind: " .. feat .. " [" .. keyName .. "]"
+		end
+		updateBindInfo()
+		addLog("[KEYBIND] " .. feat .. " -> " .. keyName, COLORS.success)
+	end)
+
+	-- ================= CONFIG TAB UI =================
+
+	-- Feature search box (top of Config tab)
+	local searchRow = Instance.new("Frame")
+	searchRow.Name = "QoLSearchRow"
+	searchRow.Size = UDim2.new(1, 0, 0, 30)
+	searchRow.BackgroundColor3 = COLORS.tabBg
+	searchRow.BorderSizePixel = 0
+	searchRow.LayoutOrder = 0
+	searchRow.Parent = configTab
+	addCorner(searchRow, 5)
+
+	local searchBox = Instance.new("TextBox")
+	searchBox.Size = UDim2.new(1, -16, 1, 0)
+	searchBox.Position = UDim2.new(0, 8, 0, 0)
+	searchBox.BackgroundTransparency = 1
+	searchBox.Text = ""
+	searchBox.PlaceholderText = "Search features across tabs..."
+	searchBox.TextColor3 = COLORS.textPrimary
+	searchBox.PlaceholderColor3 = COLORS.textDim
+	searchBox.Font = Enum.Font.Gotham
+	searchBox.TextSize = 12
+	searchBox.TextXAlignment = Enum.TextXAlignment.Left
+	searchBox.ClearTextOnFocus = false
+	searchBox.Parent = searchRow
+	searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+		pcall(function() filterFeatures(searchBox.Text) end)
+	end)
+
+	createSectionLabel(configTab, "QoL", 10)
+
+	-- FPS Booster
+	local fpsBoostToggle
+	local function setFpsBoost(v)
+		qolState.fpsBoostEnabled = v
+		if v then startFpsBoost() else stopFpsBoost() end
+		if fpsBoostToggle then pcall(function() fpsBoostToggle.setVisualState(v) end) end
+	end
+	fpsBoostToggle = createToggle(configTab, "FPS Booster (Low Graphics)", 11, function(on) setFpsBoost(on) end)
+
+	-- Watermark / FPS counter
+	local watermarkToggle
+	local function setWatermark(v)
+		qolState.watermarkEnabled = v
+		if qolState.watermarkLabel then qolState.watermarkLabel.Visible = v end
+		if watermarkToggle then pcall(function() watermarkToggle.setVisualState(v) end) end
+	end
+	watermarkToggle = createToggle(configTab, "FPS Counter / Watermark", 12, function(on) setWatermark(on) end)
+
+	-- Freecam
+	local freecamToggle
+	local function setFreecam(v)
+		qolState.freecamEnabled = v
+		if v then startFreecam() else stopFreecam() end
+		if freecamToggle then pcall(function() freecamToggle.setVisualState(v) end) end
+	end
+	freecamToggle = createToggle(configTab, "Freecam", 13, function(on) setFreecam(on) end)
+
+	-- Click TP
+	local clickTpToggle
+	local function setClickTp(v)
+		qolState.clickTpEnabled = v
+		if v then startClickTp() else stopClickTp() end
+		if clickTpToggle then pcall(function() clickTpToggle.setVisualState(v) end) end
+	end
+	clickTpToggle = createToggle(configTab, "Click TP", 14, function(on) setClickTp(on) end)
+
+	-- Auto-rejoin on death
+	local autoRejoinToggle
+	local function setAutoRejoin(v)
+		qolState.autoRejoinEnabled = v
+		if v then startAutoRejoin() else stopAutoRejoin() end
+		if autoRejoinToggle then pcall(function() autoRejoinToggle.setVisualState(v) end) end
+		addLog("[QoL] Auto-Rejoin " .. (v and "ON" or "OFF"), v and COLORS.success or COLORS.textSecondary)
+	end
+	autoRejoinToggle = createToggle(configTab, "Auto-Rejoin on Death", 15, function(on) setAutoRejoin(on) end)
+
+	-- Chat spy
+	local chatSpyToggle
+	local function setChatSpy(v)
+		qolState.chatSpyEnabled = v
+		if v then startChatSpy() else stopChatSpy() addLog("[QoL] Chat Spy OFF", COLORS.textSecondary) end
+		if chatSpyToggle then pcall(function() chatSpyToggle.setVisualState(v) end) end
+	end
+	chatSpyToggle = createToggle(configTab, "Chat Spy / Logger", 16, function(on) setChatSpy(on) end)
+
+	-- Save / Load position
+	createActionButton(configTab, "Save Position", 17, savePosition)
+	createActionButton(configTab, "Load Position", 18, loadPosition)
+
+	-- Keybinds section
+	createSectionLabel(configTab, "Keybinds", 19)
+	local bindOrder = 20
+	for _, feat in ipairs(KEYBIND_FEATURES) do
+		local defKey = (keybinds[feat] and keybinds[feat].key) or "-"
+		local btn = createActionButton(configTab, "Bind: " .. feat .. " [" .. defKey .. "]", bindOrder, function()
+			qolState.capturingBind = feat
+			if qolState.bindButtons[feat] then
+				qolState.bindButtons[feat].Text = "Press any key... (" .. feat .. ")"
+			end
+			addLog("[KEYBIND] Press a key to bind " .. feat, COLORS.textSecondary)
+		end)
+		qolState.bindButtons[feat] = btn
+		bindOrder = bindOrder + 1
+	end
+	qolState.bindInfoLabel = createInfoLabel(configTab, "", 26)
+	updateBindInfo()
+
+	createInfoLabel(configTab, "Save Config snapshots every registered toggle.", 30)
+	createInfoLabel(configTab, "Load Config re-applies them (movement/visual/QoL).", 31)
+
+	-- ================= FPS COUNTER / WATERMARK (own label) =================
+	local wm = Instance.new("TextLabel")
+	wm.Name = "SXWatermark"
+	wm.Size = UDim2.new(0, 280, 0, 22)
+	wm.Position = UDim2.new(0.5, -140, 0, 6)
+	wm.BackgroundColor3 = COLORS.bg
+	wm.BackgroundTransparency = 0.35
+	wm.Text = "MM2 Hub | FPS: --"
+	wm.TextColor3 = COLORS.accent
+	wm.Font = Enum.Font.GothamBold
+	wm.TextSize = 12
+	wm.Visible = qolState.watermarkEnabled
+	wm.Parent = screenGui
+	addCorner(wm, 5)
+	addStroke(wm, COLORS.accentDark, 1)
+	qolState.watermarkLabel = wm
+	if watermarkToggle then pcall(function() watermarkToggle.setVisualState(qolState.watermarkEnabled) end) end
+
+	qolState.watermarkConn = RunService.RenderStepped:Connect(function(dt)
+		pcall(function()
+			if dt and dt > 0 then
+				qolState.fps = (qolState.fps or 60) * 0.9 + (1 / dt) * 0.1
+			end
+			qolState.fpsThrottle = (qolState.fpsThrottle or 0) + (dt or 0)
+			if qolState.fpsThrottle >= 0.25 then
+				qolState.fpsThrottle = 0
+				if qolState.watermarkLabel then
+					qolState.watermarkLabel.Visible = qolState.watermarkEnabled
+					if qolState.watermarkEnabled then
+						local pingTxt = ""
+						pcall(function()
+							local stats = game:GetService("Stats")
+							local ping = stats.Network.ServerStatsItem["Data Ping"]:GetValue()
+							pingTxt = " | Ping: " .. tostring(math.floor(ping)) .. "ms"
+						end)
+						qolState.watermarkLabel.Text = "MM2 Hub | FPS: " .. tostring(math.floor(qolState.fps + 0.5)) .. pingTxt
+					end
+				end
+			end
+		end)
+	end)
+
+	-- ================= CONFIG REGISTRY (persist + restore) =================
+	-- Simple movement / visual toggles (best-effort start/stop, no visual sync)
+	registerConfigToggle("Fly", function() return moveState.flyEnabled end, function(v) moveState.flyEnabled = v if v then startFly() else stopFly() end end)
+	registerConfigToggle("Noclip", function() return moveState.noclipEnabled end, function(v) moveState.noclipEnabled = v if v then startNoclip() else stopNoclip() end end)
+	registerConfigToggle("Speed", function() return moveState.speedEnabled end, function(v) moveState.speedEnabled = v if v then startSpeed() else stopSpeed() end end)
+	registerConfigToggle("InfiniteJump", function() return moveState.infJumpEnabled end, function(v) moveState.infJumpEnabled = v if v then startInfJump() else stopInfJump() end end)
+	registerConfigToggle("God", function() return moveState.godEnabled end, function(v) moveState.godEnabled = v if v then startGod() else stopGod() end end)
+	registerConfigToggle("Invisible", function() return moveState.invisibleEnabled end, function(v) moveState.invisibleEnabled = v if v then startInvisible() else stopInvisible() end end)
+	registerConfigToggle("BunnyHop", function() return moveState.bunnyHopEnabled end, function(v) moveState.bunnyHopEnabled = v if v then startBunnyHop() else stopBunnyHop() end end)
+	registerConfigToggle("ESP", function() return espState.espEnabled end, function(v)
+		espState.espEnabled = v
+		if v then
+			if not roleState.roleCheckEnabled then startRoleCheck() end
+			enablePlayerEsp()
+		else
+			disablePlayerEsp()
+		end
+	end)
+	registerConfigToggle("Fullbright", function() return espState.fullbrightEnabled end, function(v) espState.fullbrightEnabled = v if v then startFullbright() else stopFullbright() end end)
+	-- QoL toggles (setters sync their toggle visual state)
+	registerConfigToggle("FpsBooster", function() return qolState.fpsBoostEnabled end, setFpsBoost)
+	registerConfigToggle("Watermark", function() return qolState.watermarkEnabled end, setWatermark)
+	registerConfigToggle("Freecam", function() return qolState.freecamEnabled end, setFreecam)
+	registerConfigToggle("ClickTP", function() return qolState.clickTpEnabled end, setClickTp)
+	registerConfigToggle("AutoRejoin", function() return qolState.autoRejoinEnabled end, setAutoRejoin)
+	registerConfigToggle("ChatSpy", function() return qolState.chatSpyEnabled end, setChatSpy)
+
+	-- ================= RESPAWN HOOK (called from CharacterAdded) =================
+	qolState.onRespawn = function(char)
+		if qolState.autoRejoinEnabled then startAutoRejoin() end
+		if qolState.freecamEnabled then
+			pcall(function() Camera.CameraType = Enum.CameraType.Scriptable end)
+		end
+	end
+end)()
+
+-- =====================================================================
+-- ============ BUNDLE 5: EXTRAS GRAB-BAG =============================
+-- All generic (movement/noclip/transparency/logging/keybind). No remotes.
+-- =====================================================================
+do
+	local HIP_DEFAULT = 2
+
+	-- ---- Ghost mode: noclip + semi-transparent local character (client-only) ----
+	local function startGhost()
+		if extrasState.ghostConnection then pcall(function() extrasState.ghostConnection:Disconnect() end) extrasState.ghostConnection = nil end
+		extrasState.ghostConnection = RunService.Heartbeat:Connect(function()
+			if not extrasState.ghostEnabled then return end
+			pcall(function()
+				local char = LocalPlayer.Character
+				if not char then return end
+				for _, part in ipairs(char:GetDescendants()) do
+					if part:IsA("BasePart") then
+						part.CanCollide = false
+						part.LocalTransparencyModifier = extrasState.ghostTransparency
+					end
+				end
+			end)
+		end)
+		addLog("[GHOST] ON (local-visual: noclip + transparency)", COLORS.success)
+	end
+
+	local function stopGhost()
+		if extrasState.ghostConnection then pcall(function() extrasState.ghostConnection:Disconnect() end) extrasState.ghostConnection = nil end
+		pcall(function()
+			local char = LocalPlayer.Character
+			if char then
+				for _, part in ipairs(char:GetDescendants()) do
+					if part:IsA("BasePart") then
+						part.LocalTransparencyModifier = 0
+						if not moveState.noclipEnabled then part.CanCollide = true end
+					end
+				end
+			end
+		end)
+		addLog("[GHOST] OFF", COLORS.error)
+	end
+
+	-- ---- Auto-dodge murderer knife: sideways HRP velocity nudge (MM2-safe Assembly prop) ----
+	local function startDodge()
+		if extrasState.dodgeConnection then pcall(function() extrasState.dodgeConnection:Disconnect() end) extrasState.dodgeConnection = nil end
+		extrasState.dodgeConnection = RunService.Heartbeat:Connect(function()
+			if not extrasState.dodgeEnabled then return end
+			pcall(function()
+				local murderer = roleState.murdererPlayer
+				if not murderer or murderer == LocalPlayer then return end
+				local char = LocalPlayer.Character
+				local hrp = char and char:FindFirstChild("HumanoidRootPart")
+				local mChar = murderer.Character
+				local mHrp = mChar and mChar:FindFirstChild("HumanoidRootPart")
+				if not hrp or not mHrp then return end
+				local dist = (hrp.Position - mHrp.Position).Magnitude
+				if dist > extrasState.dodgeDistance then return end
+				local now = os.clock()
+				if now - (extrasState.lastDodge or 0) < extrasState.dodgeCooldown then return end
+				extrasState.lastDodge = now
+				local away = hrp.Position - mHrp.Position
+				local flat = Vector3.new(away.X, 0, away.Z)
+				if flat.Magnitude < 0.1 then flat = hrp.CFrame.RightVector end
+				local side = flat.Unit:Cross(Vector3.new(0, 1, 0))
+				if side.Magnitude < 0.1 then side = hrp.CFrame.RightVector end
+				side = side.Unit
+				if math.random() < 0.5 then side = -side end
+				-- Assembly velocity: BasePart property MM2 servers can't instance-remove
+				hrp.AssemblyLinearVelocity = side * 40 + Vector3.new(0, 12, 0)
+				addLog("[DODGE] Nudged away from murderer (" .. math.floor(dist) .. " studs)", COLORS.accent)
+			end)
+		end)
+		addLog("[DODGE] ON - auto-dodge murderer within " .. extrasState.dodgeDistance .. " studs", COLORS.success)
+	end
+
+	local function stopDodge()
+		if extrasState.dodgeConnection then pcall(function() extrasState.dodgeConnection:Disconnect() end) extrasState.dodgeConnection = nil end
+		addLog("[DODGE] OFF", COLORS.error)
+	end
+
+	-- ---- Trap auto-avoid: reuse the name-based trap detection Trapdoor ESP uses ----
+	local function getTraps()
+		local traps = {}
+		pcall(function()
+			for _, obj in ipairs(workspace:GetDescendants()) do
+				if obj:IsA("BasePart") and (obj.Name == "Trap" or obj.Name == "Trapdoor" or obj.Name == "TrapDoor" or obj.Name:lower():find("trap")) then
+					table.insert(traps, obj)
+				end
+			end
+		end)
+		return traps
+	end
+
+	local trapCache = {}
+	local lastTrapScan = 0
+
+	local function startTrapAvoid()
+		if extrasState.trapAvoidConnection then pcall(function() extrasState.trapAvoidConnection:Disconnect() end) extrasState.trapAvoidConnection = nil end
+		trapCache = getTraps()
+		lastTrapScan = os.clock()
+		if #trapCache == 0 then
+			addLog("[TRAP AVOID] No trap parts found by name yet; will keep scanning (map may need recon)", COLORS.textSecondary)
+		end
+		extrasState.trapAvoidConnection = RunService.Heartbeat:Connect(function()
+			if not extrasState.trapAvoidEnabled then return end
+			pcall(function()
+				local now = os.clock()
+				if now - lastTrapScan > 1 then
+					lastTrapScan = now
+					trapCache = getTraps()
+				end
+				local char = LocalPlayer.Character
+				local hrp = char and char:FindFirstChild("HumanoidRootPart")
+				if not hrp then return end
+				for _, trap in ipairs(trapCache) do
+					if trap and trap.Parent then
+						local d = (hrp.Position - trap.Position).Magnitude
+						if d <= extrasState.trapAvoidRadius then
+							if now - (extrasState.lastTrapNudge or 0) >= 0.5 then
+								extrasState.lastTrapNudge = now
+								local away = hrp.Position - trap.Position
+								local flat = Vector3.new(away.X, 0, away.Z)
+								if flat.Magnitude < 0.1 then flat = hrp.CFrame.LookVector end
+								hrp.AssemblyLinearVelocity = flat.Unit * 45 + Vector3.new(0, 10, 0)
+								addLog("[TRAP AVOID] Nudged away from " .. trap.Name, COLORS.accent)
+							end
+							break
+						end
+					end
+				end
+			end)
+		end)
+		addLog("[TRAP AVOID] ON - avoid traps within " .. extrasState.trapAvoidRadius .. " studs", COLORS.success)
+	end
+
+	local function stopTrapAvoid()
+		if extrasState.trapAvoidConnection then pcall(function() extrasState.trapAvoidConnection:Disconnect() end) extrasState.trapAvoidConnection = nil end
+		addLog("[TRAP AVOID] OFF", COLORS.error)
+	end
+
+	-- ---- Hip height (one-shot property; re-applied via onRespawn) ----
+	local function setHipHeight(v)
+		pcall(function()
+			local char = LocalPlayer.Character
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+			if hum then hum.HipHeight = v end
+		end)
+	end
+
+	-- ---- Player-join logger ----
+	local function startJoinLogger()
+		if extrasState.joinLoggerConn then pcall(function() extrasState.joinLoggerConn:Disconnect() end) extrasState.joinLoggerConn = nil end
+		extrasState.joinLoggerConn = Players.PlayerAdded:Connect(function(plr)
+			pcall(function() addLog("[JOIN] " .. plr.Name .. " joined", COLORS.textSecondary) end)
+		end)
+		addLog("[JOIN LOGGER] ON", COLORS.success)
+	end
+
+	local function stopJoinLogger()
+		if extrasState.joinLoggerConn then pcall(function() extrasState.joinLoggerConn:Disconnect() end) extrasState.joinLoggerConn = nil end
+		addLog("[JOIN LOGGER] OFF", COLORS.error)
+	end
+
+	-- ================= PLAYER TAB UI (Extras / Evasion) =================
+	local ptab = tabFrames["Player"]
+	if ptab then
+		createSectionLabel(ptab, "Extras - Evasion", 40)
+
+		createToggle(ptab, "Ghost Mode (local-visual)", 41, function(on)
+			extrasState.ghostEnabled = on
+			if on then startGhost() else stopGhost() end
+		end)
+		createSlider(ptab, "Ghost Transparency %", 0, 100, 60, 42, function(val)
+			extrasState.ghostTransparency = math.clamp(val / 100, 0, 0.95)
+		end)
+		createToggle(ptab, "Auto-Dodge Knife", 43, function(on)
+			extrasState.dodgeEnabled = on
+			if on then
+				if not roleState.roleCheckEnabled then startRoleCheck() end
+				startDodge()
+			else
+				stopDodge()
+			end
+		end)
+		createSlider(ptab, "Dodge Trigger Distance", 4, 40, extrasState.dodgeDistance, 44, function(val)
+			extrasState.dodgeDistance = val
+		end)
+		createToggle(ptab, "Trap Auto-Avoid", 45, function(on)
+			extrasState.trapAvoidEnabled = on
+			if on then startTrapAvoid() else stopTrapAvoid() end
+		end)
+		createSlider(ptab, "Trap Avoid Radius", 4, 40, extrasState.trapAvoidRadius, 46, function(val)
+			extrasState.trapAvoidRadius = val
+		end)
+		createSlider(ptab, "Hip Height", 0, 15, HIP_DEFAULT, 47, function(val)
+			extrasState.hipHeightValue = val
+			setHipHeight(val)
+		end)
+		createInfoLabel(ptab, "Ghost/Dodge/Trap are client-side movement only.", 48)
+	end
+
+	-- ================= FUN TAB UI (Utility) =================
+	local ftab = tabFrames["Fun"]
+	if ftab then
+		createSectionLabel(ftab, "Utility - Extras", 60)
+		createToggle(ftab, "Player-Join Logger", 61, function(on)
+			extrasState.joinLoggerEnabled = on
+			if on then startJoinLogger() else stopJoinLogger() end
+		end)
+	end
+
+	-- ================= UI MINIMIZE KEYBIND (infra keybind registry) =================
+	-- Registered via bindKey so it is rebindable. Defaults to RightControl:
+	-- RightShift is already handled by a hardcoded toggle elsewhere, so binding a
+	-- second RightShift handler here would double-toggle (net no-op / dead key).
+	bindKey("UIMinimize", "RightControl", function()
+		pcall(function()
+			uiState.windowVisible = not uiState.windowVisible
+			mainWindow.Visible = uiState.windowVisible
+			if toggleBtn then toggleBtn.Visible = not uiState.windowVisible end
+		end)
+	end)
+
+	-- ================= RESPAWN HOOK (called from CharacterAdded) =================
+	extrasState.onRespawn = function(char)
+		-- Ghost/Dodge/Trap-Avoid loops re-read LocalPlayer.Character each frame,
+		-- so they survive death on their own. Only Hip Height is a one-shot set.
+		if extrasState.hipHeightValue and extrasState.hipHeightValue ~= HIP_DEFAULT then
+			pcall(function()
+				local hum = char and char:FindFirstChildOfClass("Humanoid")
+				if hum then hum.HipHeight = extrasState.hipHeightValue end
+			end)
+		end
+	end
 end
 
 -- =====================================================================
@@ -3898,6 +5921,17 @@ LocalPlayer.CharacterAdded:Connect(function(char)
 	if moveState.gravityValue ~= 196 then
 		_wait(0.2)
 		setGravity(moveState.gravityValue)
+	end
+
+	-- Bundle 4 (QoL) respawn hook: re-hook auto-rejoin / re-assert freecam
+	if qolState.onRespawn then
+		pcall(function() qolState.onRespawn(char) end)
+	end
+
+	-- Bundle 5 (Extras) respawn hook: re-apply hip height (loops self-survive)
+	if extrasState.onRespawn then
+		_wait(0.3)
+		pcall(function() extrasState.onRespawn(char) end)
 	end
 end)
 
