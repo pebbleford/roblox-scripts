@@ -518,7 +518,7 @@ local function startAutoUpgrade()
 							if text:find("upgrade") or text:find("level up") then
 								pcall(function()
 									-- Simulate click on upgrade button
-									gui.MouseButton1Click:Fire()
+									firesignal(gui.MouseButton1Click)
 								end)
 							end
 						end
@@ -713,16 +713,18 @@ local function editSignText(sign, newText)
 	end
 
 	-- Method 3: CaptureFocus -> set text -> ReleaseFocus (triggers real FocusLost signal)
+	local method3OK = false
 	pcall(function()
 		stb:CaptureFocus()
 		task.wait(0.15)
 		stb.Text = newText
 		task.wait(0.15)
 		stb:ReleaseFocus(true)
+		method3OK = (stb.Text == newText)
 		print("[SX Elected] Method 3: CaptureFocus -> ReleaseFocus for " .. sign.Name)
 	end)
 
-	return true
+	return method3OK
 end
 
 -- Decompile the Network/Red modules to find event identifier mapping

@@ -14,10 +14,6 @@ end
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local floorCheck = pcall(function()
-    return ReplicatedStorage.GameData.Floor.Value
-end)
-
 -- Services
 local Players = game:GetService("Players")
 local PathfindingService = game:GetService("PathfindingService")
@@ -25,7 +21,8 @@ local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 
 local lp = Players.LocalPlayer
-local LatestRoom = ReplicatedStorage.GameData.LatestRoom
+local GameData = ReplicatedStorage:WaitForChild("GameData", 10)
+local LatestRoom = GameData and GameData:FindFirstChild("LatestRoom")
 local TOGGLE_KEY = Enum.KeyCode.RightShift
 
 -- ===================== STATE =====================
@@ -165,8 +162,10 @@ local function setAlert(t) alertLbl.Text = t end
 -- Find the nearest empty locker (Rooms_Locker with no one hiding in it)
 local function getLocker()
     if not hrp or not hrp.Parent then return nil end
+    local rooms = workspace:FindFirstChild("CurrentRooms")
+    if not rooms then return nil end
     local closest = nil
-    for _, v in pairs(workspace.CurrentRooms:GetDescendants()) do
+    for _, v in pairs(rooms:GetDescendants()) do
         if v.Name == "Rooms_Locker" then
             if v:FindFirstChild("Door") and v:FindFirstChild("HiddenPlayer") then
                 if v.HiddenPlayer.Value == nil then
@@ -266,19 +265,21 @@ end
 
 -- ===================== ROOM CHANGE LISTENER =====================
 
-LatestRoom:GetPropertyChangedSignal("Value"):Connect(function()
-    if not active then return end
-    local val = LatestRoom.Value
-    setRoom(val)
+if LatestRoom then
+    LatestRoom:GetPropertyChangedSignal("Value"):Connect(function()
+        if not active then return end
+        local val = LatestRoom.Value
+        setRoom(val)
 
-    if val >= 1000 then
-        lp.DevComputerMovementMode = Enum.DevComputerMovementMode.KeyboardMouse
-        setStatus("REACHED A-1000!")
-        active = false
-        btn.Text = "A-1000!"
-        btn.BackgroundColor3 = Color3.fromRGB(200, 170, 30)
-    end
-end)
+        if val >= 1000 then
+            lp.DevComputerMovementMode = Enum.DevComputerMovementMode.KeyboardMouse
+            setStatus("REACHED A-1000!")
+            active = false
+            btn.Text = "A-1000!"
+            btn.BackgroundColor3 = Color3.fromRGB(200, 170, 30)
+        end
+    end)
+end
 
 -- ===================== MAIN PATHFINDING LOOP =====================
 
@@ -345,7 +346,7 @@ local function toggle()
         btn.Text = "STOP (RShift)"
         btn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
         setStatus("Running")
-        setRoom(LatestRoom.Value)
+        if LatestRoom then setRoom(LatestRoom.Value) end
 
         -- Prevent player input from interfering
         lp.DevComputerMovementMode = Enum.DevComputerMovementMode.Scriptable

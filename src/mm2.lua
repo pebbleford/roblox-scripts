@@ -70,6 +70,7 @@ local combatState = {
 	alertActive = false,
 	autoShootConnection = nil,
 	murdererEspHighlight = nil,
+	murdererEspConnection = nil,
 	alertFrame = nil,
 }
 
@@ -953,17 +954,24 @@ local function stopRoleCheck()
 end
 
 -- ===================== MURDERER ESP =====================
+local updateMurdererEsp  -- forward-declared so the standalone driver below can call it
+
 local function enableMurdererEsp()
-	-- Runs via the role check system; we just mark it enabled and handle in ESP refresh
+	-- Drive the ESP refresh on its own connection so it works even when Player ESP is off
+	if combatState.murdererEspConnection then combatState.murdererEspConnection:Disconnect() combatState.murdererEspConnection = nil end
+	combatState.murdererEspConnection = RunService.Heartbeat:Connect(function()
+		pcall(updateMurdererEsp)
+	end)
 	addLog("[MURDERER ESP] ON - Red highlight on murderer", COLORS.success)
 end
 
 local function disableMurdererEsp()
+	if combatState.murdererEspConnection then combatState.murdererEspConnection:Disconnect() combatState.murdererEspConnection = nil end
 	if combatState.murdererEspHighlight then pcall(function() combatState.murdererEspHighlight:Destroy() end) combatState.murdererEspHighlight = nil end
 	addLog("[MURDERER ESP] OFF", COLORS.error)
 end
 
-local function updateMurdererEsp()
+function updateMurdererEsp()
 	-- Remove stale highlight
 	if combatState.murdererEspHighlight then
 		local alive = false

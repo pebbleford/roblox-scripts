@@ -931,10 +931,16 @@ local function startAutoSell()
 	if autoSellConnection then return end
 	addLog("Auto-sell started")
 
+	local lastAutoSellWarn = 0
 	autoSellConnection = RunService.Heartbeat:Connect(function()
 		if not autoSellEnabled then return end
-		if PS.Buy then
-			pcall(function() PS.Buy:FireServer() end)
+		-- SAFETY: this game has no confirmed sell remote here. Do NOT fire
+		-- PS.Buy (the BUY remote) to sell -- that spams purchases every frame
+		-- and never sells. Neutralized until the real sell remote is found.
+		local now = os.clock()
+		if now - lastAutoSellWarn >= 5 then
+			lastAutoSellWarn = now
+			addLog("Auto Sell needs the game's real sell remote (recon required)")
 		end
 	end)
 end

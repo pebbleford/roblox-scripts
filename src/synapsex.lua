@@ -1548,7 +1548,7 @@ F.startDrawingEsp = function()
 		pcall(function()
 			local myChar = LocalPlayer.Character
 			local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-			local cam = Camera
+			local cam = workspace.CurrentCamera
 
 			for _, player in ipairs(Players:GetPlayers()) do
 				if player ~= LocalPlayer then
@@ -1775,7 +1775,8 @@ F.startFly = function()
 
 		-- Mobile: read thumbstick for movement + buttons for up/down
 		if isMobile then
-			local moveDir = game:GetService("Players").LocalPlayer:GetMoveDirection()
+			local hum = character:FindFirstChildOfClass("Humanoid")
+			local moveDir = hum and hum.MoveDirection or Vector3.zero
 			if moveDir.Magnitude > 0.1 then
 				dir = dir + cam.CFrame.LookVector * moveDir.Z * -1 + cam.CFrame.RightVector * moveDir.X
 			end
@@ -2966,7 +2967,7 @@ do
 		local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
 		if not myHRP then return end
 
-		addLog("[FLING] Flinging " .. playerState.selectedPlayer.DisplayName .. "...", COLORS.warning)
+		addLog("[FLING] Flinging " .. playerState.selectedPlayer.DisplayName .. "...", COLORS.textSecondary)
 
 		task.spawn(function()
 			local savedCF = myHRP.CFrame
@@ -3435,6 +3436,9 @@ do
 		addLog("[EMOTE] Crouch (;stopemote to stop)", COLORS.success)
 	end)
 	createActionButton(tab, "Stop Emote", 19, function()
+		F.stopEmote()
+		addLog("[EMOTE] Stopped", COLORS.error)
+	end)
 
 	createActionButton(tab, "T-Pose", 30, function() F.playEmote(5104377791) end)
 	createActionButton(tab, "Zombie Walk", 31, function() F.playEmote(616163682) end)
@@ -3458,9 +3462,6 @@ do
 	createActionButton(tab, "Glass Body", 42, function() F.glassBody() end)
 	createActionButton(tab, "Clone Illusion", 43, function() F.cloneIllusion() end)
 	createActionButton(tab, "Sit in Air", 44, function() F.sitInAir() end)
-		F.stopEmote()
-		addLog("[EMOTE] Stopped", COLORS.error)
-	end)
 end
 
 
@@ -3738,7 +3739,7 @@ commands["spectate"] = function(args)
 	local target = F.findPlayer(args[1])
 	if target then F.spectatePlayer(target) else addLog("[CMD] Player not found: " .. args[1], COLORS.error) end
 end
-commands["F.unspectate"] = function() F.unspectate() end
+commands["unspectate"] = function() F.unspectate() end
 commands["spin"] = function() funState.spinEnabled = true F.startSpin() end
 commands["unspin"] = function() funState.spinEnabled = false F.stopSpin() end
 commands["seizure"] = function() funState.seizureEnabled = true F.startSeizure() end
@@ -3773,7 +3774,7 @@ commands["longjump"] = function() F.doLongJump() end
 commands["tpbehind"] = function() F.tpBehindPlayer() end
 commands["savepos"] = function(args) if not args[1] then return end moveState.savedPositions[args[1]] = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character.HumanoidRootPart.CFrame addLog("[WAYPOINT] Saved: " .. args[1], COLORS.success) end
 commands["loadpos"] = function(args) if not args[1] or not moveState.savedPositions[args[1]] then addLog("[WAYPOINT] Not found", COLORS.error) return end local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") if hrp then hrp.CFrame = moveState.savedPositions[args[1]] addLog("[WAYPOINT] Loaded: " .. args[1], COLORS.success) end end
-commands["listpos"] = function() addLog("--- Waypoints ---", COLORS.accent) for name in pairs(moveState.savedPositions) do addLog("  " .. name, COLORS.text) end end
+commands["listpos"] = function() addLog("--- Waypoints ---", COLORS.accent) for name in pairs(moveState.savedPositions) do addLog("  " .. name, COLORS.textSecondary) end end
 commands["fullbright"] = function() visualState.fullbrightEnabled = true F.startFullbright() end
 commands["unfullbright"] = function() visualState.fullbrightEnabled = false F.stopFullbright() end
 commands["xray"] = function() visualState.xrayEnabled = true F.startXray() end
@@ -3823,26 +3824,26 @@ commands["unload"] = function() F.unloadScript() end
 
 commands["cmds"] = function()
 	addLog("--- v3.0 Commands (90+) ---", COLORS.accent)
-	addLog("== Combat ==", COLORS.text)
+	addLog("== Combat ==", COLORS.textSecondary)
 	addLog(";aimbot ;triggerbot ;hitbox [sz] ;antifling ;antivoid", COLORS.textSecondary)
 	addLog(";killaura / un- versions to disable", COLORS.textSecondary)
-	addLog("== ESP ==", COLORS.text)
+	addLog("== ESP ==", COLORS.textSecondary)
 	addLog(";esp ;tracers ;crosshair", COLORS.textSecondary)
-	addLog("== Movement ==", COLORS.text)
+	addLog("== Movement ==", COLORS.textSecondary)
 	addLog(";fly ;speed [v] ;noclip ;god ;infjump ;bhop", COLORS.textSecondary)
 	addLog(";clicktp ;float ;platform ;longjump ;tpbehind", COLORS.textSecondary)
 	addLog(";savepos <n> ;loadpos <n> ;listpos", COLORS.textSecondary)
-	addLog("== Visuals ==", COLORS.text)
+	addLog("== Visuals ==", COLORS.textSecondary)
 	addLog(";fullbright ;xray ;fov [v] ;freecam ;nofog", COLORS.textSecondary)
 	addLog(";time [0-24] ;fps", COLORS.textSecondary)
-	addLog("== Fun ==", COLORS.text)
+	addLog("== Fun ==", COLORS.textSecondary)
 	addLog(";fling ;walkfling ;carfling ;invisible ;spin ;seizure", COLORS.textSecondary)
 	addLog(";headless ;rainbow ;tiny ;giant ;neon ;glass ;clone", COLORS.textSecondary)
 	addLog(";tpose ;zombie ;wave ;point ;laugh ;sitair", COLORS.textSecondary)
-	addLog("== Player ==", COLORS.text)
+	addLog("== Player ==", COLORS.textSecondary)
 	addLog(";tp <p> ;spectate <p> ;orbit ;attach ;follow ;stare", COLORS.textSecondary)
 	addLog(";playerinfo", COLORS.textSecondary)
-	addLog("== Server ==", COLORS.text)
+	addLog("== Server ==", COLORS.textSecondary)
 	addLog(";rejoin ;serverhop ;antiafk ;chatspy ;joinnotify", COLORS.textSecondary)
 	addLog(";autorespawn ;panic ;unload ;cmds", COLORS.textSecondary)
 	addLog("Prefix un- to disable any toggle (e.g. ;unfly)", COLORS.textSecondary)
@@ -4744,10 +4745,10 @@ F.showPlayerInfo = function()
 		local target = playerState.selectedPlayer
 		if not target then addLog("[INFO] No player selected", COLORS.error) return end
 		addLog("--- Player Info ---", COLORS.accent)
-		addLog("Name: " .. target.Name, COLORS.text)
-		addLog("Display: " .. target.DisplayName, COLORS.text)
-		addLog("ID: " .. target.UserId, COLORS.text)
-		addLog("Age: " .. target.AccountAge .. " days", COLORS.text)
+		addLog("Name: " .. target.Name, COLORS.textSecondary)
+		addLog("Display: " .. target.DisplayName, COLORS.textSecondary)
+		addLog("ID: " .. target.UserId, COLORS.textSecondary)
+		addLog("Age: " .. target.AccountAge .. " days", COLORS.textSecondary)
 	end)
 end
 

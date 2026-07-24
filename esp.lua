@@ -203,6 +203,11 @@ do
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			draggingSlider = true
 			updateSlider(input.Position.X)
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					draggingSlider = false
+				end
+			end)
 		end
 	end)
 

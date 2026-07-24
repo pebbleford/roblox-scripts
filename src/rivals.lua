@@ -1327,6 +1327,7 @@ local function stopRapidFire()
 end
 
 -- ===================== HITBOX EXPANDER =====================
+local savedHeadProps = {}
 local function startHitboxExpand()
 	C.hitboxConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
@@ -1335,6 +1336,9 @@ local function startHitboxExpand()
 					if not shouldSkipTeammate(player) then
 						local head = player.Character:FindFirstChild("Head")
 						if head and head:IsA("BasePart") then
+							if not savedHeadProps[head] then
+								savedHeadProps[head] = {Size = head.Size, Transparency = head.Transparency}
+							end
 							head.Size = Vector3.new(S.hitboxSize, S.hitboxSize, S.hitboxSize)
 							head.Transparency = 0.8
 							head.CanCollide = false
@@ -1349,18 +1353,16 @@ end
 
 local function stopHitboxExpand()
 	if C.hitboxConnection then C.hitboxConnection:Disconnect() C.hitboxConnection = nil end
-	-- Restore head sizes
+	-- Restore head sizes from captured originals
 	pcall(function()
-		for _, player in ipairs(Players:GetPlayers()) do
-			if player ~= LocalPlayer and player.Character then
-				local head = player.Character:FindFirstChild("Head")
-				if head and head:IsA("BasePart") then
-					head.Size = Vector3.new(1, 1, 1)
-					head.Transparency = 0
-				end
+		for head, props in pairs(savedHeadProps) do
+			if head and head:IsA("BasePart") then
+				head.Size = props.Size
+				head.Transparency = props.Transparency
 			end
 		end
 	end)
+	savedHeadProps = {}
 	addLog("[HITBOX] OFF", COLORS.error)
 end
 
@@ -2697,19 +2699,22 @@ do
 
 	createSectionLabel(tab, "Fling", 1)
 
-	local spinFlingToggle = createToggle(tab, "Spin Fling", 2, function(on)
+	local spinFlingToggle, walkFlingToggle
+	spinFlingToggle = createToggle(tab, "Spin Fling", 2, function(on)
 		if on and S.walkFlingEnabled then
 			S.walkFlingEnabled = false
 			stopWalkFling()
+			if walkFlingToggle then walkFlingToggle.setVisualState(false) end
 		end
 		S.flingEnabled = on
 		if on then startFling() else stopFling() end
 	end)
 	createSlider(tab, "Fling Power", 1000, 99999, S.flingPower, 3, function(val) S.flingPower = val end)
-	local walkFlingToggle = createToggle(tab, "Walk Fling", 4, function(on)
+	walkFlingToggle = createToggle(tab, "Walk Fling", 4, function(on)
 		if on and S.flingEnabled then
 			S.flingEnabled = false
 			stopFling()
+			if spinFlingToggle then spinFlingToggle.setVisualState(false) end
 		end
 		S.walkFlingEnabled = on
 		if on then startWalkFling() else stopWalkFling() end

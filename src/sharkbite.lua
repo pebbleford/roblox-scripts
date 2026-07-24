@@ -56,6 +56,7 @@ local speedEnabled = false
 local infJumpEnabled = false
 local godEnabled = false
 local flingEnabled = false
+local flingEnabledNoclip = false
 local spinEnabled = false
 local emoteActive = false
 
@@ -71,6 +72,7 @@ local sharkEspHighlights = {}
 local playerEspHighlights = {}
 local playerEspNametags = {}
 local espConnections = {}
+local sharkEspConnections = {}
 local boatSpeedConnection = nil
 local flyConnection = nil
 local bodyGyro = nil
@@ -1003,7 +1005,7 @@ local function enableSharkEsp()
 				if sharkEspEnabled then addSharkHighlight(child) end
 			end
 		end)
-		table.insert(espConnections, conn)
+		table.insert(sharkEspConnections, conn)
 	end
 	addLog("[SHARK ESP] ON", COLORS.success)
 end
@@ -1011,6 +1013,8 @@ end
 local function disableSharkEsp()
 	for _, hl in pairs(sharkEspHighlights) do pcall(function() hl:Destroy() end) end
 	sharkEspHighlights = {}
+	for _, conn in ipairs(sharkEspConnections) do pcall(function() conn:Disconnect() end) end
+	sharkEspConnections = {}
 	addLog("[SHARK ESP] OFF", COLORS.error)
 end
 
@@ -1431,7 +1435,7 @@ local function startFling()
 		end
 
 		-- Enable noclip so we can move freely while spinning
-		if not noclipEnabled then noclipEnabled = true startNoclip() end
+		if not noclipEnabled then noclipEnabled = true flingEnabledNoclip = true startNoclip() end
 		_wait(0.1)
 
 		-- BodyAngularVelocity - spin on ALL axes for chaotic collision
@@ -1512,6 +1516,13 @@ local function stopFling()
 		end
 	end
 	savedPhysProps = {}
+
+	-- Disable noclip only if fling was the one that enabled it
+	if flingEnabledNoclip then
+		noclipEnabled = false
+		stopNoclip()
+		flingEnabledNoclip = false
+	end
 
 	addLog("[SPIN FLING] OFF", COLORS.error)
 end

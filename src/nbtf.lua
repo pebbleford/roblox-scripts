@@ -67,6 +67,10 @@ local helpers = {}
 local actions = {}
 local uiBuilder = {}
 
+-- Forward-declare state tables referenced by the helpers below (assigned later)
+local aimState
+local combatState
+
 -- Find any gun in the player's backpack (respects aimState.selectedWeapon if set)
 function helpers.findGunInBackpack()
 	-- If a specific weapon is selected, try to find it first
@@ -194,7 +198,7 @@ local COLORS = {
 
 -- ===================== STATE =====================
 -- ===================== STATE (grouped to reduce local count) =====================
-local aimState = {
+aimState = {
 	silentAimActive = false,
 	wallbangActive = false,
 	aimbotActive = false,
@@ -213,7 +217,7 @@ local aimState = {
 	aimbotAlwaysOn = false,
 }
 
-local combatState = {
+combatState = {
 	killAuraActive = false,
 	triggerBotActive = false,
 	antiAimActive = false,
@@ -930,7 +934,7 @@ local function setupAutoRespawn()
 								if (gui:IsA("TextButton") or gui:IsA("ImageButton")) then
 									local txt = gui.Text and gui.Text:lower() or ""
 									if txt:find("respawn") or txt:find("deploy") or txt:find("spawn") then
-										gui.MouseButton1Click:Fire()
+										if firesignal then pcall(firesignal, gui.MouseButton1Click) end
 									end
 								end
 							end)

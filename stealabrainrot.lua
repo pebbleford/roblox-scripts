@@ -38,7 +38,8 @@ pcall(function()
 	for _, v in pairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
 		if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
 			pcall(function()
-				for _, conn in pairs(getconnections(v.OnClientEvent or v.OnClientInvoke)) do
+				local signal = v:IsA("RemoteEvent") and v.OnClientEvent or v.OnClientInvoke
+				for _, conn in pairs(getconnections(signal)) do
 					if conn.Function and debug.getinfo then
 						local info = debug.getinfo(conn.Function)
 						if info and info.source and info.source:find("ObserveTag") then
@@ -452,13 +453,17 @@ local function fireProximityPrompt(prompt)
 
 	-- Method 2: Hold duration override + InputHoldBegin/End
 	pcall(function()
+		local triggered = false
+		local conn = prompt.Triggered:Connect(function() triggered = true end)
 		local hold = prompt.HoldDuration
 		prompt.HoldDuration = 0
 		prompt:InputHoldBegin()
 		task.wait(0.1)
 		prompt:InputHoldEnd()
 		prompt.HoldDuration = hold
-		fired = true
+		conn:Disconnect()
+		-- Only count as fired if the prompt actually triggered; else fall through to Method 3
+		if triggered then fired = true end
 	end)
 	if fired then return end
 
@@ -2335,7 +2340,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 	if speedBoostActive then stopSpeedBoost() wait(0.3) startSpeedBoost() end
 	if antiRagdollActive then stopAntiRagdoll() wait(0.3) startAntiRagdoll() end
 	if antiHitActive then stopAntiHit() wait(0.3) startAntiHit() end
-	if instaPickUpActive then wait(0.3) startInstaPickUp() end
+	if instaPickUpActive then instaPickUpActive = false wait(0.3) instaPickUpActive = true startInstaPickUp() end
 	if desyncActive then stopDesync() wait(0.3) startDesync() end
 end)
 

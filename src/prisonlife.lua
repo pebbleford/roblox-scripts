@@ -116,6 +116,7 @@ local seizureConnection = nil
 local headlessSaved = {}
 local flingPower = 300
 local walkFlingPower = 150
+local flingEnabledNoclip = false
 
 -- FOV circle
 local fovCircle = nil
@@ -494,7 +495,7 @@ local function createSectionLabel(parent, text, order)
 	lbl.Parent = parent
 end
 
-local function createToggle(parent, text, order, callback)
+local function createToggle(parent, text, order, callback, default)
 	local row = Instance.new("Frame")
 	row.Size = UDim2.new(1, 0, 0, 30)
 	row.BackgroundColor3 = COLORS.tabBg
@@ -542,6 +543,8 @@ local function createToggle(parent, text, order, callback)
 		toggleFrame.BackgroundColor3 = on and COLORS.toggleOn or COLORS.toggleOff
 		toggleCircle.Position = on and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
 	end
+
+	if default then setVisualState(default) end
 
 	toggleButton.MouseButton1Click:Connect(function()
 		isOn = not isOn
@@ -1322,7 +1325,7 @@ local function startFling()
 		local root = character:FindFirstChild("HumanoidRootPart")
 		if not root then return end
 
-		if not noclipEnabled then noclipEnabled = true startNoclip() end
+		if not noclipEnabled then noclipEnabled = true flingEnabledNoclip = true startNoclip() end
 		_wait(0.1)
 
 		flingConnection = RunService.Heartbeat:Connect(function()
@@ -1356,6 +1359,11 @@ end
 
 local function stopFling()
 	if flingConnection then flingConnection:Disconnect() flingConnection = nil end
+	if flingEnabledNoclip then
+		flingEnabledNoclip = false
+		noclipEnabled = false
+		stopNoclip()
+	end
 	local character = LocalPlayer.Character
 	if character then
 		for _, part in ipairs(character:GetDescendants()) do
@@ -1600,7 +1608,7 @@ do
 		if on then startKillAura() else stopKillAura() end
 	end)
 	createSlider(tab, "Kill Aura Radius", 10, 50, killAuraRadius, 5, function(val) killAuraRadius = val end)
-	createToggle(tab, "Team Check", 6, function(on) killAuraTeamCheck = on end)
+	createToggle(tab, "Team Check", 6, function(on) killAuraTeamCheck = on end, true)
 
 	createSectionLabel(tab, "Gun Mods", 10)
 	createInfoLabel(tab, "Equip a gun then toggle mods", 11)

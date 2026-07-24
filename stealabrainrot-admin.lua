@@ -413,10 +413,13 @@ local function fireAdminOnPlayer(cmd, playerName)
 end
 
 -- ===================== ADMIN SPAMMER =====================
+local adminSpamGeneration = 0
 local function startAdminSpam()
 	adminSpamActive = true
+	adminSpamGeneration = adminSpamGeneration + 1
+	local myGen = adminSpamGeneration
 	spawn(function()
-		while adminSpamActive do
+		while adminSpamActive and myGen == adminSpamGeneration do
 			pcall(function()
 				local cmds = getEnabledCommands()
 				if #cmds == 0 then return end

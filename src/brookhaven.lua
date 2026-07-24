@@ -46,6 +46,7 @@ local COLORS = {
 local espEnabled = false
 local flyEnabled = false
 local noclipEnabled = false
+local flingEnabledNoclip = false
 local speedEnabled = false
 local infJumpEnabled = false
 local godEnabled = false
@@ -72,6 +73,7 @@ local origGravity = 196.2
 
 local highlights = {}
 local nametags = {}
+local nametagConns = {}
 local espConnections = {}
 local flyConnection = nil
 local bodyGyro = nil
@@ -881,7 +883,8 @@ local function addNametag(player)
 			end
 			updateHealth()
 			local conn = humanoid.HealthChanged:Connect(updateHealth)
-			table.insert(espConnections, conn)
+			nametagConns[player] = nametagConns[player] or {}
+			table.insert(nametagConns[player], conn)
 		end
 
 		local distConn = RunService.Heartbeat:Connect(function()
@@ -895,7 +898,8 @@ local function addNametag(player)
 				end
 			end)
 		end)
-		table.insert(espConnections, distConn)
+		nametagConns[player] = nametagConns[player] or {}
+		table.insert(nametagConns[player], distConn)
 		nametags[player] = bb
 	end)
 end
@@ -910,6 +914,10 @@ local function removeNametag(player)
 	local tag = nametags[player]
 	if tag then pcall(function() tag:Destroy() end) end
 	nametags[player] = nil
+	if nametagConns[player] then
+		for _, conn in ipairs(nametagConns[player]) do pcall(function() conn:Disconnect() end) end
+		nametagConns[player] = nil
+	end
 end
 
 local function cleanupStale()
@@ -1123,7 +1131,7 @@ local function startFling()
 		end
 
 		-- Enable noclip so we can move freely while spinning
-		if not noclipEnabled then noclipEnabled = true startNoclip() end
+		if not noclipEnabled then noclipEnabled = true startNoclip() flingEnabledNoclip = true end
 		wait(0.1)
 
 		-- BodyAngularVelocity - spin on ALL axes for chaotic collision
@@ -1205,6 +1213,8 @@ local function stopFling()
 	end
 	savedPhysProps = {}
 
+	if flingEnabledNoclip then noclipEnabled = false stopNoclip() flingEnabledNoclip = false end
+
 	addLog("[SPIN FLING] OFF", COLORS.error)
 end
 
@@ -1226,7 +1236,7 @@ local function startWalkFling()
 		end
 
 		-- Enable noclip
-		if not noclipEnabled then noclipEnabled = true startNoclip() end
+		if not noclipEnabled then noclipEnabled = true startNoclip() flingEnabledNoclip = true end
 
 		-- Velocity spike loop
 		walkFlingThread = spawn(function()
@@ -1277,6 +1287,8 @@ local function stopWalkFling()
 		end
 	end)
 	walkFlingProps = {}
+
+	if flingEnabledNoclip then noclipEnabled = false stopNoclip() flingEnabledNoclip = false end
 
 	addLog("[WALK FLING] OFF", COLORS.error)
 end
@@ -1982,18 +1994,19 @@ do
 
 	createSectionLabel(tab, "Fling", 1)
 
-	createToggle(tab, "Spin Fling", 2, function(on)
+	local spinFlingToggle, walkFlingToggle
+	spinFlingToggle = createToggle(tab, "Spin Fling", 2, function(on)
 		flingEnabled = on
 		if on then
-			if walkFlingEnabled then walkFlingEnabled = false stopWalkFling() end
+			if walkFlingEnabled then walkFlingEnabled = false stopWalkFling() if walkFlingToggle then walkFlingToggle.setVisualState(false) end end
 			startFling()
 		else stopFling() end
 	end)
 	createSlider(tab, "Spin Fling Power", 1000, 99999, flingPower, 3, function(val) flingPower = val end)
-	createToggle(tab, "Walk Fling", 4, function(on)
+	walkFlingToggle = createToggle(tab, "Walk Fling", 4, function(on)
 		walkFlingEnabled = on
 		if on then
-			if flingEnabled then flingEnabled = false stopFling() end
+			if flingEnabled then flingEnabled = false stopFling() if spinFlingToggle then spinFlingToggle.setVisualState(false) end end
 			startWalkFling()
 		else stopWalkFling() end
 	end)
@@ -2140,7 +2153,7 @@ commands["goto"] = function(args)
 	if not args[1] then addLog("[CMD] Usage: ;goto <location name>", COLORS.error) return end
 	local search = table.concat(args, " "):lower()
 	for _, loc in ipairs(TELEPORT_LOCATIONS) do
-		if loc[1]:lower():find(search) then
+		if loc[1]:lower():find(search, 1, true) then
 			teleportTo(loc[2])
 			addLog("[TP] Teleported to " .. loc[1], COLORS.success)
 			return

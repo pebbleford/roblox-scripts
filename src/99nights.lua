@@ -142,6 +142,9 @@ local killAuraRange = 15
 local killAuraSpeed = 0.15
 local hitboxSize = 10
 local chopAuraRange = 50
+local autoPickupRange = 50
+local autoChestRange = 50
+local saplingFarmRange = 50
 local windowVisible = true
 local activeTab = "Farm"
 
@@ -741,7 +744,7 @@ local function startSaplingFarm()
 					if obj.Name == "Sapling" then
 						local cf = getItemCFrame(obj)
 						if not cf and obj:IsA("BasePart") then cf = obj.CFrame end
-						if cf and (cf.Position - savedCF.Position).Magnitude <= chopAuraRange then
+						if cf and (cf.Position - savedCF.Position).Magnitude <= saplingFarmRange then
 							-- Try fireproximityprompt from distance first
 							fireAllPrompts(obj)
 							fireAllClicks(obj)
@@ -947,7 +950,7 @@ local function startAutoPickup()
 					if not autoPickupActive then break end
 					if table.find(ALL_ITEMS, obj.Name) then
 						local pos = getItemPosition(obj)
-						if pos and (pos - savedCF.Position).Magnitude <= chopAuraRange then
+						if pos and (pos - savedCF.Position).Magnitude <= autoPickupRange then
 							-- Try firing prompts from distance (no TP needed)
 							fireAllPrompts(obj)
 							fireAllClicks(obj)
@@ -964,7 +967,7 @@ local function startAutoPickup()
 			task.wait(1)
 		end
 	end)
-	notify("Auto Pickup", "Collecting items in " .. chopAuraRange .. " stud radius!")
+	notify("Auto Pickup", "Collecting items in " .. autoPickupRange .. " stud radius!")
 end
 
 local function stopAutoPickup()
@@ -1258,7 +1261,7 @@ local function startAutoChest()
 					if not autoChestActive then break end
 					if table.find(CHEST_ITEMS, obj.Name) then
 						local cf = getItemCFrame(obj)
-						if cf and (cf.Position - savedCF.Position).Magnitude <= chopAuraRange then
+						if cf and (cf.Position - savedCF.Position).Magnitude <= autoChestRange then
 							-- Fire prompts from distance first
 							fireAllPrompts(obj)
 							fireAllClicks(obj)
@@ -1291,7 +1294,7 @@ local function startAutoChest()
 			task.wait(2)
 		end
 	end)
-	notify("Auto Chest", "Looting chests in " .. chopAuraRange .. " stud radius!")
+	notify("Auto Chest", "Looting chests in " .. autoChestRange .. " stud radius!")
 end
 
 local function stopAutoChest()
@@ -1772,6 +1775,9 @@ do
 		saplingFarmActive = on
 		if on then startSaplingFarm() else stopSaplingFarm() end
 	end)
+	createSlider(tab, "Sapling Collect Range (studs)", 10, 100, saplingFarmRange, o(), function(val)
+		saplingFarmRange = val
+	end)
 	createButton(tab, "Plant Saplings in Circle (Around You)", o(), plantSaplingsInCircle)
 	createButton(tab, "Plant Saplings Around Campfire", o(), plantSaplingsAroundCampfire)
 	createToggle(tab, "Auto Open Seed Boxes", o(), function(on)
@@ -1785,6 +1791,9 @@ do
 	createToggle(tab, "Auto Chest (Open + Loot)", o(), function(on)
 		autoChestActive = on
 		if on then startAutoChest() else stopAutoChest() end
+	end)
+	createSlider(tab, "Auto Chest Range (studs)", 10, 100, autoChestRange, o(), function(val)
+		autoChestRange = val
 	end)
 	createInfoLabel(tab, "Opens chests in range, fires prompts + collects loot", o())
 
@@ -1814,6 +1823,9 @@ do
 	createToggle(tab, "Auto Pickup Nearby Items", o(), function(on)
 		autoPickupActive = on
 		if on then startAutoPickup() else stopAutoPickup() end
+	end)
+	createSlider(tab, "Auto Pickup Range (studs)", 10, 100, autoPickupRange, o(), function(val)
+		autoPickupRange = val
 	end)
 	createButton(tab, "Collect Flowers & Gold", o(), collectFlowersAndGold)
 
