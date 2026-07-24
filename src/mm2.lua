@@ -84,6 +84,7 @@ local espState = {
 	fullbrightEnabled = false,
 	playerEspHighlights = {},
 	playerEspNametags = {},
+	playerEspDistConns = {},
 	espConnections = {},
 	gunEspHighlights = {},
 	coinEspHighlights = {},
@@ -1314,13 +1315,14 @@ local function startAutoGrabGun()
 				end
 			end)
 		end)
-		table.insert(espState.espConnections, gdConn)
+		miscState.autoGrabGunDropConnection = gdConn
 	end
 	addLog("[AUTO GRAB] ON - Watching for gun drops", COLORS.success)
 end
 
 local function stopAutoGrabGun()
 	if miscState.autoGrabConnection then miscState.autoGrabConnection:Disconnect() miscState.autoGrabConnection = nil end
+	if miscState.autoGrabGunDropConnection then miscState.autoGrabGunDropConnection:Disconnect() miscState.autoGrabGunDropConnection = nil end
 	addLog("[AUTO GRAB] OFF", COLORS.error)
 end
 
@@ -1426,7 +1428,7 @@ local function addPlayerNametag(player)
 					end
 				end)
 			end)
-			table.insert(espState.espConnections, distConn)
+			espState.playerEspDistConns[player] = distConn
 		end
 
 		espState.playerEspNametags[player] = bb
@@ -1443,6 +1445,8 @@ local function removePlayerNametag(player)
 	local tag = espState.playerEspNametags[player]
 	if tag then pcall(function() tag:Destroy() end) end
 	espState.playerEspNametags[player] = nil
+	local dc = espState.playerEspDistConns and espState.playerEspDistConns[player]
+	if dc then pcall(function() dc:Disconnect() end) espState.playerEspDistConns[player] = nil end
 end
 
 local function cleanupStalePlayerEsp()
@@ -1501,15 +1505,19 @@ local function enablePlayerEsp()
 	table.insert(espState.espConnections, addedConn)
 	local count, skipped = playerEspScanAll()
 	addLog("[ESP] ON - " .. count .. " highlighted, " .. skipped .. " pending", COLORS.success)
-	_spawn(function()
-		while espState.espEnabled do
-			_wait(espState.REFRESH_INTERVAL)
-			if not espState.espEnabled then break end
-			playerEspScanAll()
-			-- Also update murderer ESP while we're at it
-			updateMurdererEsp()
-		end
-	end)
+	if not espState.refreshRunning then
+		espState.refreshRunning = true
+		_spawn(function()
+			while espState.espEnabled do
+				_wait(espState.REFRESH_INTERVAL)
+				if not espState.espEnabled then break end
+				playerEspScanAll()
+				-- Also update murderer ESP while we're at it
+				updateMurdererEsp()
+			end
+			espState.refreshRunning = false
+		end)
+	end
 end
 
 local function disablePlayerEsp()
@@ -1519,6 +1527,8 @@ local function disablePlayerEsp()
 	local allN = {}
 	for player in pairs(espState.playerEspNametags) do table.insert(allN, player) end
 	for _, player in ipairs(allN) do removePlayerNametag(player) end
+	for _, dc in pairs(espState.playerEspDistConns) do pcall(function() dc:Disconnect() end) end
+	espState.playerEspDistConns = {}
 	for _, conn in ipairs(espState.espConnections) do pcall(function() conn:Disconnect() end) end
 	espState.espConnections = {}
 	addLog("[ESP] OFF", COLORS.error)
@@ -1594,13 +1604,17 @@ local function enableGunEsp()
 		end)
 	end)
 	-- Periodic refresh
-	_spawn(function()
-		while espState.gunEspEnabled do
-			_wait(3)
-			if not espState.gunEspEnabled then break end
-			refreshGunEsp()
-		end
-	end)
+	if not espState.gunEspRefreshRunning then
+		espState.gunEspRefreshRunning = true
+		_spawn(function()
+			while espState.gunEspEnabled do
+				_wait(3)
+				if not espState.gunEspEnabled then break end
+				refreshGunEsp()
+			end
+			espState.gunEspRefreshRunning = false
+		end)
+	end
 	addLog("[GUN ESP] ON - Yellow highlight on dropped guns", COLORS.success)
 end
 
@@ -1640,13 +1654,17 @@ end
 local function enableCoinEsp()
 	refreshCoinEsp()
 	-- Periodic refresh
-	_spawn(function()
-		while espState.coinEspEnabled do
-			_wait(5)
-			if not espState.coinEspEnabled then break end
-			refreshCoinEsp()
-		end
-	end)
+	if not espState.coinEspRefreshRunning then
+		espState.coinEspRefreshRunning = true
+		_spawn(function()
+			while espState.coinEspEnabled do
+				_wait(5)
+				if not espState.coinEspEnabled then break end
+				refreshCoinEsp()
+			end
+			espState.coinEspRefreshRunning = false
+		end)
+	end
 	addLog("[COIN ESP] ON - Gold highlight on coins", COLORS.success)
 end
 
@@ -1810,6 +1828,7 @@ end
 
 -- ===================== NOCLIP LOGIC =====================
 local function startNoclip()
+	if moveState.noclipConnection then pcall(function() moveState.noclipConnection:Disconnect() end) moveState.noclipConnection = nil end
 	moveState.noclipConnection = RunService.Stepped:Connect(function()
 		pcall(function()
 			local character = LocalPlayer.Character
@@ -1859,6 +1878,7 @@ end
 
 -- ===================== GOD MODE LOGIC =====================
 local function startGod()
+	if moveState.godConnection then pcall(function() moveState.godConnection:Disconnect() end) moveState.godConnection = nil end
 	pcall(function()
 		local character = LocalPlayer.Character
 		if character then
@@ -1894,6 +1914,7 @@ end
 
 -- ===================== INFINITE JUMP LOGIC =====================
 local function startInfJump()
+	if moveState.infJumpConnection then pcall(function() moveState.infJumpConnection:Disconnect() end) moveState.infJumpConnection = nil end
 	moveState.infJumpConnection = UserInputService.JumpRequest:Connect(function()
 		pcall(function()
 			local character = LocalPlayer.Character
@@ -2401,10 +2422,12 @@ local function startAntiVoid()
 			if not char then return end
 			local hrp = char:FindFirstChild("HumanoidRootPart")
 			if not hrp then return end
-			if hrp.Position.Y > -50 then
+			local hum = char:FindFirstChildOfClass("Humanoid")
+			if hrp.Position.Y > -50 and hum and hum.FloorMaterial ~= Enum.Material.Air then
 				miscState.lastSafePos = hrp.CFrame
-			elseif miscState.lastSafePos then
+			elseif hrp.Position.Y <= -50 and miscState.lastSafePos then
 				hrp.CFrame = miscState.lastSafePos
+				hrp.AssemblyLinearVelocity = Vector3.zero
 			end
 		end)
 	end)
@@ -2443,7 +2466,7 @@ local function startWalkFling()
 					local vel = rt.Velocity
 
 					-- SPIKE: massive velocity burst for one tick
-					rt.Velocity = vel * 10000 + Vector3.new(0, 10000, 0)
+					rt.Velocity = vel * flingState.walkFlingPower + Vector3.new(0, flingState.walkFlingPower, 0)
 
 					RunService.RenderStepped:Wait()
 					-- RESTORE: snap back to normal
@@ -2594,7 +2617,7 @@ local function startFling()
 		-- MM2 may remove it - if so, the Heartbeat loop below uses Assembly properties
 		pcall(function()
 			flingState.spinBAV = Instance.new("BodyAngularVelocity")
-			flingState.spinBAV.AngularVelocity = Vector3.new(0, 99999, 0)
+			flingState.spinBAV.AngularVelocity = Vector3.new(0, flingState.flingPower, 0)
 			flingState.spinBAV.MaxTorque = Vector3.new(0, math.huge, 0)
 			flingState.spinBAV.P = math.huge
 			flingState.spinBAV.Parent = root
@@ -2626,7 +2649,7 @@ local function startFling()
 		flingState.flingConnection2 = _spawn(function()
 			while flingState.flingEnabled do
 				if flingState.spinBAV and flingState.spinBAV.Parent then
-					flingState.spinBAV.AngularVelocity = Vector3.new(0, 99999, 0)
+					flingState.spinBAV.AngularVelocity = Vector3.new(0, flingState.flingPower, 0)
 				end
 				_wait(0.2)
 				if flingState.spinBAV and flingState.spinBAV.Parent then
@@ -3409,16 +3432,18 @@ do
 
 	createSectionLabel(tab, "Fling", 1)
 
+	local walkFlingToggle
 	local spinFlingToggle = createToggle(tab, "Spin Fling", 2, function(on)
 		if on and flingState.walkFlingEnabled then
 			flingState.walkFlingEnabled = false
 			stopWalkFling()
+			if walkFlingToggle then walkFlingToggle.setVisualState(false) end
 		end
 		flingState.flingEnabled = on
 		if on then startFling() else stopFling() end
 	end)
 	createSlider(tab, "Fling Power", 1000, 99999, flingState.flingPower, 3, function(val) flingState.flingPower = val end)
-	local walkFlingToggle = createToggle(tab, "Walk Fling", 4, function(on)
+	walkFlingToggle = createToggle(tab, "Walk Fling", 4, function(on)
 		if on and flingState.flingEnabled then
 			flingState.flingEnabled = false
 			stopFling()
@@ -3502,7 +3527,10 @@ commands["tpbehind"] = function(args)
 end
 commands["killall"] = function() miscState.killAllEnabled = true if not roleState.roleCheckEnabled then startRoleCheck() end startKillAll() end
 commands["unkillall"] = function() miscState.killAllEnabled = false stopKillAll() end
-commands["kill"] = function(args) if args and args ~= "" then if not roleState.roleCheckEnabled then startRoleCheck() end killSpecificPlayer(args) else addLog("[KILL] Usage: ;kill <player>", COLORS.error) end end
+commands["kill"] = function(args)
+	local name = args[1]
+	if name then if not roleState.roleCheckEnabled then startRoleCheck() end killSpecificPlayer(name) else addLog("[KILL] Usage: ;kill <player>", COLORS.error) end
+end
 
 -- ESP
 commands["esp"] = function() espState.espEnabled = true if not roleState.roleCheckEnabled then startRoleCheck() end enablePlayerEsp() end
@@ -3702,6 +3730,7 @@ LocalPlayer.CharacterAdded:Connect(function(char)
 	if flingState.flingEnabled then
 		stopFling()
 		_wait(0.3)
+		flingState.flingEnabled = true
 		startFling()
 	end
 	flingState.spinBAV = nil
@@ -3810,12 +3839,6 @@ LocalPlayer.CharacterAdded:Connect(function(char)
 		updateMurdererEsp()
 	end
 
-	-- Re-enable auto coin farm
-	if farmState.autoCoinFarmEnabled then
-		_wait(0.5)
-		startAutoCoinFarm()
-	end
-
 	-- Re-enable kill all
 	if miscState.killAllEnabled then
 		stopKillAll()
@@ -3841,6 +3864,7 @@ LocalPlayer.CharacterAdded:Connect(function(char)
 	if flingState.walkFlingEnabled then
 		stopWalkFling()
 		_wait(0.3)
+		flingState.walkFlingEnabled = true
 		startWalkFling()
 	end
 
@@ -3862,12 +3886,6 @@ LocalPlayer.CharacterAdded:Connect(function(char)
 		stopBringCoins()
 		_wait(0.3)
 		startBringCoins()
-	end
-
-	-- Re-enable auto collect
-	if miscState.autoCollectEnabled then
-		_wait(0.3)
-		startAutoCollect()
 	end
 
 	-- Re-enable trapdoor ESP
