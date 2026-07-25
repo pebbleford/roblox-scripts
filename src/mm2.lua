@@ -310,8 +310,13 @@ local extrasState = {
 	dodgeEnabled = false,
 	dodgeConnection = nil,
 	dodgeDistance = 12,
-	dodgeCooldown = 0.6,
+	dodgeCooldown = 0.35,
 	lastDodge = 0,
+	dodgeActiveUntil = 0,
+	dodgeDir = nil,
+	dodgeThrowRadius = 60,
+	dodgeThrowSpeed = 45,
+	dodgeMeleeRange = 9,
 	-- Trap auto-avoid (reuses name-based trap detection from Trapdoor ESP)
 	trapAvoidEnabled = false,
 	trapAvoidConnection = nil,
@@ -5339,31 +5344,79 @@ do
 		extrasState.dodgeConnection = RunService.Heartbeat:Connect(function()
 			if not extrasState.dodgeEnabled then return end
 			pcall(function()
-				local murderer = roleState.murdererPlayer
-				if not murderer or murderer == LocalPlayer then return end
 				local char = LocalPlayer.Character
 				local hrp = char and char:FindFirstChild("HumanoidRootPart")
-				local mChar = murderer.Character
-				local mHrp = mChar and mChar:FindFirstChild("HumanoidRootPart")
-				if not hrp or not mHrp then return end
-				local dist = (hrp.Position - mHrp.Position).Magnitude
-				if dist > extrasState.dodgeDistance then return end
+				if not hrp then return end
 				local now = os.clock()
+				local myPos = hrp.Position
+				-- Sustain an active dodge burst across several frames so the walk
+				-- controller can't immediately damp a single-frame velocity set.
+				if extrasState.dodgeDir and now < (extrasState.dodgeActiveUntil or 0) then
+					hrp.AssemblyLinearVelocity = extrasState.dodgeDir * 55 + Vector3.new(0, 14, 0)
+					return
+				end
 				if now - (extrasState.lastDodge or 0) < extrasState.dodgeCooldown then return end
-				extrasState.lastDodge = now
-				local away = hrp.Position - mHrp.Position
-				local flat = Vector3.new(away.X, 0, away.Z)
-				if flat.Magnitude < 0.1 then flat = hrp.CFrame.RightVector end
-				local side = flat.Unit:Cross(Vector3.new(0, 1, 0))
+				local threatDir = nil
+				-- (1) Thrown-knife / projectile detection (generic, name-independent):
+				-- efficient spatial query for small fast-moving parts heading at us.
+				pcall(function()
+					local params = OverlapParams.new()
+					params.FilterType = Enum.RaycastFilterType.Exclude
+					params.FilterDescendantsInstances = { char }
+					params.MaxParts = 50
+					local nearby = workspace:GetPartBoundsInRadius(myPos, extrasState.dodgeThrowRadius or 60, params)
+					local best = 0.55
+					for _, part in ipairs(nearby) do
+						if part:IsA("BasePart") and not part.Anchored then
+							local vel = part.AssemblyLinearVelocity
+							if vel.Magnitude >= (extrasState.dodgeThrowSpeed or 45) then
+								local sz = part.Size
+								if sz.X < 8 and sz.Y < 8 and sz.Z < 8 then
+									local toMe = myPos - part.Position
+									if toMe.Magnitude > 1 then
+										local approach = vel.Unit:Dot(toMe.Unit)
+										if approach > best then
+											best = approach
+											threatDir = vel.Unit
+										end
+									end
+								end
+							end
+						end
+					end
+				end)
+				-- (2) Melee / rush detection: murderer close AND facing us.
+				if not threatDir then
+					local murderer = roleState.murdererPlayer
+					local mChar = murderer and murderer ~= LocalPlayer and murderer.Character
+					local mHrp = mChar and mChar:FindFirstChild("HumanoidRootPart")
+					if mHrp then
+						local toMe = myPos - mHrp.Position
+						local dist = toMe.Magnitude
+						if dist <= extrasState.dodgeDistance and dist > 0.1 then
+							local facing = mHrp.CFrame.LookVector:Dot(toMe.Unit)
+							if dist <= (extrasState.dodgeMeleeRange or 9) or facing > 0.55 then
+								threatDir = (-toMe).Unit
+							end
+						end
+					end
+				end
+				if not threatDir then return end
+				-- Dodge PERPENDICULAR to the threat's path (sideways out of the line of fire).
+				local side = threatDir:Cross(Vector3.new(0, 1, 0))
 				if side.Magnitude < 0.1 then side = hrp.CFrame.RightVector end
 				side = side.Unit
-				if math.random() < 0.5 then side = -side end
-				-- Assembly velocity: BasePart property MM2 servers can't instance-remove
-				hrp.AssemblyLinearVelocity = side * 40 + Vector3.new(0, 12, 0)
-				addLog("[DODGE] Nudged away from murderer (" .. math.floor(dist) .. " studs)", COLORS.accent)
+				local v = hrp.AssemblyLinearVelocity
+				local lateral = v - threatDir * v:Dot(threatDir)
+				if lateral:Dot(side) < 0 then side = -side end
+				extrasState.dodgeDir = side
+				extrasState.dodgeActiveUntil = now + 0.28
+				extrasState.lastDodge = now
+				hrp.AssemblyLinearVelocity = side * 55 + Vector3.new(0, 14, 0)
+				addLog("[DODGE] Evaded incoming threat", COLORS.accent)
 			end)
 		end)
-		addLog("[DODGE] ON - auto-dodge murderer within " .. extrasState.dodgeDistance .. " studs", COLORS.success)
+		addLog("[DODGE] ON - dodges thrown knives + close murderer rushes", COLORS.success)
 	end
 
 	local function stopDodge()
