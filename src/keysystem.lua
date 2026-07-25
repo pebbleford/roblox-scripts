@@ -17,7 +17,6 @@ local KEY_SYSTEM = {}
 -- CONFIG
 -- ============================================================
 local VALID_KEYS = {
-    ["1234"] = true, -- lifetime master key (remove on request)
 }
 local AUTH_SALT = "SXR_2024_PEBBLEFORD_REVIVAL"
 local AUTH_FILE = "SynapseXAuth.json"
