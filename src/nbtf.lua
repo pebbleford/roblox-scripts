@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v4.3
+-- Pebbleford Hub - NBTF Hub v4.4
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -290,10 +290,10 @@ local moveState = {
 	carFlingActive = false,
 	carFlingPower = 20000,
 	carFlingConnection = nil,
-	carFlingBAV = nil,
 	carFlingOrigProps = {},
-	carFlingOrigMassless = {},
-	carFlingOrigCanCollide = {},
+	carFlingTouchConns = {},
+	carFlingRoot = nil,
+	carFlingPart = nil,
 }
 
 local playerState = {
@@ -1855,6 +1855,62 @@ function actions.getVehicle()
 	return nil, seat
 end
 
+-- ===================== VEHICLE FLY TOUCH PAD =====================
+-- Vehicle Fly was keyboard-only, so on a phone moveVec stayed zero and the
+-- car just hovered. Horizontal control comes from the VehicleSeat's own
+-- Throttle/Steer (which Roblox's mobile vehicle controls already drive), but
+-- there is no touch equivalent for up/down, so this pad supplies it.
+local vFlyPadGui = nil
+local vFlyUp, vFlyDown = false, false
+
+local function destroyVehicleFlyPad()
+	if vFlyPadGui then pcall(function() vFlyPadGui:Destroy() end) end
+	vFlyPadGui = nil
+	vFlyUp, vFlyDown = false, false
+end
+
+local function createVehicleFlyPad()
+	destroyVehicleFlyPad()
+	if not UserInputService.TouchEnabled then return end
+
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "NBTF_VFlyPad"
+	gui.ResetOnSpawn = false
+	gui.IgnoreGuiInset = true
+	gui.DisplayOrder = 1000
+	pcall(function() gui.Parent = game:GetService("CoreGui") end)
+	if not gui.Parent then
+		gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+	end
+	vFlyPadGui = gui
+
+	local function makeBtn(label, yOffset, onDown, onUp)
+		local b = Instance.new("TextButton")
+		b.Size = UDim2.new(0, 64, 0, 64)
+		b.Position = UDim2.new(1, -80, 1, yOffset)
+		b.AnchorPoint = Vector2.new(0, 0)
+		b.BackgroundColor3 = Color3.fromRGB(30, 30, 38)
+		b.BackgroundTransparency = 0.25
+		b.Text = label
+		b.TextColor3 = Color3.fromRGB(255, 255, 255)
+		b.TextSize = 26
+		b.Font = Enum.Font.GothamBold
+		b.BorderSizePixel = 0
+		b.Parent = gui
+		local c = Instance.new("UICorner")
+		c.CornerRadius = UDim.new(0, 12)
+		c.Parent = b
+		b.MouseButton1Down:Connect(onDown)
+		b.MouseButton1Up:Connect(onUp)
+		-- Releasing outside the button must still stop the thrust.
+		b.MouseLeave:Connect(onUp)
+		return b
+	end
+
+	makeBtn("^", -150, function() vFlyUp = true end, function() vFlyUp = false end)
+	makeBtn("v", -78, function() vFlyDown = true end, function() vFlyDown = false end)
+end
+
 local function startVehicleFly()
 	local vehicle, part = actions.getVehicle()
 	if not part then
@@ -1907,18 +1963,38 @@ local function startVehicleFly()
 			if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveVec = moveVec + camCF.RightVector end
 			if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveVec = moveVec + camCF.UpVector end
 			if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveVec = moveVec - camCF.UpVector end
+
+			-- Touch input. A seated humanoid reports no MoveDirection, so the
+			-- seat's own Throttle/Steer (driven by Roblox's mobile vehicle
+			-- controls) provides horizontal movement, and the pad does up/down.
+			local ch = LocalPlayer.Character
+			local hm = ch and ch:FindFirstChildOfClass("Humanoid")
+			local st = hm and hm.SeatPart
+			if st and st:IsA("VehicleSeat") then
+				if st.Throttle ~= 0 then moveVec = moveVec + camCF.LookVector * st.Throttle end
+				if st.Steer ~= 0 then moveVec = moveVec + camCF.RightVector * st.Steer end
+			end
+			if vFlyUp then moveVec = moveVec + camCF.UpVector end
+			if vFlyDown then moveVec = moveVec - camCF.UpVector end
+
 			moveState.vehicleFlyBV.Velocity = moveVec.Magnitude > 0 and moveVec.Unit * moveState.vehicleFlySpeed or Vector3.zero
 			moveState.vehicleFlyBG.CFrame = camCF
 		end)
 	end)
 
-	helpers.notify("Vehicle Fly", "Flying with vehicle! WASD + Space/Shift")
+	createVehicleFlyPad()
+	if UserInputService.TouchEnabled then
+		helpers.notify("Vehicle Fly", "Flying! Use vehicle controls + on-screen up/down")
+	else
+		helpers.notify("Vehicle Fly", "Flying with vehicle! WASD + Space/Shift")
+	end
 end
 
 local function stopVehicleFly()
 	if moveState.vehicleFlyConnection then moveState.vehicleFlyConnection:Disconnect() moveState.vehicleFlyConnection = nil end
 	if moveState.vehicleFlyBV then pcall(function() moveState.vehicleFlyBV:Destroy() end) moveState.vehicleFlyBV = nil end
 	if moveState.vehicleFlyBG then pcall(function() moveState.vehicleFlyBG:Destroy() end) moveState.vehicleFlyBG = nil end
+	destroyVehicleFlyPad()
 end
 
 -- ===================== CAR SPEED BOOST =====================
@@ -2005,14 +2081,38 @@ local function stopCarSpeed()
 end
 
 -- ===================== CAR FLING =====================
--- Makes the vehicle extremely dense and spins it, so colliding with any
--- unanchored part launches it.
+-- Launches whatever the vehicle touches, on contact.
 --
--- The driver must NOT be made dense: you are welded to the spinning seat,
--- so mass on your character becomes centrifugal momentum and catapults you
--- before targets ever get hit. Instead the character is made massless and
--- non-collidable, and its velocity is zeroed every frame, so it rides along
--- contributing nothing to the spinning assembly.
+-- Spinning the vehicle does not work here: sitting down welds the character
+-- into the SAME physics assembly as the car, so any spin applies to the
+-- driver too, and once Roblox breaks the seat weld under that force the
+-- driver flies off carrying all of the tangential velocity. Making the
+-- character massless does not help, and zeroing the character's assembly
+-- velocity also zeroes the car (one assembly, one velocity).
+--
+-- So there is no spin at all. Vehicle parts get a Touched handler that
+-- launches the touched part directly, which only ever affects the target.
+local function flingTouchedPart(hit)
+	if not hit or not hit:IsA("BasePart") or hit.Anchored then return end
+
+	local char = LocalPlayer.Character
+	if char and hit:IsDescendantOf(char) then return end
+	if moveState.carFlingRoot and hit:IsDescendantOf(moveState.carFlingRoot) then return end
+
+	local source = moveState.carFlingPart
+	if not source or not source.Parent then return end
+
+	-- Push away from the vehicle, with some lift so things actually launch
+	-- rather than skid along the ground.
+	local dir = hit.Position - source.Position
+	dir = dir.Magnitude > 0.01 and dir.Unit or source.CFrame.LookVector
+	local power = moveState.carFlingPower / 100
+
+	pcall(function()
+		hit.AssemblyLinearVelocity = Vector3.new(dir.X * power, power * 0.6, dir.Z * power)
+	end)
+end
+
 local function startCarFling()
 	local ok, err = pcall(function()
 		local vehicle, vPart = actions.getVehicle()
@@ -2027,57 +2127,20 @@ local function startCarFling()
 			helpers.notify("Car Fling", "Could not find the vehicle!")
 			return
 		end
+		moveState.carFlingRoot = vehicleRoot
+		moveState.carFlingPart = vPart
 
+		-- Density still helps: a heavy car shoves things on contact even
+		-- before the Touched handler adds its own launch.
 		moveState.carFlingOrigProps = {}
+		moveState.carFlingTouchConns = {}
 		for _, part in ipairs(vehicleRoot:GetDescendants()) do
 			if part:IsA("BasePart") then
 				moveState.carFlingOrigProps[part] = part.CustomPhysicalProperties
 				part.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
+				table.insert(moveState.carFlingTouchConns, part.Touched:Connect(flingTouchedPart))
 			end
 		end
-
-		-- Protect the driver instead of weighting them down.
-		moveState.carFlingOrigMassless = {}
-		moveState.carFlingOrigCanCollide = {}
-		local character = LocalPlayer.Character
-		if character then
-			for _, part in ipairs(character:GetDescendants()) do
-				if part:IsA("BasePart") then
-					moveState.carFlingOrigMassless[part] = part.Massless
-					moveState.carFlingOrigCanCollide[part] = part.CanCollide
-					part.Massless = true
-					part.CanCollide = false
-				end
-			end
-		end
-
-		local bav = Instance.new("BodyAngularVelocity")
-		bav.Name = "NBTF_CarFling_BAV"
-		bav.AngularVelocity = Vector3.new(0, moveState.carFlingPower, 0)
-		bav.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-		bav.P = math.huge
-		bav.Parent = vPart
-		moveState.carFlingBAV = bav
-
-		moveState.carFlingConnection = RunService.Heartbeat:Connect(function()
-			pcall(function()
-				if moveState.carFlingBAV then
-					moveState.carFlingBAV.AngularVelocity = Vector3.new(0, moveState.carFlingPower, 0)
-				end
-				local _, vp = actions.getVehicle()
-				if vp and moveState.carFlingBAV and not moveState.carFlingBAV.Parent then
-					moveState.carFlingBAV.Parent = vp
-				end
-				-- Bleed off any momentum the spin transfers into the driver,
-				-- which is what would otherwise throw you off the vehicle.
-				local char = LocalPlayer.Character
-				local hrp = char and char:FindFirstChild("HumanoidRootPart")
-				if hrp then
-					hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-					hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-				end
-			end)
-		end)
 
 		helpers.notify("Car Fling", "ON - drive into stuff!")
 	end)
@@ -2086,7 +2149,10 @@ end
 
 local function stopCarFling()
 	if moveState.carFlingConnection then moveState.carFlingConnection:Disconnect() moveState.carFlingConnection = nil end
-	if moveState.carFlingBAV then pcall(function() moveState.carFlingBAV:Destroy() end) moveState.carFlingBAV = nil end
+	for _, conn in ipairs(moveState.carFlingTouchConns) do
+		pcall(function() conn:Disconnect() end)
+	end
+	moveState.carFlingTouchConns = {}
 	pcall(function()
 		for part, props in pairs(moveState.carFlingOrigProps) do
 			if part and part.Parent then
@@ -2095,23 +2161,12 @@ local function stopCarFling()
 				else
 					part.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
 				end
-				part.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-				part.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
 			end
 		end
 	end)
-	-- Give the driver their mass and collisions back.
-	pcall(function()
-		for part, was in pairs(moveState.carFlingOrigMassless) do
-			if part and part.Parent then part.Massless = was end
-		end
-		for part, was in pairs(moveState.carFlingOrigCanCollide) do
-			if part and part.Parent then part.CanCollide = was end
-		end
-	end)
 	moveState.carFlingOrigProps = {}
-	moveState.carFlingOrigMassless = {}
-	moveState.carFlingOrigCanCollide = {}
+	moveState.carFlingRoot = nil
+	moveState.carFlingPart = nil
 	helpers.notify("Car Fling", "OFF")
 end
 
@@ -2580,7 +2635,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "Pebbleford Hub - NBTF Hub v4.3"
+titleText.Text = "Pebbleford Hub - NBTF Hub v4.4"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 12
@@ -3535,7 +3590,7 @@ do
 		if on then startCarFling() else stopCarFling() end
 	end)
 	uiBuilder.createSlider(tab, "Car Fling Power", 1000, 100000, moveState.carFlingPower, o(), function(val) moveState.carFlingPower = val end)
-	uiBuilder.createInfoLabel(tab, "Spins your vehicle at density 100 - collide to launch anything unanchored", o())
+	uiBuilder.createInfoLabel(tab, "Drive into things to launch them. No spin, so you stay in the seat.", o())
 
 	uiBuilder.createSpacer(tab, o())
 
@@ -4545,7 +4600,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v4.3", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v4.4", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -4638,7 +4693,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("SX NBTF v4.0", "Loaded! Right Shift to toggle")
-print("[SX NBTF v4.3] Pebbleford Hub - NBTF Hub v4.3")
-print("[SX NBTF v4.3] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v4.3] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v4.3] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v4.4] Pebbleford Hub - NBTF Hub v4.4")
+print("[SX NBTF v4.4] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v4.4] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v4.4] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
