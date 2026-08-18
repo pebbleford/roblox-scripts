@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v4.4
+-- Pebbleford Hub - NBTF Hub v4.5
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -1454,6 +1454,67 @@ local function stopGodMode()
 end
 
 -- ===================== FLY =====================
+-- ===================== FLY TOUCH PAD (shared) =====================
+-- Both fly modes were keyboard-only, so on a phone moveVec stayed zero and
+-- nothing moved. Horizontal input differs per mode (Humanoid.MoveDirection
+-- when on foot, the VehicleSeat's Throttle/Steer when driving) but neither
+-- has a touch equivalent for up/down, so this pad supplies it for both.
+-- Ref-counted by tag so turning one mode off does not remove the other's pad.
+local flyPadGui = nil
+local flyPadUsers = {}
+local flyUp, flyDown = false, false
+
+local function destroyFlyPad(tag)
+	flyPadUsers[tag] = nil
+	if next(flyPadUsers) then return end
+	if flyPadGui then pcall(function() flyPadGui:Destroy() end) end
+	flyPadGui = nil
+	flyUp, flyDown = false, false
+end
+
+local function createFlyPad(tag)
+	flyPadUsers[tag] = true
+	if not UserInputService.TouchEnabled then return end
+	if flyPadGui then return end
+
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "NBTF_FlyPad"
+	gui.ResetOnSpawn = false
+	gui.IgnoreGuiInset = true
+	gui.DisplayOrder = 1000
+	pcall(function() gui.Parent = game:GetService("CoreGui") end)
+	if not gui.Parent then
+		gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+	end
+	flyPadGui = gui
+
+	local function makeBtn(label, yOffset, onDown, onUp)
+		local b = Instance.new("TextButton")
+		b.Size = UDim2.new(0, 64, 0, 64)
+		b.Position = UDim2.new(1, -80, 1, yOffset)
+		b.AnchorPoint = Vector2.new(0, 0)
+		b.BackgroundColor3 = Color3.fromRGB(30, 30, 38)
+		b.BackgroundTransparency = 0.25
+		b.Text = label
+		b.TextColor3 = Color3.fromRGB(255, 255, 255)
+		b.TextSize = 26
+		b.Font = Enum.Font.GothamBold
+		b.BorderSizePixel = 0
+		b.Parent = gui
+		local c = Instance.new("UICorner")
+		c.CornerRadius = UDim.new(0, 12)
+		c.Parent = b
+		b.MouseButton1Down:Connect(onDown)
+		b.MouseButton1Up:Connect(onUp)
+		-- Releasing outside the button must still stop the thrust.
+		b.MouseLeave:Connect(onUp)
+		return b
+	end
+
+	makeBtn("^", -150, function() flyUp = true end, function() flyUp = false end)
+	makeBtn("v", -78, function() flyDown = true end, function() flyDown = false end)
+end
+
 local function startFly()
 	local hrp = helpers.getRoot()
 	if not hrp then return end
@@ -1481,17 +1542,36 @@ local function startFly()
 			if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveVec = moveVec + camCF.RightVector end
 			if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveVec = moveVec + camCF.UpVector end
 			if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveVec = moveVec - camCF.UpVector end
+
+			-- Touch input. On foot the humanoid is not seated, so MoveDirection
+			-- tracks the mobile thumbstick; it is already world-space, so it is
+			-- flattened against the camera rather than added to a key vector.
+			local ch = LocalPlayer.Character
+			local hm = ch and ch:FindFirstChildOfClass("Humanoid")
+			if hm and hm.MoveDirection.Magnitude > 0 then
+				local md = hm.MoveDirection
+				moveVec = moveVec + Vector3.new(md.X, 0, md.Z)
+			end
+			if flyUp then moveVec = moveVec + camCF.UpVector end
+			if flyDown then moveVec = moveVec - camCF.UpVector end
+
 			moveState.flyBV.Velocity = moveVec.Magnitude > 0 and moveVec.Unit * moveState.flySpeed or Vector3.zero
 			moveState.flyBG.CFrame = camCF
 		end)
 	end)
-	helpers.notify("Fly", "Flying! WASD + Space/Shift")
+	createFlyPad("character")
+	if UserInputService.TouchEnabled then
+		helpers.notify("Fly", "Flying! Thumbstick + on-screen up/down")
+	else
+		helpers.notify("Fly", "Flying! WASD + Space/Shift")
+	end
 end
 
 local function stopFly()
 	if moveState.flyConnection then moveState.flyConnection:Disconnect() moveState.flyConnection = nil end
 	if moveState.flyBV then pcall(function() moveState.flyBV:Destroy() end) moveState.flyBV = nil end
 	if moveState.flyBG then pcall(function() moveState.flyBG:Destroy() end) moveState.flyBG = nil end
+	destroyFlyPad("character")
 end
 
 -- ===================== NOCLIP =====================
@@ -1855,62 +1935,6 @@ function actions.getVehicle()
 	return nil, seat
 end
 
--- ===================== VEHICLE FLY TOUCH PAD =====================
--- Vehicle Fly was keyboard-only, so on a phone moveVec stayed zero and the
--- car just hovered. Horizontal control comes from the VehicleSeat's own
--- Throttle/Steer (which Roblox's mobile vehicle controls already drive), but
--- there is no touch equivalent for up/down, so this pad supplies it.
-local vFlyPadGui = nil
-local vFlyUp, vFlyDown = false, false
-
-local function destroyVehicleFlyPad()
-	if vFlyPadGui then pcall(function() vFlyPadGui:Destroy() end) end
-	vFlyPadGui = nil
-	vFlyUp, vFlyDown = false, false
-end
-
-local function createVehicleFlyPad()
-	destroyVehicleFlyPad()
-	if not UserInputService.TouchEnabled then return end
-
-	local gui = Instance.new("ScreenGui")
-	gui.Name = "NBTF_VFlyPad"
-	gui.ResetOnSpawn = false
-	gui.IgnoreGuiInset = true
-	gui.DisplayOrder = 1000
-	pcall(function() gui.Parent = game:GetService("CoreGui") end)
-	if not gui.Parent then
-		gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-	end
-	vFlyPadGui = gui
-
-	local function makeBtn(label, yOffset, onDown, onUp)
-		local b = Instance.new("TextButton")
-		b.Size = UDim2.new(0, 64, 0, 64)
-		b.Position = UDim2.new(1, -80, 1, yOffset)
-		b.AnchorPoint = Vector2.new(0, 0)
-		b.BackgroundColor3 = Color3.fromRGB(30, 30, 38)
-		b.BackgroundTransparency = 0.25
-		b.Text = label
-		b.TextColor3 = Color3.fromRGB(255, 255, 255)
-		b.TextSize = 26
-		b.Font = Enum.Font.GothamBold
-		b.BorderSizePixel = 0
-		b.Parent = gui
-		local c = Instance.new("UICorner")
-		c.CornerRadius = UDim.new(0, 12)
-		c.Parent = b
-		b.MouseButton1Down:Connect(onDown)
-		b.MouseButton1Up:Connect(onUp)
-		-- Releasing outside the button must still stop the thrust.
-		b.MouseLeave:Connect(onUp)
-		return b
-	end
-
-	makeBtn("^", -150, function() vFlyUp = true end, function() vFlyUp = false end)
-	makeBtn("v", -78, function() vFlyDown = true end, function() vFlyDown = false end)
-end
-
 local function startVehicleFly()
 	local vehicle, part = actions.getVehicle()
 	if not part then
@@ -1974,15 +1998,15 @@ local function startVehicleFly()
 				if st.Throttle ~= 0 then moveVec = moveVec + camCF.LookVector * st.Throttle end
 				if st.Steer ~= 0 then moveVec = moveVec + camCF.RightVector * st.Steer end
 			end
-			if vFlyUp then moveVec = moveVec + camCF.UpVector end
-			if vFlyDown then moveVec = moveVec - camCF.UpVector end
+			if flyUp then moveVec = moveVec + camCF.UpVector end
+			if flyDown then moveVec = moveVec - camCF.UpVector end
 
 			moveState.vehicleFlyBV.Velocity = moveVec.Magnitude > 0 and moveVec.Unit * moveState.vehicleFlySpeed or Vector3.zero
 			moveState.vehicleFlyBG.CFrame = camCF
 		end)
 	end)
 
-	createVehicleFlyPad()
+	createFlyPad("vehicle")
 	if UserInputService.TouchEnabled then
 		helpers.notify("Vehicle Fly", "Flying! Use vehicle controls + on-screen up/down")
 	else
@@ -1994,7 +2018,7 @@ local function stopVehicleFly()
 	if moveState.vehicleFlyConnection then moveState.vehicleFlyConnection:Disconnect() moveState.vehicleFlyConnection = nil end
 	if moveState.vehicleFlyBV then pcall(function() moveState.vehicleFlyBV:Destroy() end) moveState.vehicleFlyBV = nil end
 	if moveState.vehicleFlyBG then pcall(function() moveState.vehicleFlyBG:Destroy() end) moveState.vehicleFlyBG = nil end
-	destroyVehicleFlyPad()
+	destroyFlyPad("vehicle")
 end
 
 -- ===================== CAR SPEED BOOST =====================
@@ -2635,7 +2659,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "Pebbleford Hub - NBTF Hub v4.4"
+titleText.Text = "Pebbleford Hub - NBTF Hub v4.5"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 12
@@ -4600,7 +4624,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v4.4", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v4.5", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -4693,7 +4717,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("SX NBTF v4.0", "Loaded! Right Shift to toggle")
-print("[SX NBTF v4.4] Pebbleford Hub - NBTF Hub v4.4")
-print("[SX NBTF v4.4] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v4.4] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v4.4] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v4.5] Pebbleford Hub - NBTF Hub v4.5")
+print("[SX NBTF v4.5] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v4.5] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v4.5] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
