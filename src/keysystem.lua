@@ -19,6 +19,10 @@ local KEY_SYSTEM = {}
 local VALID_KEYS = {
 }
 local AUTH_SALT = "SXR_2024_PEBBLEFORD_REVIVAL"
+-- Salt for whitelist/blacklist entries. Plain DJB2 hashes are cheap to
+-- brute-force, so a published entry could otherwise be spoofed by hooking
+-- gethwid(). Entries are stored as simpleHash(simpleHash(hwid) .. LIST_SALT).
+local LIST_SALT = "pf_wl_9Xq2mRt7Kd4Zv1Ns"
 local AUTH_FILE = "SynapseXAuth.json"
 local WHITELIST_URL = "https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/whitelist.txt?v=" .. tostring(tick())
 local BLACKLIST_URL = "https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/blacklist.txt?v=" .. tostring(tick())
@@ -94,6 +98,15 @@ local function simpleHash(input)
         hash = ((hash * 33) + string.byte(input, i)) % 4294967296
     end
     return tostring(hash)
+end
+
+-- ============================================================
+-- LIST HASH (salted - used for whitelist.txt / blacklist.txt)
+-- ============================================================
+-- Salts the plain HWID hash so stored entries reveal nothing usable and
+-- cannot be brute-forced back into a spoofable HWID without LIST_SALT.
+local function listHash(hwid)
+    return simpleHash(simpleHash(hwid) .. LIST_SALT)
 end
 
 -- ============================================================
@@ -234,7 +247,7 @@ local function checkWhitelist(hwid)
         local raw = game:HttpGet(WHITELIST_URL)
         if not raw or #raw < 3 then return false end
 
-        local hwidHash = simpleHash(hwid)
+        local hwidHash = listHash(hwid)
 
         for line in raw:gmatch("[^\r\n]+") do
             local trimmed = line:match("^%s*(.-)%s*$")
@@ -258,7 +271,7 @@ local function checkBlacklist(hwid)
         local raw = game:HttpGet(BLACKLIST_URL)
         if not raw or #raw < 3 then return false end
 
-        local hwidHash = simpleHash(hwid)
+        local hwidHash = listHash(hwid)
 
         for line in raw:gmatch("[^\r\n]+") do
             local trimmed = line:match("^%s*(.-)%s*$")
@@ -280,7 +293,7 @@ local function sendWhitelistWebhook(hwid, action)
     pcall(function()
         if WEBHOOK_URL == "PASTE_YOUR_DISCORD_WEBHOOK_URL_HERE" then return end
 
-        local hwidHash = simpleHash(hwid)
+        local hwidHash = listHash(hwid)
         local playerName = LocalPlayer.DisplayName .. " (@" .. LocalPlayer.Name .. ")"
         local userId = tostring(LocalPlayer.UserId)
 
@@ -412,7 +425,7 @@ local function showKeyGUI(hwid, scriptName)
     hwidLabel.Size = UDim2.new(1, -30, 0, 18)
     hwidLabel.Position = UDim2.new(0, 15, 0, 85)
     hwidLabel.BackgroundTransparency = 1
-    hwidLabel.Text = "HWID Hash: " .. simpleHash(hwid)
+    hwidLabel.Text = "HWID Hash: " .. listHash(hwid)
     hwidLabel.TextColor3 = Color3.fromRGB(100, 100, 110)
     hwidLabel.TextSize = 10
     hwidLabel.Font = Enum.Font.Code
