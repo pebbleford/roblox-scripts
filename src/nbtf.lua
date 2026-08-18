@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v4.2
+-- Pebbleford Hub - NBTF Hub v4.3
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -288,10 +288,12 @@ local moveState = {
 	carSpeedOrigMaxSpeed = nil,
 	carSpeedOrigTorque = nil,
 	carFlingActive = false,
-	carFlingPower = 50000,
+	carFlingPower = 20000,
 	carFlingConnection = nil,
 	carFlingBAV = nil,
 	carFlingOrigProps = {},
+	carFlingOrigMassless = {},
+	carFlingOrigCanCollide = {},
 }
 
 local playerState = {
@@ -1949,17 +1951,36 @@ local function startCarSpeed()
 			local h = c:FindFirstChildOfClass("Humanoid")
 			if not h or not h.SeatPart then return end
 			local s = h.SeatPart
+			local vehicle = s.Parent
+			local primary = (vehicle and vehicle:IsA("Model") and vehicle.PrimaryPart) or s
+
+			-- Setting MaxSpeed is not enough on its own: property writes from
+			-- the client don't replicate in FilteringEnabled games, so the
+			-- server keeps driving the car at its own speed. Kept because it
+			-- does help in games where the client owns the seat.
 			if s:IsA("VehicleSeat") then
 				s.MaxSpeed = moveState.carSpeedValue
-			else
-				local vehicle = s.Parent
-				if vehicle then
-					local primary = (vehicle:IsA("Model") and vehicle.PrimaryPart) or s
-					local look = primary.CFrame.LookVector
-					local currentSpeed = primary.AssemblyLinearVelocity:Dot(look)
-					if currentSpeed < moveState.carSpeedValue then
-						primary.AssemblyLinearVelocity = primary.AssemblyLinearVelocity + look * 2
-					end
+			end
+
+			-- Real acceleration. The client holds network ownership of the
+			-- vehicle it is sitting in, so writing the assembly velocity does
+			-- replicate. Throttle picks the direction so the car only speeds
+			-- up while you are actually driving it.
+			local throttle = s:IsA("VehicleSeat") and s.Throttle or 0
+			local dir
+			if throttle ~= 0 then
+				dir = primary.CFrame.LookVector * throttle
+			elseif not s:IsA("VehicleSeat") then
+				dir = primary.CFrame.LookVector
+			end
+
+			if dir and dir.Magnitude > 0 then
+				dir = dir.Unit
+				local vel = primary.AssemblyLinearVelocity
+				if vel:Dot(dir) < moveState.carSpeedValue then
+					-- Preserve vertical velocity so gravity and jumps still work.
+					local boosted = dir * moveState.carSpeedValue
+					primary.AssemblyLinearVelocity = Vector3.new(boosted.X, vel.Y, boosted.Z)
 				end
 			end
 		end)
@@ -1984,10 +2005,14 @@ local function stopCarSpeed()
 end
 
 -- ===================== CAR FLING =====================
--- Cranks the vehicle + your character to density 100 and slaps a huge
--- BodyAngularVelocity on the seat part. When the spinning heavy vehicle
--- collides with any unanchored part (players, props, other cars) the
--- impact energy launches them.
+-- Makes the vehicle extremely dense and spins it, so colliding with any
+-- unanchored part launches it.
+--
+-- The driver must NOT be made dense: you are welded to the spinning seat,
+-- so mass on your character becomes centrifugal momentum and catapults you
+-- before targets ever get hit. Instead the character is made massless and
+-- non-collidable, and its velocity is zeroed every frame, so it rides along
+-- contributing nothing to the spinning assembly.
 local function startCarFling()
 	local ok, err = pcall(function()
 		local vehicle, vPart = actions.getVehicle()
@@ -1995,20 +2020,33 @@ local function startCarFling()
 			helpers.notify("Car Fling", "Sit in a vehicle first!")
 			return
 		end
+		-- getVehicle returns nil for the model when the seat's parent isn't a
+		-- Model; fall back to whatever the seat is parented to.
+		local vehicleRoot = vehicle or vPart.Parent
+		if not vehicleRoot then
+			helpers.notify("Car Fling", "Could not find the vehicle!")
+			return
+		end
 
 		moveState.carFlingOrigProps = {}
-		for _, part in ipairs(vehicle:GetDescendants()) do
+		for _, part in ipairs(vehicleRoot:GetDescendants()) do
 			if part:IsA("BasePart") then
 				moveState.carFlingOrigProps[part] = part.CustomPhysicalProperties
 				part.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
 			end
 		end
+
+		-- Protect the driver instead of weighting them down.
+		moveState.carFlingOrigMassless = {}
+		moveState.carFlingOrigCanCollide = {}
 		local character = LocalPlayer.Character
 		if character then
 			for _, part in ipairs(character:GetDescendants()) do
 				if part:IsA("BasePart") then
-					moveState.carFlingOrigProps[part] = part.CustomPhysicalProperties
-					part.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
+					moveState.carFlingOrigMassless[part] = part.Massless
+					moveState.carFlingOrigCanCollide[part] = part.CanCollide
+					part.Massless = true
+					part.CanCollide = false
 				end
 			end
 		end
@@ -2029,6 +2067,14 @@ local function startCarFling()
 				local _, vp = actions.getVehicle()
 				if vp and moveState.carFlingBAV and not moveState.carFlingBAV.Parent then
 					moveState.carFlingBAV.Parent = vp
+				end
+				-- Bleed off any momentum the spin transfers into the driver,
+				-- which is what would otherwise throw you off the vehicle.
+				local char = LocalPlayer.Character
+				local hrp = char and char:FindFirstChild("HumanoidRootPart")
+				if hrp then
+					hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+					hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
 				end
 			end)
 		end)
@@ -2054,7 +2100,18 @@ local function stopCarFling()
 			end
 		end
 	end)
+	-- Give the driver their mass and collisions back.
+	pcall(function()
+		for part, was in pairs(moveState.carFlingOrigMassless) do
+			if part and part.Parent then part.Massless = was end
+		end
+		for part, was in pairs(moveState.carFlingOrigCanCollide) do
+			if part and part.Parent then part.CanCollide = was end
+		end
+	end)
 	moveState.carFlingOrigProps = {}
+	moveState.carFlingOrigMassless = {}
+	moveState.carFlingOrigCanCollide = {}
 	helpers.notify("Car Fling", "OFF")
 end
 
@@ -2523,7 +2580,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "Pebbleford Hub - NBTF Hub v4.2"
+titleText.Text = "Pebbleford Hub - NBTF Hub v4.3"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 12
@@ -3477,7 +3534,7 @@ do
 		moveState.carFlingActive = on
 		if on then startCarFling() else stopCarFling() end
 	end)
-	uiBuilder.createSlider(tab, "Car Fling Power", 5000, 200000, moveState.carFlingPower, o(), function(val) moveState.carFlingPower = val end)
+	uiBuilder.createSlider(tab, "Car Fling Power", 1000, 100000, moveState.carFlingPower, o(), function(val) moveState.carFlingPower = val end)
 	uiBuilder.createInfoLabel(tab, "Spins your vehicle at density 100 - collide to launch anything unanchored", o())
 
 	uiBuilder.createSpacer(tab, o())
@@ -4488,7 +4545,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v4.2", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v4.3", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -4581,7 +4638,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("SX NBTF v4.0", "Loaded! Right Shift to toggle")
-print("[SX NBTF v4.2] Pebbleford Hub - NBTF Hub v4.2")
-print("[SX NBTF v4.2] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v4.2] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v4.2] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v4.3] Pebbleford Hub - NBTF Hub v4.3")
+print("[SX NBTF v4.3] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v4.3] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v4.3] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
