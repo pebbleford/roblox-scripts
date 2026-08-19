@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v5.2
+-- Pebbleford Hub - NBTF Hub v5.3
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -32,6 +32,13 @@ local Workspace = game:GetService("Workspace")
 local TeleportService = game:GetService("TeleportService")
 local LocalPlayer = Players.LocalPlayer
 local camera = workspace.CurrentCamera
+-- Roblox replaces workspace.CurrentCamera on respawn, which left this upvalue
+-- pointing at a discarded camera: spectate, freecam and aimbot all wrote to
+-- an object that was no longer rendering. Reassigning the upvalue fixes every
+-- closure that captured it.
+workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+	if workspace.CurrentCamera then camera = workspace.CurrentCamera end
+end)
 local Mouse = LocalPlayer:GetMouse()
 
 local TextChatService = nil
@@ -203,24 +210,36 @@ local function fireWeaponHit(targetPlayer, gun)
 		return math.random(1, 100000)
 	end
 
+	-- Fabricated hits are rejected no matter how the payload is shaped, so
+	-- rather than forge one, drive the weapon's own firing path: aim at the
+	-- target and activate the tool. The kit listens for the Tool's Activated
+	-- event (the dump showed an "activated" connection on every weapon), then
+	-- raises WeaponFired and WeaponHit itself with ids the server already
+	-- trusts. The raw remotes are still sent afterwards as a cheap fallback.
 	local function shoot()
 		local shotId = nextShotId()
 		local dir = head.Position - origin
 		dir = dir.Magnitude > 0 and dir.Unit or Vector3.new(0, 0, -1)
 
-		-- Announce the shot first; a hit for an unknown shot is rejected.
+		-- Point at the target so the game's own raycast resolves onto them.
+		pcall(function()
+			if camera then
+				camera.CFrame = CFrame.new(camera.CFrame.Position, head.Position)
+			end
+		end)
+
+		-- Let the game fire for real.
+		local activated = pcall(function() gun:Activate() end)
+
 		if WeaponFiredRemote then
 			pcall(function()
 				WeaponFiredRemote:FireServer(gun, {
-					origin = origin,
-					dir = dir,
-					id = shotId,
-					t = tick(),
+					origin = origin, dir = dir, id = shotId, t = tick(),
 				})
 			end)
 		end
 
-		return pcall(function()
+		local sent = pcall(function()
 			WeaponHitRemote:FireServer(gun, {
 				["p"] = head.Position,
 				["pid"] = shotId,
@@ -234,19 +253,23 @@ local function fireWeaponHit(targetPlayer, gun)
 				["n"] = (origin - head.Position).Unit,
 			})
 		end)
+		return activated or sent
 	end
 
-	-- HitDamage is only 6-9 on these weapons, so a single hit never kills.
+	-- HitDamage is only 6-9 on these weapons, so one hit never kills. Respect
+	-- ShotCooldown: firing faster than the weapon allows is simply ignored.
+	local cooldown = 0.12
+	pcall(function()
+		local cfg = gun:FindFirstChild("Configuration")
+		local sc = cfg and cfg:FindFirstChild("ShotCooldown")
+		if sc and tonumber(sc.Value) and sc.Value > 0 then cooldown = sc.Value end
+	end)
+
 	local ok = false
 	for _ = 1, 30 do
-		local fired, err = shoot()
-		if not fired then
-			warn("[SX NBTF] FireServer failed: " .. tostring(err))
-			break
-		end
-		ok = true
+		if shoot() then ok = true end
 		if humanoid.Health <= 0 then break end
-		task.wait()
+		task.wait(cooldown)
 	end
 	return ok
 end
@@ -380,6 +403,7 @@ local moveState = {
 
 local playerState = {
 	spectateActive = false,
+	spectateConnection = nil,
 	spectateTarget = nil,
 	orbitActive = false,
 	orbitRadius = 15,
@@ -1721,12 +1745,9 @@ local function startWalkFling()
 		local root = character:FindFirstChild("HumanoidRootPart")
 		if not root then return end
 
-		-- Noclip lets you walk into targets instead of bumping off them.
-		if not moveState.noclipActive then
-			moveState.noclipActive = true
-			startNoclip()
-			moveState.walkFlingAutoNoclip = true
-		end
+		-- Auto-noclip is deliberately NOT enabled here. With collision off the
+		-- character has nothing to stand on and sinks slowly through the floor,
+		-- which is what this did before. Noclip can still be toggled separately.
 
 		moveState.walkFlingActive = true
 		local movel = 0.1
@@ -2421,15 +2442,36 @@ end
 
 -- ===================== SPECTATE PLAYER =====================
 function actions.spectatePlayer(player)
-	if player and player.Character then
-		local hum = player.Character:FindFirstChildOfClass("Humanoid")
-		if hum then
-			camera.CameraSubject = hum
-			playerState.spectateTarget = player
-			playerState.spectateActive = true
-			helpers.notify("Spectate", "Watching " .. player.DisplayName)
-		end
+	if not player then return end
+	playerState.spectateTarget = player
+	playerState.spectateActive = true
+
+	if playerState.spectateConnection then
+		playerState.spectateConnection:Disconnect()
+		playerState.spectateConnection = nil
 	end
+
+	-- Re-applied every frame: setting CameraSubject once is undone whenever
+	-- either character respawns, and the target's Humanoid is a new instance
+	-- after their death, so it has to be looked up again rather than cached.
+	playerState.spectateConnection = RunService.RenderStepped:Connect(function()
+		if not playerState.spectateActive then return end
+		pcall(function()
+			local target = playerState.spectateTarget
+			if not target or not target.Parent then return end
+			local char = target.Character
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+			if not hum then return end
+			if camera.CameraSubject ~= hum then
+				camera.CameraSubject = hum
+			end
+			if camera.CameraType ~= Enum.CameraType.Custom then
+				camera.CameraType = Enum.CameraType.Custom
+			end
+		end)
+	end)
+
+	helpers.notify("Spectate", "Watching " .. player.DisplayName)
 end
 
 function actions.unspectate()
@@ -2443,6 +2485,10 @@ function actions.unspectate()
 			end
 		end
 	end)
+	if playerState.spectateConnection then
+		playerState.spectateConnection:Disconnect()
+		playerState.spectateConnection = nil
+	end
 	playerState.spectateTarget = nil
 	playerState.spectateActive = false
 	helpers.notify("Spectate", "Stopped - camera returned to you")
@@ -2884,7 +2930,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "Pebbleford Hub - NBTF Hub v5.2"
+titleText.Text = "Pebbleford Hub - NBTF Hub v5.3"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 12
@@ -4861,7 +4907,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v5.2", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v5.3", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -4954,7 +5000,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("SX NBTF v4.0", "Loaded! Right Shift to toggle")
-print("[SX NBTF v5.2] Pebbleford Hub - NBTF Hub v5.2")
-print("[SX NBTF v5.2] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v5.2] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v5.2] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v5.3] Pebbleford Hub - NBTF Hub v5.3")
+print("[SX NBTF v5.3] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v5.3] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v5.3] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
