@@ -2179,24 +2179,44 @@ local function createSlider(parent, text, min, max, default, order, callback)
 	addCorner(fill, 3)
 
 	local sliderBtn = Instance.new("TextButton")
-	sliderBtn.Size = UDim2.new(1, 0, 0, 18)
-	sliderBtn.Position = UDim2.new(0, 0, 0, 20)
+	sliderBtn.Size = UDim2.new(1, 0, 0, UserInputService.TouchEnabled and 30 or 18)
+	sliderBtn.Position = UDim2.new(0, 0, 0, UserInputService.TouchEnabled and 14 or 20)
 	sliderBtn.BackgroundTransparency = 1
 	sliderBtn.Text = ""
 	sliderBtn.Parent = container
 
+	-- Touch support. The drag used to listen only for MouseMovement and only
+	-- clear on MouseButton1, so on a phone it never updated and never let go.
+	-- Touch inputs arrive as UserInputType.Touch and have to be handled too.
+	local function setFromX(x)
+		if track.AbsoluteSize.X <= 0 then return end
+		local rel = math.clamp((x - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
+		fill.Size = UDim2.new(rel, 0, 1, 0)
+		local val = math.floor(min + (max - min) * rel)
+		valLabel.Text = tostring(val)
+		if callback then callback(val) end
+	end
+
 	local dragging = false
-	sliderBtn.MouseButton1Down:Connect(function() dragging = true end)
+	sliderBtn.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1
+			or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			-- Jump straight to the tapped spot; dragging a thin bar with a
+			-- fingertip is far harder than simply tapping the value.
+			setFromX(input.Position.X)
+		end
+	end)
 	UserInputService.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+		if input.UserInputType == Enum.UserInputType.MouseButton1
+			or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = false
+		end
 	end)
 	UserInputService.InputChanged:Connect(function(input)
-		if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-			local rel = math.clamp((input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
-			fill.Size = UDim2.new(rel, 0, 1, 0)
-			local val = math.floor(min + (max - min) * rel)
-			valLabel.Text = tostring(val)
-			if callback then callback(val) end
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+			or input.UserInputType == Enum.UserInputType.Touch) then
+			setFromX(input.Position.X)
 		end
 	end)
 end

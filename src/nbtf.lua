@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v5.6
+-- Pebbleford Hub - NBTF Hub v5.7
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -3124,7 +3124,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "Pebbleford Hub - NBTF Hub v5.6"
+titleText.Text = "Pebbleford Hub - NBTF Hub v5.7"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 12
@@ -3366,24 +3366,44 @@ function uiBuilder.createSlider(parent, text, min, max, default, order, callback
 	uiBuilder.addCorner(fill, 3)
 
 	local sliderBtn = Instance.new("TextButton")
-	sliderBtn.Size = UDim2.new(1, 0, 0, 18)
-	sliderBtn.Position = UDim2.new(0, 0, 0, 20)
+	sliderBtn.Size = UDim2.new(1, 0, 0, UserInputService.TouchEnabled and 30 or 18)
+	sliderBtn.Position = UDim2.new(0, 0, 0, UserInputService.TouchEnabled and 14 or 20)
 	sliderBtn.BackgroundTransparency = 1
 	sliderBtn.Text = ""
 	sliderBtn.Parent = container
 
+	-- Touch support. The drag used to listen only for MouseMovement and only
+	-- clear on MouseButton1, so on a phone it never updated and never let go.
+	-- Touch inputs arrive as UserInputType.Touch and have to be handled too.
+	local function setFromX(x)
+		if track.AbsoluteSize.X <= 0 then return end
+		local rel = math.clamp((x - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
+		fill.Size = UDim2.new(rel, 0, 1, 0)
+		local val = math.floor(min + (max - min) * rel)
+		valLabel.Text = tostring(val)
+		if callback then callback(val) end
+	end
+
 	local dragging = false
-	sliderBtn.MouseButton1Down:Connect(function() dragging = true end)
+	sliderBtn.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1
+			or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			-- Jump straight to the tapped spot; dragging a thin bar with a
+			-- fingertip is far harder than simply tapping the value.
+			setFromX(input.Position.X)
+		end
+	end)
 	UserInputService.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+		if input.UserInputType == Enum.UserInputType.MouseButton1
+			or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = false
+		end
 	end)
 	UserInputService.InputChanged:Connect(function(input)
-		if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-			local rel = math.clamp((input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
-			fill.Size = UDim2.new(rel, 0, 1, 0)
-			local val = math.floor(min + (max - min) * rel)
-			valLabel.Text = tostring(val)
-			if callback then callback(val) end
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+			or input.UserInputType == Enum.UserInputType.Touch) then
+			setFromX(input.Position.X)
 		end
 	end)
 end
@@ -5120,7 +5140,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v5.6", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v5.7", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -5213,7 +5233,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("SX NBTF v4.0", "Loaded! Right Shift to toggle")
-print("[SX NBTF v5.6] Pebbleford Hub - NBTF Hub v5.6")
-print("[SX NBTF v5.6] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v5.6] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v5.6] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v5.7] Pebbleford Hub - NBTF Hub v5.7")
+print("[SX NBTF v5.7] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v5.7] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v5.7] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
