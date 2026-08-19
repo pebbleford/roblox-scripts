@@ -1838,419 +1838,109 @@ if isMobile then
 	if windowH < 280 then windowH = 280 end
 end
 
--- ===================== MAIN FRAME =====================
-local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, windowW, 0, windowH)
-mainFrame.Position = UDim2.new(0.5, -math.floor(windowW / 2), 0.5, -math.floor(windowH / 2))
-mainFrame.BackgroundColor3 = COLORS.bg
-mainFrame.BorderSizePixel = 0
-mainFrame.Active = true
-mainFrame.Draggable = true
-mainFrame.Parent = screenGui
-addCorner(mainFrame, 8)
-
-local borderStroke = Instance.new("UIStroke")
-borderStroke.Color = COLORS.border
-borderStroke.Thickness = 1
-borderStroke.Parent = mainFrame
-
--- ===================== RESIZE HANDLE =====================
-local MIN_W = isMobile and 300 or 400
-local MIN_H = isMobile and 250 or 300
-local MAX_W = math.min(math.floor(screenSize.X * 0.95), 900)
-local MAX_H = math.min(math.floor(screenSize.Y * 0.85), 700)
-
-local resizeHandle = Instance.new("TextButton")
-resizeHandle.Name = "ResizeHandle"
-resizeHandle.Size = UDim2.new(0, 20, 0, 20)
-resizeHandle.Position = UDim2.new(1, -20, 1, -20)
-resizeHandle.BackgroundTransparency = 1
-resizeHandle.Text = ""
-resizeHandle.ZIndex = 10
-resizeHandle.Parent = mainFrame
-
-local _rl1 = Instance.new("Frame")
-_rl1.Size = UDim2.new(0, 14, 0, 2)
-_rl1.Position = UDim2.new(0, 3, 1, -7)
-_rl1.Rotation = -45
-_rl1.BackgroundColor3 = COLORS.textDim
-_rl1.BorderSizePixel = 0
-_rl1.ZIndex = 10
-_rl1.Parent = resizeHandle
-
-local _rl2 = Instance.new("Frame")
-_rl2.Size = UDim2.new(0, 8, 0, 2)
-_rl2.Position = UDim2.new(0, 9, 1, -5)
-_rl2.Rotation = -45
-_rl2.BackgroundColor3 = COLORS.textDim
-_rl2.BorderSizePixel = 0
-_rl2.ZIndex = 10
-_rl2.Parent = resizeHandle
-
+-- ===================== GUI SETUP (WindUI) =====================
+-- The hand-built window, tab bar, drag handling and mobile toggle were
+-- replaced with WindUI. The builder functions keep their original names and
+-- signatures and now produce WindUI elements, so every feature call site is
+-- untouched; only these bodies and the window setup changed.
+local WindUI
 do
-	local resizing = false
-	local resizeStart, startSize
-
-	resizeHandle.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			resizing = true
-			resizeStart = input.Position
-			startSize = mainFrame.AbsoluteSize
-			input.Changed:Connect(function()
-				if input.UserInputState == Enum.UserInputState.End then
-					resizing = false
-				end
-			end)
-		end
+	local ok, lib = pcall(function()
+		return loadstring(game:HttpGet(
+			"https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
 	end)
-
-	UserInputService.InputChanged:Connect(function(input)
-		if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			local delta = input.Position - resizeStart
-			local newW = startSize.X + delta.X
-			local newH = startSize.Y + delta.Y
-			if newW < MIN_W then newW = MIN_W end
-			if newW > MAX_W then newW = MAX_W end
-			if newH < MIN_H then newH = MIN_H end
-			if newH > MAX_H then newH = MAX_H end
-			mainFrame.Size = UDim2.new(0, newW, 0, newH)
-		end
-	end)
+	if not ok or not lib then
+		warn("[SX] WindUI failed to load: " .. tostring(lib))
+		pcall(function()
+			game:GetService("StarterGui"):SetCore("SendNotification", {
+				Title = "Pebbleford Hub",
+				Text = "UI library failed to load. Check your internet/executor.",
+				Duration = 8,
+			})
+		end)
+		return
+	end
+	WindUI = lib
+	_G.SX_UI = lib
 end
-
--- Title bar
-local titleBar = Instance.new("Frame")
-titleBar.Size = UDim2.new(1, 0, 0, 30)
-titleBar.BackgroundColor3 = Color3.fromRGB(12, 8, 18)
-titleBar.BorderSizePixel = 0
-titleBar.Parent = mainFrame
-addCorner(titleBar, 8)
-
-local titleFix = Instance.new("Frame")
-titleFix.Size = UDim2.new(1, 0, 0, 10)
-titleFix.Position = UDim2.new(0, 0, 1, -10)
-titleFix.BackgroundColor3 = Color3.fromRGB(12, 8, 18)
-titleFix.BorderSizePixel = 0
-titleFix.Parent = titleBar
-
-local titleText = Instance.new("TextLabel")
-titleText.Size = UDim2.new(1, -80, 1, 0)
-titleText.Position = UDim2.new(0, 10, 0, 0)
-titleText.BackgroundTransparency = 1
-titleText.Text = "SX Revival - Elected Admin Hub v1.3"
-titleText.TextColor3 = COLORS.accent
-titleText.Font = Enum.Font.GothamBold
-titleText.TextSize = 13
-titleText.TextXAlignment = Enum.TextXAlignment.Left
-titleText.Parent = titleBar
-
-local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.new(0, 30, 0, 30)
-closeBtn.Position = UDim2.new(1, -30, 0, 0)
-closeBtn.BackgroundTransparency = 1
-closeBtn.Text = "X"
-closeBtn.TextColor3 = COLORS.error
-closeBtn.Font = Enum.Font.GothamBold
-closeBtn.TextSize = 14
-closeBtn.Parent = titleBar
-closeBtn.MouseButton1Click:Connect(function() screenGui:Destroy() end)
-
-local minimizeBtn = Instance.new("TextButton")
-minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
-minimizeBtn.Position = UDim2.new(1, -55, 0, 0)
-minimizeBtn.BackgroundTransparency = 1
-minimizeBtn.Text = "-"
-minimizeBtn.TextColor3 = COLORS.textSecondary
-minimizeBtn.Font = Enum.Font.GothamBold
-minimizeBtn.TextSize = 16
-minimizeBtn.Parent = titleBar
-
-local accentLine = Instance.new("Frame")
-accentLine.Size = UDim2.new(1, 0, 0, 2)
-accentLine.Position = UDim2.new(0, 0, 0, 30)
-accentLine.BackgroundColor3 = COLORS.accent
-accentLine.BorderSizePixel = 0
-accentLine.Parent = mainFrame
-
--- ===================== TAB BAR =====================
-local tabBar = Instance.new("Frame")
-tabBar.Size = UDim2.new(1, 0, 0, 28)
-tabBar.Position = UDim2.new(0, 0, 0, 32)
-tabBar.BackgroundColor3 = COLORS.bgSecondary
-tabBar.BorderSizePixel = 0
-tabBar.Parent = mainFrame
-
-local tabLayout = Instance.new("UIListLayout")
-tabLayout.FillDirection = Enum.FillDirection.Horizontal
-tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
-tabLayout.Parent = tabBar
 
 local tabNames = {"Mining", "Admin", "Build", "Players", "Movement", "Visuals", "Troll"}
-local tabButtons = {}
 local tabFrames = {}
 
-for i, name in ipairs(tabNames) do
-	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(1 / #tabNames, 0, 1, 0)
-	btn.BackgroundTransparency = 1
-	btn.Text = name
-	btn.TextColor3 = COLORS.textSecondary
-	btn.Font = Enum.Font.GothamMedium
-	btn.TextSize = 11
-	btn.LayoutOrder = i
-	btn.Parent = tabBar
-	tabButtons[name] = btn
+local Window = WindUI:CreateWindow({
+	Title = "Elected Hub",
+	Author = "Pebbleford Hub",
+	Folder = "PebblefordHub",
+	Size = UDim2.fromOffset(560, 440),
+	HideSearchBar = false,
+	OpenButton = { Title = "Hub", Enabled = true, Draggable = true, OnlyMobile = false },
+})
 
-	local content = Instance.new("ScrollingFrame")
-	content.Size = UDim2.new(1, -16, 1, -70)
-	content.Position = UDim2.new(0, 8, 0, 62)
-	content.BackgroundTransparency = 1
-	content.BorderSizePixel = 0
-	content.ScrollBarThickness = 3
-	content.ScrollBarImageColor3 = COLORS.accent
-	content.CanvasSize = UDim2.new(0, 0, 0, 0)
-	content.AutomaticCanvasSize = Enum.AutomaticSize.Y
-	content.Visible = name == "Mining"
-	content.Parent = mainFrame
-	tabFrames[name] = content
-
-	local layout = Instance.new("UIListLayout")
-	layout.SortOrder = Enum.SortOrder.LayoutOrder
-	layout.Padding = UDim.new(0, 4)
-	layout.Parent = content
-
-	local pad = Instance.new("UIPadding")
-	pad.PaddingLeft = UDim.new(0, 4)
-	pad.PaddingRight = UDim.new(0, 4)
-	pad.PaddingTop = UDim.new(0, 4)
-	pad.Parent = content
+for _, name in ipairs(tabNames) do
+	tabFrames[name] = Window:Tab({Title = name})
 end
 
-local function setActiveTab(name)
-	activeTab = name
-	for tabName, frame in pairs(tabFrames) do frame.Visible = tabName == name end
-	for tabName, btn in pairs(tabButtons) do
-		btn.TextColor3 = tabName == name and COLORS.accent or COLORS.textSecondary
-		btn.Font = tabName == name and Enum.Font.GothamBold or Enum.Font.GothamMedium
-	end
-end
-for name, btn in pairs(tabButtons) do btn.MouseButton1Click:Connect(function() setActiveTab(name) end) end
+local function switchTab(tabName) uiState = uiState or {}; uiState.activeTab = tabName end
 
--- ===================== UI BUILDERS =====================
+-- ===================== UI COMPONENT BUILDERS (WindUI) =====================
+-- order is accepted and ignored; WindUI lays out in creation order.
 local function createSectionLabel(parent, text, order)
-	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.new(1, 0, 0, 22)
-	lbl.BackgroundTransparency = 1
-	lbl.Text = text
-	lbl.TextColor3 = COLORS.accent
-	lbl.Font = Enum.Font.GothamBold
-	lbl.TextSize = 13
-	lbl.TextXAlignment = Enum.TextXAlignment.Left
-	lbl.LayoutOrder = order or 0
-	lbl.Parent = parent
+	if not parent then return end
+	return parent:Section({Title = text})
 end
-
 local function createInfoLabel(parent, text, order)
-	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.new(1, 0, 0, 16)
-	lbl.BackgroundTransparency = 1
-	lbl.Text = text
-	lbl.TextColor3 = COLORS.textSecondary
-	lbl.Font = Enum.Font.Gotham
-	lbl.TextSize = 10
-	lbl.TextXAlignment = Enum.TextXAlignment.Left
-	lbl.LayoutOrder = order or 0
-	lbl.Parent = parent
+	if not parent then return end
+	return parent:Paragraph({Title = text})
 end
-
+local function createDynamicLabel(parent, text)
+	if not parent then return setmetatable({}, {__newindex = function() end}) end
+	local para = parent:Paragraph({Title = tostring(text or "")})
+	local last = tostring(text or "")
+	return setmetatable({}, {
+		__newindex = function(_, k, v)
+			if k == "Text" then
+				local str = tostring(v)
+				if str ~= last then last = str; pcall(function() para:SetTitle(str) end) end
+			end
+		end,
+		__index = function() return nil end,
+	})
+end
 local function createToggle(parent, text, order, callback)
-	local row = Instance.new("Frame")
-	row.Size = UDim2.new(1, 0, 0, 28)
-	row.BackgroundColor3 = COLORS.panel
-	row.BorderSizePixel = 0
-	row.LayoutOrder = order or 0
-	row.Parent = parent
-	addCorner(row, 5)
-
-	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.new(1, -60, 1, 0)
-	lbl.Position = UDim2.new(0, 10, 0, 0)
-	lbl.BackgroundTransparency = 1
-	lbl.Text = text
-	lbl.TextColor3 = COLORS.textPrimary
-	lbl.Font = Enum.Font.Gotham
-	lbl.TextSize = 11
-	lbl.TextXAlignment = Enum.TextXAlignment.Left
-	lbl.Parent = row
-
-	local toggleFrame = Instance.new("Frame")
-	toggleFrame.Size = UDim2.new(0, 36, 0, 18)
-	toggleFrame.Position = UDim2.new(1, -46, 0.5, -9)
-	toggleFrame.BackgroundColor3 = COLORS.toggleOff
-	toggleFrame.BorderSizePixel = 0
-	toggleFrame.Parent = row
-	addCorner(toggleFrame, 9)
-
-	local circle = Instance.new("Frame")
-	circle.Size = UDim2.new(0, 14, 0, 14)
-	circle.Position = UDim2.new(0, 2, 0.5, -7)
-	circle.BackgroundColor3 = COLORS.textPrimary
-	circle.BorderSizePixel = 0
-	circle.Parent = toggleFrame
-	addCorner(circle, 7)
-
-	local isOn = false
-	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(1, 0, 1, 0)
-	btn.BackgroundTransparency = 1
-	btn.Text = ""
-	btn.Parent = row
-
-	btn.MouseButton1Click:Connect(function()
-		isOn = not isOn
-		toggleFrame.BackgroundColor3 = isOn and COLORS.toggleOn or COLORS.toggleOff
-		circle.Position = isOn and UDim2.new(1, -16, 0.5, -7) or UDim2.new(0, 2, 0.5, -7)
-		if callback then callback(isOn) end
-	end)
+	if not parent then return end
+	return parent:Toggle({Title = text, Value = false, Callback = function(v)
+		if callback then pcall(callback, v) end
+	end})
 end
-
-local function createButton(parent, text, order, callback)
-	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(1, 0, 0, 30)
-	btn.BackgroundColor3 = COLORS.accent
-	btn.BorderSizePixel = 0
-	btn.Text = text
-	btn.TextColor3 = Color3.fromRGB(10, 10, 10)
-	btn.Font = Enum.Font.GothamBold
-	btn.TextSize = 12
-	btn.LayoutOrder = order or 0
-	btn.Parent = parent
-	addCorner(btn, 5)
-	btn.MouseEnter:Connect(function() btn.BackgroundColor3 = COLORS.accentHover end)
-	btn.MouseLeave:Connect(function() btn.BackgroundColor3 = COLORS.accent end)
-	btn.MouseButton1Click:Connect(function() if callback then callback() end end)
-	return btn
+local function createActionButton(parent, text, order, callback)
+	if not parent then return end
+	return parent:Button({Title = text, Callback = function()
+		if callback then pcall(callback) end
+	end})
 end
-
+local createButton = createActionButton
 local function createSlider(parent, text, min, max, default, order, callback)
-	local container = Instance.new("Frame")
-	container.Size = UDim2.new(1, 0, 0, 38)
-	container.BackgroundColor3 = COLORS.panel
-	container.BorderSizePixel = 0
-	container.LayoutOrder = order or 0
-	container.Parent = parent
-	addCorner(container, 5)
-
-	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.new(0.5, -10, 0, 16)
-	lbl.Position = UDim2.new(0, 10, 0, 2)
-	lbl.BackgroundTransparency = 1
-	lbl.Text = text
-	lbl.TextColor3 = COLORS.textPrimary
-	lbl.Font = Enum.Font.Gotham
-	lbl.TextSize = 10
-	lbl.TextXAlignment = Enum.TextXAlignment.Left
-	lbl.Parent = container
-
-	local valLabel = Instance.new("TextLabel")
-	valLabel.Size = UDim2.new(0.5, -10, 0, 16)
-	valLabel.Position = UDim2.new(0.5, 0, 0, 2)
-	valLabel.BackgroundTransparency = 1
-	valLabel.Text = tostring(default)
-	valLabel.TextColor3 = COLORS.accent
-	valLabel.Font = Enum.Font.GothamBold
-	valLabel.TextSize = 10
-	valLabel.TextXAlignment = Enum.TextXAlignment.Right
-	valLabel.Parent = container
-
-	local track = Instance.new("Frame")
-	track.Size = UDim2.new(1, -20, 0, 5)
-	track.Position = UDim2.new(0, 10, 0, 26)
-	track.BackgroundColor3 = COLORS.border
-	track.BorderSizePixel = 0
-	track.Parent = container
-	addCorner(track, 3)
-
-	local fill = Instance.new("Frame")
-	fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
-	fill.BackgroundColor3 = COLORS.accent
-	fill.BorderSizePixel = 0
-	fill.Parent = track
-	addCorner(fill, 3)
-
-	local sliderBtn = Instance.new("TextButton")
-	sliderBtn.Size = UDim2.new(1, 0, 0, UserInputService.TouchEnabled and 30 or 18)
-	sliderBtn.Position = UDim2.new(0, 0, 0, UserInputService.TouchEnabled and 14 or 20)
-	sliderBtn.BackgroundTransparency = 1
-	sliderBtn.Text = ""
-	sliderBtn.Parent = container
-
-	-- Touch support. The drag used to listen only for MouseMovement and only
-	-- clear on MouseButton1, so on a phone it never updated and never let go.
-	-- Touch inputs arrive as UserInputType.Touch and have to be handled too.
-	local function setFromX(x)
-		if track.AbsoluteSize.X <= 0 then return end
-		local rel = math.clamp((x - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
-		fill.Size = UDim2.new(rel, 0, 1, 0)
-		local val = math.floor(min + (max - min) * rel)
-		valLabel.Text = tostring(val)
-		if callback then callback(val) end
-	end
-
-	local dragging = false
-	sliderBtn.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1
-			or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = true
-			-- Jump straight to the tapped spot; dragging a thin bar with a
-			-- fingertip is far harder than simply tapping the value.
-			setFromX(input.Position.X)
-		end
-	end)
-	UserInputService.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1
-			or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = false
-		end
-	end)
-	UserInputService.InputChanged:Connect(function(input)
-		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
-			or input.UserInputType == Enum.UserInputType.Touch) then
-			setFromX(input.Position.X)
-		end
-	end)
+	if not parent then return end
+	return parent:Slider({Title = text, Step = 1, Value = {Min = min, Max = max, Default = default},
+		Callback = function(v)
+			local n = type(v) == "table" and (v.Value or v.Default) or v
+			if callback and type(n) == "number" then pcall(callback, n) end
+		end})
 end
-
-local function createSpacer(parent, order)
-	local s = Instance.new("Frame")
-	s.Size = UDim2.new(1, 0, 0, 6)
-	s.BackgroundTransparency = 1
-	s.LayoutOrder = order or 0
-	s.Parent = parent
+local function createDropdown(parent, text, options, default, callback)
+	if not parent then return end
+	return parent:Dropdown({Title = text, Values = options, Value = default, Callback = function(c)
+		local val = type(c) == "table" and c[1] or c
+		if callback and val then pcall(callback, val) end
+	end})
 end
-
-local function createTextInput(parent, placeholder, order)
-	local box = Instance.new("TextBox")
-	box.Size = UDim2.new(1, 0, 0, 30)
-	box.BackgroundColor3 = COLORS.panel
-	box.BorderSizePixel = 0
-	box.Text = ""
-	box.PlaceholderText = placeholder or "Type here..."
-	box.PlaceholderColor3 = COLORS.textDim
-	box.TextColor3 = COLORS.textPrimary
-	box.Font = Enum.Font.Gotham
-	box.TextSize = 11
-	box.ClearTextOnFocus = false
-	box.LayoutOrder = order or 0
-	box.Parent = parent
-	addCorner(box, 5)
-
-	local pad = Instance.new("UIPadding")
-	pad.PaddingLeft = UDim.new(0, 8)
-	pad.Parent = box
-
-	return box
+local function createInput(parent, text, placeholder, callback)
+	if not parent then return end
+	return parent:Input({Title = text, Placeholder = placeholder or "", Callback = function(v)
+		if callback then pcall(callback, v) end
+	end})
 end
+local function createSpacer(parent, order) return nil end
 
 -- ===================== BUILD MINING TAB =====================
 do
@@ -2540,85 +2230,48 @@ do
 	createSectionLabel(tab, "Player Actions", o())
 	createInfoLabel(tab, "Per-player actions (admin cmds require admin status)", o())
 
-	local playerActionsFrame = Instance.new("Frame")
-	playerActionsFrame.Size = UDim2.new(1, 0, 0, 0)
-	playerActionsFrame.AutomaticSize = Enum.AutomaticSize.Y
-	playerActionsFrame.BackgroundTransparency = 1
-	playerActionsFrame.LayoutOrder = o()
-	playerActionsFrame.Parent = tab
-
-	local playerActionsLayout = Instance.new("UIListLayout")
-	playerActionsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	playerActionsLayout.Padding = UDim.new(0, 4)
-	playerActionsLayout.Parent = playerActionsFrame
-
+	-- Per-player rows had six buttons at fixed pixel offsets, which does not
+	-- survive a resizable window. A target dropdown plus action buttons.
+	local elPlayers, elDropdown, elTarget = {}, nil, nil
 	local function refreshPlayerActions()
-		for _, child in ipairs(playerActionsFrame:GetChildren()) do
-			if child:IsA("Frame") then child:Destroy() end
-		end
-		local idx = 0
+		elPlayers = {}
+		local names = {}
 		for _, player in ipairs(Players:GetPlayers()) do
 			if player ~= LocalPlayer then
-				idx = idx + 1
-
-				local row = Instance.new("Frame")
-				row.Size = UDim2.new(1, 0, 0, 32)
-				row.BackgroundColor3 = COLORS.panel
-				row.BorderSizePixel = 0
-				row.LayoutOrder = idx
-				row.Parent = playerActionsFrame
-				addCorner(row, 5)
-
-				local nameLbl = Instance.new("TextLabel")
-				nameLbl.Size = UDim2.new(1, -280, 1, 0)
-				nameLbl.Position = UDim2.new(0, 8, 0, 0)
-				nameLbl.BackgroundTransparency = 1
-				nameLbl.Text = player.DisplayName
-				nameLbl.TextColor3 = COLORS.textPrimary
-				nameLbl.Font = Enum.Font.Gotham
-				nameLbl.TextSize = 10
-				nameLbl.TextXAlignment = Enum.TextXAlignment.Left
-				nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
-				nameLbl.Parent = row
-
-				local actions = {
-					{text = "Kill", offset = 275, fn = function() adminKill(player.Name) end},
-					{text = "Bring", offset = 230, fn = function() adminBring(player.Name) end},
-					{text = "TP", offset = 190, fn = function()
-						pcall(function()
-							local myChar = LocalPlayer.Character
-							local theirHRP = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-							if myChar and theirHRP then
-								myChar:PivotTo(theirHRP.CFrame + Vector3.new(0, 3, 0))
-								notify("TP", "Teleported to " .. player.DisplayName)
-							end
-						end)
-					end},
-					{text = "Fling", offset = 148, fn = function() flingPlayer(player) end},
-					{text = "Jail", offset = 108, fn = function() adminJail(player.Name) end},
-					{text = "Kick", offset = 68, fn = function() adminKick(player.Name) end},
-				}
-
-				for _, action in ipairs(actions) do
-					local abtn = Instance.new("TextButton")
-					abtn.Size = UDim2.new(0, 38, 0, 22)
-					abtn.Position = UDim2.new(1, -action.offset, 0.5, -11)
-					abtn.BackgroundColor3 = COLORS.accent
-					abtn.BorderSizePixel = 0
-					abtn.Text = action.text
-					abtn.TextColor3 = Color3.fromRGB(10, 10, 10)
-					abtn.Font = Enum.Font.GothamBold
-					abtn.TextSize = 9
-					abtn.Parent = row
-					addCorner(abtn, 4)
-					abtn.MouseEnter:Connect(function() abtn.BackgroundColor3 = COLORS.accentHover end)
-					abtn.MouseLeave:Connect(function() abtn.BackgroundColor3 = COLORS.accent end)
-					abtn.MouseButton1Click:Connect(action.fn)
-				end
+				elPlayers[player.DisplayName] = player
+				table.insert(names, player.DisplayName)
 			end
 		end
+		if #names == 0 then names = {"(no players)"} end
+		if elDropdown then pcall(function() elDropdown:Refresh(names) end) end
 	end
-
+	elDropdown = createDropdown(tab, "Target Player", {"(refresh first)"}, "(refresh first)", function(choice)
+		elTarget = elPlayers[choice]
+	end)
+	local function withTarget(fn)
+		return function()
+			if not elTarget or not elTarget.Parent then
+				notify("Admin", "Pick a target from the dropdown first")
+				return
+			end
+			fn(elTarget)
+		end
+	end
+	createButton(tab, "Kill Target", o(), withTarget(function(p) adminKill(p.Name) end))
+	createButton(tab, "Bring Target", o(), withTarget(function(p) adminBring(p.Name) end))
+	createButton(tab, "Teleport To Target", o(), withTarget(function(p)
+		pcall(function()
+			local myChar = LocalPlayer.Character
+			local theirHRP = p.Character and p.Character:FindFirstChild("HumanoidRootPart")
+			if myChar and theirHRP then
+				myChar:PivotTo(theirHRP.CFrame + Vector3.new(0, 3, 0))
+				notify("TP", "Teleported to " .. p.DisplayName)
+			end
+		end)
+	end))
+	createButton(tab, "Fling Target", o(), withTarget(function(p) flingPlayer(p) end))
+	createButton(tab, "Jail Target", o(), withTarget(function(p) adminJail(p.Name) end))
+	createButton(tab, "Kick Target", o(), withTarget(function(p) adminKick(p.Name) end))
 	createButton(tab, "Refresh Player List", o(), refreshPlayerActions)
 	refreshPlayerActions()
 
@@ -2850,73 +2503,7 @@ end
 
 -- ===================== MINIMIZE / TOGGLE =====================
 
--- ===================== MOBILE TOGGLE BUTTON =====================
-local toggleBtn = Instance.new("TextButton")
-toggleBtn.Name = "ToggleBtn"
-toggleBtn.Size = UDim2.new(0, 50, 0, 50)
-toggleBtn.Position = UDim2.new(1, -60, 0.5, -25)
-toggleBtn.BackgroundColor3 = COLORS.accent
-toggleBtn.Text = "EL"
-toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-toggleBtn.Font = Enum.Font.GothamBold
-toggleBtn.TextSize = 14
-toggleBtn.Visible = isMobile
-toggleBtn.BackgroundTransparency = isMobile and 0.3 or 0
-toggleBtn.Parent = screenGui
-addCorner(toggleBtn, 25)
-
-if isMobile then
-	local _tDragDist = 0
-	do
-		local tDragging = false
-		local tDragStart, tStartPos
-
-		toggleBtn.InputBegan:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.Touch then
-				tDragging = true
-				tDragStart = input.Position
-				tStartPos = toggleBtn.Position
-				_tDragDist = 0
-				input.Changed:Connect(function()
-					if input.UserInputState == Enum.UserInputState.End then tDragging = false end
-				end)
-			end
-		end)
-
-		UserInputService.InputChanged:Connect(function(input)
-			if tDragging and input.UserInputType == Enum.UserInputType.Touch then
-				local delta = input.Position - tDragStart
-				_tDragDist = math.abs(delta.X) + math.abs(delta.Y)
-				toggleBtn.Position = UDim2.new(tStartPos.X.Scale, tStartPos.X.Offset + delta.X, tStartPos.Y.Scale, tStartPos.Y.Offset + delta.Y)
-			end
-		end)
-	end
-
-	toggleBtn.MouseButton1Click:Connect(function()
-		if _tDragDist < 10 then
-			mainFrame.Visible = not mainFrame.Visible
-		end
-	end)
-end
-
-local contentVisible = true
-minimizeBtn.MouseButton1Click:Connect(function()
-	contentVisible = not contentVisible
-	for _, frame in pairs(tabFrames) do frame.Visible = contentVisible and frame == tabFrames[activeTab] end
-	tabBar.Visible = contentVisible
-	accentLine.Visible = contentVisible
-	do local curW = mainFrame.AbsoluteSize.X; mainFrame.Size = contentVisible and UDim2.new(0, curW, 0, windowH) or UDim2.new(0, curW, 0, 32) end
-	minimizeBtn.Text = contentVisible and "-" or "+"
-end)
-
-UserInputService.InputBegan:Connect(function(input, processed)
-	if processed then return end
-	if input.KeyCode == Enum.KeyCode.RightShift then
-		windowVisible = not windowVisible
-		mainFrame.Visible = windowVisible
-	end
-end)
-
+-- Mobile toggle button removed: WindUI provides its own open button.
 -- ===================== RESPAWN HANDLER =====================
 LocalPlayer.CharacterAdded:Connect(function()
 	task.wait(1)

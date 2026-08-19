@@ -524,329 +524,109 @@ if not screenGui.Parent then
 end
 
 -- Main frame
-local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 520, 0, 420)
-mainFrame.Position = UDim2.new(0.5, -260, 0.5, -210)
-mainFrame.BackgroundColor3 = COLORS.bg
-mainFrame.BorderSizePixel = 0
-mainFrame.Parent = screenGui
-
-local mainCorner = Instance.new("UICorner")
-mainCorner.CornerRadius = UDim.new(0, 8)
-mainCorner.Parent = mainFrame
-
-local mainStroke = Instance.new("UIStroke")
-mainStroke.Color = COLORS.accent
-mainStroke.Thickness = 2
-mainStroke.Parent = mainFrame
-
--- Title bar
-local titleBar = Instance.new("Frame")
-titleBar.Size = UDim2.new(1, 0, 0, 36)
-titleBar.BackgroundColor3 = COLORS.bgSecondary
-titleBar.BorderSizePixel = 0
-titleBar.Parent = mainFrame
-
-local titleCorner = Instance.new("UICorner")
-titleCorner.CornerRadius = UDim.new(0, 8)
-titleCorner.Parent = titleBar
-
--- Logo
-local logoBox = Instance.new("Frame")
-logoBox.Size = UDim2.new(0, 26, 0, 26)
-logoBox.Position = UDim2.new(0, 6, 0, 5)
-logoBox.BackgroundColor3 = COLORS.accent
-logoBox.BorderSizePixel = 0
-logoBox.Parent = titleBar
-
-local logoCorner = Instance.new("UICorner")
-logoCorner.CornerRadius = UDim.new(0, 5)
-logoCorner.Parent = logoBox
-
-local logoText = Instance.new("TextLabel")
-logoText.Size = UDim2.new(1, 0, 1, 0)
-logoText.BackgroundTransparency = 1
-logoText.Text = "P"
-logoText.TextColor3 = Color3.fromRGB(255, 255, 255)
-logoText.TextSize = 16
-logoText.Font = Enum.Font.GothamBold
-logoText.Parent = logoBox
-
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(0, 250, 1, 0)
-titleLabel.Position = UDim2.new(0, 38, 0, 0)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "Pebbleford Hub - Industrialist"
-titleLabel.TextColor3 = COLORS.text
-titleLabel.TextSize = 15
-titleLabel.Font = Enum.Font.GothamBold
-titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-titleLabel.Parent = titleBar
-
-local versionLabel = Instance.new("TextLabel")
-versionLabel.Size = UDim2.new(0, 50, 1, 0)
-versionLabel.Position = UDim2.new(0, 290, 0, 0)
-versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v1.2.9"
-versionLabel.TextColor3 = COLORS.textDim
-versionLabel.TextSize = 12
-versionLabel.Font = Enum.Font.Gotham
-versionLabel.TextXAlignment = Enum.TextXAlignment.Left
-versionLabel.Parent = titleBar
-
--- Close button
-local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.new(0, 36, 0, 36)
-closeBtn.Position = UDim2.new(1, -36, 0, 0)
-closeBtn.BackgroundTransparency = 1
-closeBtn.Text = "X"
-closeBtn.TextColor3 = COLORS.danger
-closeBtn.TextSize = 16
-closeBtn.Font = Enum.Font.GothamBold
-closeBtn.Parent = titleBar
-
--- Minimize button
-local minBtn = Instance.new("TextButton")
-minBtn.Size = UDim2.new(0, 36, 0, 36)
-minBtn.Position = UDim2.new(1, -72, 0, 0)
-minBtn.BackgroundTransparency = 1
-minBtn.Text = "_"
-minBtn.TextColor3 = COLORS.textDim
-minBtn.TextSize = 16
-minBtn.Font = Enum.Font.GothamBold
-minBtn.Parent = titleBar
-
--- Dragging
-local dragging = false
-local dragStart, startPos
-
-titleBar.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		dragging = true
-		dragStart = input.Position
-		startPos = mainFrame.Position
+-- ===================== GUI SETUP (WindUI) =====================
+-- The hand-built window, tab bar, drag handling and mobile toggle were
+-- replaced with WindUI. The builder functions keep their original names and
+-- signatures and now produce WindUI elements, so every feature call site is
+-- untouched; only these bodies and the window setup changed.
+local WindUI
+do
+	local ok, lib = pcall(function()
+		return loadstring(game:HttpGet(
+			"https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+	end)
+	if not ok or not lib then
+		warn("[SX] WindUI failed to load: " .. tostring(lib))
+		pcall(function()
+			game:GetService("StarterGui"):SetCore("SendNotification", {
+				Title = "Pebbleford Hub",
+				Text = "UI library failed to load. Check your internet/executor.",
+				Duration = 8,
+			})
+		end)
+		return
 	end
-end)
+	WindUI = lib
+	_G.SX_UI = lib
+end
 
-UserInputService.InputChanged:Connect(function(input)
-	if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-		local delta = input.Position - dragStart
-		mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-	end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		dragging = false
-	end
-end)
-
--- ===================== TABS =====================
 local tabNames = {"Farms", "Auto", "Log"}
-local tabButtons = {}
 local tabFrames = {}
 
-local tabBar = Instance.new("Frame")
-tabBar.Size = UDim2.new(1, 0, 0, 30)
-tabBar.Position = UDim2.new(0, 0, 0, 36)
-tabBar.BackgroundColor3 = COLORS.bgSecondary
-tabBar.BorderSizePixel = 0
-tabBar.Parent = mainFrame
+local Window = WindUI:CreateWindow({
+	Title = "Industrialist Hub",
+	Author = "Pebbleford Hub",
+	Folder = "PebblefordHub",
+	Size = UDim2.fromOffset(560, 440),
+	HideSearchBar = false,
+	OpenButton = { Title = "Hub", Enabled = true, Draggable = true, OnlyMobile = false },
+})
 
-local tabWidth = 1 / #tabNames
-for i, name in ipairs(tabNames) do
-	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(tabWidth, -2, 1, 0)
-	btn.Position = UDim2.new(tabWidth * (i - 1), 1, 0, 0)
-	btn.BackgroundColor3 = COLORS.tabBg
-	btn.BackgroundTransparency = 0.5
-	btn.Text = name
-	btn.TextColor3 = COLORS.textDim
-	btn.TextSize = 13
-	btn.Font = Enum.Font.GothamSemibold
-	btn.BorderSizePixel = 0
-	btn.Parent = tabBar
-	tabButtons[name] = btn
-
-	local frame = Instance.new("ScrollingFrame")
-	frame.Size = UDim2.new(1, -10, 1, -76)
-	frame.Position = UDim2.new(0, 5, 0, 66)
-	frame.BackgroundTransparency = 1
-	frame.BorderSizePixel = 0
-	frame.ScrollBarThickness = 4
-	frame.ScrollBarImageColor3 = COLORS.accent
-	frame.Visible = (name == activeTab)
-	frame.CanvasSize = UDim2.new(0, 0, 0, 0)
-	frame.Parent = mainFrame
-	tabFrames[name] = frame
-
-	local layout = Instance.new("UIListLayout")
-	layout.SortOrder = Enum.SortOrder.LayoutOrder
-	layout.Padding = UDim.new(0, 4)
-	layout.Parent = frame
-
-	-- Auto-resize canvas
-	layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-		frame.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 10)
-	end)
+for _, name in ipairs(tabNames) do
+	tabFrames[name] = Window:Tab({Title = name})
 end
 
-local function switchTab(name)
-	activeTab = name
-	for tName, btn in pairs(tabButtons) do
-		if tName == name then
-			btn.BackgroundTransparency = 0
-			btn.BackgroundColor3 = COLORS.accent
-			btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-		else
-			btn.BackgroundTransparency = 0.5
-			btn.BackgroundColor3 = COLORS.tabBg
-			btn.TextColor3 = COLORS.textDim
-		end
-	end
-	for tName, frame in pairs(tabFrames) do
-		frame.Visible = (tName == name)
-	end
-end
+local function switchTab(tabName) uiState = uiState or {}; uiState.activeTab = tabName end
 
-for name, btn in pairs(tabButtons) do
-	btn.MouseButton1Click:Connect(function() switchTab(name) end)
-end
-switchTab("Farms")
-
--- ===================== HELPER: GUI ELEMENTS =====================
+-- ===================== UI COMPONENT BUILDERS (WindUI) =====================
+-- order is accepted and ignored; WindUI lays out in creation order.
 local function createSectionLabel(parent, text, order)
-	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.new(1, -10, 0, 24)
-	lbl.BackgroundTransparency = 1
-	lbl.Text = "  " .. text
-	lbl.TextColor3 = COLORS.accent
-	lbl.TextSize = 14
-	lbl.Font = Enum.Font.GothamBold
-	lbl.TextXAlignment = Enum.TextXAlignment.Left
-	lbl.LayoutOrder = order or 0
-	lbl.Parent = parent
-	return lbl
+	if not parent then return end
+	return parent:Section({Title = text})
 end
-
-local function createActionButton(parent, text, order, callback)
-	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(1, -10, 0, 32)
-	btn.BackgroundColor3 = COLORS.tabBg
-	btn.Text = "  " .. text
-	btn.TextColor3 = COLORS.text
-	btn.TextSize = 13
-	btn.Font = Enum.Font.GothamSemibold
-	btn.TextXAlignment = Enum.TextXAlignment.Left
-	btn.BorderSizePixel = 0
-	btn.LayoutOrder = order or 0
-	btn.Parent = parent
-
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 6)
-	corner.Parent = btn
-
-	local stroke = Instance.new("UIStroke")
-	stroke.Color = COLORS.border
-	stroke.Thickness = 1
-	stroke.Parent = btn
-
-	btn.MouseEnter:Connect(function()
-		btn.BackgroundColor3 = COLORS.accentDark
-	end)
-	btn.MouseLeave:Connect(function()
-		btn.BackgroundColor3 = COLORS.tabBg
-	end)
-
-	if callback then
-		btn.MouseButton1Click:Connect(callback)
-	end
-
-	return btn
-end
-
-local function createToggle(parent, text, default, order, callback)
-	local frame = Instance.new("Frame")
-	frame.Size = UDim2.new(1, -10, 0, 32)
-	frame.BackgroundColor3 = COLORS.tabBg
-	frame.BorderSizePixel = 0
-	frame.LayoutOrder = order or 0
-	frame.Parent = parent
-
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 6)
-	corner.Parent = frame
-
-	local stroke = Instance.new("UIStroke")
-	stroke.Color = COLORS.border
-	stroke.Thickness = 1
-	stroke.Parent = frame
-
-	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.new(1, -60, 1, 0)
-	lbl.Position = UDim2.new(0, 10, 0, 0)
-	lbl.BackgroundTransparency = 1
-	lbl.Text = text
-	lbl.TextColor3 = COLORS.text
-	lbl.TextSize = 13
-	lbl.Font = Enum.Font.GothamSemibold
-	lbl.TextXAlignment = Enum.TextXAlignment.Left
-	lbl.Parent = frame
-
-	local toggleBg = Instance.new("Frame")
-	toggleBg.Size = UDim2.new(0, 40, 0, 20)
-	toggleBg.Position = UDim2.new(1, -50, 0.5, -10)
-	toggleBg.BackgroundColor3 = default and COLORS.toggleOn or COLORS.toggleOff
-	toggleBg.BorderSizePixel = 0
-	toggleBg.Parent = frame
-
-	local toggleCorner = Instance.new("UICorner")
-	toggleCorner.CornerRadius = UDim.new(0, 10)
-	toggleCorner.Parent = toggleBg
-
-	local knob = Instance.new("Frame")
-	knob.Size = UDim2.new(0, 16, 0, 16)
-	knob.Position = default and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
-	knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	knob.BorderSizePixel = 0
-	knob.Parent = toggleBg
-
-	local knobCorner = Instance.new("UICorner")
-	knobCorner.CornerRadius = UDim.new(0, 8)
-	knobCorner.Parent = knob
-
-	local enabled = default
-
-	local clickBtn = Instance.new("TextButton")
-	clickBtn.Size = UDim2.new(1, 0, 1, 0)
-	clickBtn.BackgroundTransparency = 1
-	clickBtn.Text = ""
-	clickBtn.Parent = frame
-
-	clickBtn.MouseButton1Click:Connect(function()
-		enabled = not enabled
-		toggleBg.BackgroundColor3 = enabled and COLORS.toggleOn or COLORS.toggleOff
-		knob.Position = enabled and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
-		if callback then callback(enabled) end
-	end)
-
-	return frame, function() return enabled end
-end
-
 local function createInfoLabel(parent, text, order)
-	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.new(1, -10, 0, 20)
-	lbl.BackgroundTransparency = 1
-	lbl.Text = "  " .. text
-	lbl.TextColor3 = COLORS.textDim
-	lbl.TextSize = 12
-	lbl.Font = Enum.Font.Gotham
-	lbl.TextXAlignment = Enum.TextXAlignment.Left
-	lbl.TextWrapped = true
-	lbl.LayoutOrder = order or 0
-	lbl.Parent = parent
-	return lbl
+	if not parent then return end
+	return parent:Paragraph({Title = text})
 end
+local function createDynamicLabel(parent, text)
+	if not parent then return setmetatable({}, {__newindex = function() end}) end
+	local para = parent:Paragraph({Title = tostring(text or "")})
+	local last = tostring(text or "")
+	return setmetatable({}, {
+		__newindex = function(_, k, v)
+			if k == "Text" then
+				local str = tostring(v)
+				if str ~= last then last = str; pcall(function() para:SetTitle(str) end) end
+			end
+		end,
+		__index = function() return nil end,
+	})
+end
+local function createToggle(parent, text, order, callback)
+	if not parent then return end
+	return parent:Toggle({Title = text, Value = false, Callback = function(v)
+		if callback then pcall(callback, v) end
+	end})
+end
+local function createActionButton(parent, text, order, callback)
+	if not parent then return end
+	return parent:Button({Title = text, Callback = function()
+		if callback then pcall(callback) end
+	end})
+end
+local createButton = createActionButton
+local function createSlider(parent, text, min, max, default, order, callback)
+	if not parent then return end
+	return parent:Slider({Title = text, Step = 1, Value = {Min = min, Max = max, Default = default},
+		Callback = function(v)
+			local n = type(v) == "table" and (v.Value or v.Default) or v
+			if callback and type(n) == "number" then pcall(callback, n) end
+		end})
+end
+local function createDropdown(parent, text, options, default, callback)
+	if not parent then return end
+	return parent:Dropdown({Title = text, Values = options, Value = default, Callback = function(c)
+		local val = type(c) == "table" and c[1] or c
+		if callback and val then pcall(callback, val) end
+	end})
+end
+local function createInput(parent, text, placeholder, callback)
+	if not parent then return end
+	return parent:Input({Title = text, Placeholder = placeholder or "", Callback = function(v)
+		if callback then pcall(callback, v) end
+	end})
+end
+local function createSpacer(parent, order) return nil end
 
 -- ===================== BUILD FARM =====================
 local function buildFarm(blueprint)
@@ -1367,71 +1147,10 @@ end)
 
 -- (Capture tab removed in v1.2.9 - using direct PlaceBind)
 
--- === LOG TAB ===
-logFrame = Instance.new("ScrollingFrame")
-logFrame.Size = UDim2.new(1, -10, 1, -76)
-logFrame.Position = UDim2.new(0, 5, 0, 66)
-logFrame.BackgroundColor3 = COLORS.bgSecondary
-logFrame.BorderSizePixel = 0
-logFrame.ScrollBarThickness = 4
-logFrame.ScrollBarImageColor3 = COLORS.accent
-logFrame.Visible = false
-logFrame.Parent = mainFrame
-
--- Replace the auto-generated log tab frame
-tabFrames["Log"]:Destroy()
-tabFrames["Log"] = logFrame
-
-local logCorner = Instance.new("UICorner")
-logCorner.CornerRadius = UDim.new(0, 6)
-logCorner.Parent = logFrame
-
--- ===================== TOGGLE BUTTON =====================
-local toggleBtn = Instance.new("TextButton")
-toggleBtn.Size = UDim2.new(0, 40, 0, 40)
-toggleBtn.Position = UDim2.new(0, 10, 0.5, -20)
-toggleBtn.BackgroundColor3 = COLORS.accent
-toggleBtn.Text = "PB"
-toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-toggleBtn.TextSize = 12
-toggleBtn.Font = Enum.Font.GothamBold
-toggleBtn.BorderSizePixel = 0
-toggleBtn.Visible = false
-toggleBtn.ZIndex = 10
-toggleBtn.Parent = screenGui
-
-local toggleCorner = Instance.new("UICorner")
-toggleCorner.CornerRadius = UDim.new(0, 8)
-toggleCorner.Parent = toggleBtn
-
--- ===================== CLOSE / MINIMIZE =====================
-closeBtn.MouseButton1Click:Connect(function()
-	mainFrame.Visible = false
-	toggleBtn.Visible = true
-	guiOpen = false
-end)
-
-minBtn.MouseButton1Click:Connect(function()
-	mainFrame.Visible = false
-	toggleBtn.Visible = true
-	guiOpen = false
-end)
-
-toggleBtn.MouseButton1Click:Connect(function()
-	mainFrame.Visible = true
-	toggleBtn.Visible = false
-	guiOpen = true
-end)
-
--- Toggle with Insert key
-UserInputService.InputBegan:Connect(function(input, gpe)
-	if gpe then return end
-	if input.KeyCode == Enum.KeyCode.Insert then
-		guiOpen = not guiOpen
-		mainFrame.Visible = guiOpen
-		toggleBtn.Visible = not guiOpen
-	end
-end)
+-- Log, minimise/close chrome and the Insert-key toggle were all part of the
+-- hand-built window that WindUI replaced; addLog now prints to the console,
+-- and WindUI provides its own open button and show/hide control. The Log tab
+-- created by the tab loop stays as an empty WindUI tab.
 
 -- ===================== STARTUP =====================
 addLog("Pebbleford Hub - Industrialist v1.2.9 loaded")

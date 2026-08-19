@@ -203,470 +203,109 @@ local function addLog(text, color)
 	end
 end
 
--- ===================== MAIN WINDOW =====================
-local windowW = 520
-local windowH = 420
-
-local mainWindow = Instance.new("Frame")
-mainWindow.Name = "MainWindow"
-mainWindow.Size = UDim2.new(0, windowW, 0, windowH)
-mainWindow.Position = UDim2.new(0.5, -math.floor(windowW / 2), 0.5, -math.floor(windowH / 2))
-mainWindow.BackgroundColor3 = COLORS.bg
-mainWindow.BorderSizePixel = 0
-mainWindow.Active = true
-mainWindow.Parent = screenGui
-addCorner(mainWindow, 8)
-addStroke(mainWindow, COLORS.border, 2)
-
--- Shadow
-local shadow = Instance.new("ImageLabel")
-shadow.Size = UDim2.new(1, 30, 1, 30)
-shadow.Position = UDim2.new(0, -15, 0, -15)
-shadow.BackgroundTransparency = 1
-shadow.ImageTransparency = 0.6
-shadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
-shadow.ScaleType = Enum.ScaleType.Slice
-shadow.SliceCenter = Rect.new(24, 24, 276, 276)
-shadow.Image = "rbxassetid://6015897843"
-shadow.ZIndex = -1
-shadow.Parent = mainWindow
-
--- ===================== TITLE BAR =====================
-local titleBar = Instance.new("Frame")
-titleBar.Name = "TitleBar"
-titleBar.Size = UDim2.new(1, 0, 0, 34)
-titleBar.BackgroundColor3 = COLORS.bgSecondary
-titleBar.BorderSizePixel = 0
-titleBar.Parent = mainWindow
-addCorner(titleBar, 8)
-
-local titleBarCover = Instance.new("Frame")
-titleBarCover.Size = UDim2.new(1, 0, 0, 12)
-titleBarCover.Position = UDim2.new(0, 0, 1, -12)
-titleBarCover.BackgroundColor3 = COLORS.bgSecondary
-titleBarCover.BorderSizePixel = 0
-titleBarCover.Parent = titleBar
-
-local titleAccent = Instance.new("Frame")
-titleAccent.Size = UDim2.new(1, 0, 0, 2)
-titleAccent.Position = UDim2.new(0, 0, 1, 0)
-titleAccent.BackgroundColor3 = COLORS.accent
-titleAccent.BorderSizePixel = 0
-titleAccent.Parent = titleBar
-
-local logoIcon = Instance.new("Frame")
-logoIcon.Size = UDim2.new(0, 18, 0, 18)
-logoIcon.Position = UDim2.new(0, 10, 0.5, -9)
-logoIcon.BackgroundColor3 = COLORS.accent
-logoIcon.BorderSizePixel = 0
-logoIcon.Parent = titleBar
-addCorner(logoIcon, 3)
-
-local logoText = Instance.new("TextLabel")
-logoText.Size = UDim2.new(1, 0, 1, 0)
-logoText.BackgroundTransparency = 1
-logoText.Text = "P"
-logoText.TextColor3 = COLORS.textPrimary
-logoText.Font = Enum.Font.GothamBold
-logoText.TextSize = 12
-logoText.Parent = logoIcon
-
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, -120, 1, 0)
-titleLabel.Position = UDim2.new(0, 34, 0, 0)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "Prison Life Hub"
-titleLabel.TextColor3 = COLORS.textPrimary
-titleLabel.Font = Enum.Font.GothamBold
-titleLabel.TextSize = 14
-titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-titleLabel.Parent = titleBar
-
-local versionLabel = Instance.new("TextLabel")
-versionLabel.Size = UDim2.new(0, 40, 1, 0)
-versionLabel.Position = UDim2.new(0, 155, 0, 0)
-versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v1.0"
-versionLabel.TextColor3 = COLORS.accent
-versionLabel.Font = Enum.Font.Gotham
-versionLabel.TextSize = 10
-versionLabel.TextXAlignment = Enum.TextXAlignment.Left
-versionLabel.Parent = titleBar
-
-local minimizeBtn = Instance.new("TextButton")
-minimizeBtn.Size = UDim2.new(0, 26, 0, 26)
-minimizeBtn.Position = UDim2.new(1, -58, 0, 4)
-minimizeBtn.BackgroundColor3 = COLORS.tabBg
-minimizeBtn.Text = "-"
-minimizeBtn.TextColor3 = COLORS.textSecondary
-minimizeBtn.Font = Enum.Font.GothamBold
-minimizeBtn.TextSize = 16
-minimizeBtn.Parent = titleBar
-addCorner(minimizeBtn, 4)
-
-local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.new(0, 26, 0, 26)
-closeBtn.Position = UDim2.new(1, -30, 0, 4)
-closeBtn.BackgroundColor3 = COLORS.error
-closeBtn.Text = "X"
-closeBtn.TextColor3 = COLORS.textPrimary
-closeBtn.Font = Enum.Font.GothamBold
-closeBtn.TextSize = 11
-closeBtn.Parent = titleBar
-addCorner(closeBtn, 4)
-
-closeBtn.MouseButton1Click:Connect(function() screenGui:Destroy() end)
-
--- ===================== DRAG LOGIC =====================
+-- ===================== GUI SETUP (WindUI) =====================
+-- The hand-built window, tab bar, drag handling and mobile toggle were
+-- replaced with WindUI. The builder functions keep their original names and
+-- signatures and now produce WindUI elements, so every feature call site is
+-- untouched; only these bodies and the window setup changed.
+local WindUI
 do
-	local dragging = false
-	local dragStart, startPos
-
-	titleBar.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = true
-			dragStart = input.Position
-			startPos = mainWindow.Position
-			input.Changed:Connect(function()
-				if input.UserInputState == Enum.UserInputState.End then
-					dragging = false
-				end
-			end)
-		end
+	local ok, lib = pcall(function()
+		return loadstring(game:HttpGet(
+			"https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
 	end)
-
-	UserInputService.InputChanged:Connect(function(input)
-		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			local delta = input.Position - dragStart
-			mainWindow.Position = UDim2.new(
-				startPos.X.Scale, startPos.X.Offset + delta.X,
-				startPos.Y.Scale, startPos.Y.Offset + delta.Y
-			)
-		end
-	end)
+	if not ok or not lib then
+		warn("[SX] WindUI failed to load: " .. tostring(lib))
+		pcall(function()
+			game:GetService("StarterGui"):SetCore("SendNotification", {
+				Title = "Pebbleford Hub",
+				Text = "UI library failed to load. Check your internet/executor.",
+				Duration = 8,
+			})
+		end)
+		return
+	end
+	WindUI = lib
+	_G.SX_UI = lib
 end
-
--- ===================== TAB BAR =====================
-local tabBar = Instance.new("Frame")
-tabBar.Name = "TabBar"
-tabBar.Size = UDim2.new(1, 0, 0, 30)
-tabBar.Position = UDim2.new(0, 0, 0, 36)
-tabBar.BackgroundColor3 = COLORS.bgSecondary
-tabBar.BorderSizePixel = 0
-tabBar.Parent = mainWindow
-
-local tabBarDivider = Instance.new("Frame")
-tabBarDivider.Size = UDim2.new(1, 0, 0, 1)
-tabBarDivider.Position = UDim2.new(0, 0, 1, -1)
-tabBarDivider.BackgroundColor3 = COLORS.border
-tabBarDivider.BorderSizePixel = 0
-tabBarDivider.Parent = tabBar
 
 local tabNames = {"Main", "Combat", "ESP", "Teleport", "Fun"}
-local tabButtons = {}
 local tabFrames = {}
 
-local tabBarLayout = Instance.new("UIListLayout")
-tabBarLayout.FillDirection = Enum.FillDirection.Horizontal
-tabBarLayout.SortOrder = Enum.SortOrder.LayoutOrder
-tabBarLayout.Padding = UDim.new(0, 0)
-tabBarLayout.Parent = tabBar
+local Window = WindUI:CreateWindow({
+	Title = "Prison Life Hub",
+	Author = "Pebbleford Hub",
+	Folder = "PebblefordHub",
+	Size = UDim2.fromOffset(560, 440),
+	HideSearchBar = false,
+	OpenButton = { Title = "Hub", Enabled = true, Draggable = true, OnlyMobile = false },
+})
 
-for i, tabName in ipairs(tabNames) do
-	local tabBtn = Instance.new("TextButton")
-	tabBtn.Name = tabName .. "Tab"
-	tabBtn.Size = UDim2.new(1 / #tabNames, 0, 1, 0)
-	tabBtn.BackgroundColor3 = COLORS.bg
-	tabBtn.BackgroundTransparency = (tabName == "Main") and 0 or 1
-	tabBtn.Text = tabName
-	tabBtn.TextColor3 = (tabName == "Main") and COLORS.accent or COLORS.textDim
-	tabBtn.Font = Enum.Font.GothamBold
-	tabBtn.TextSize = 11
-	tabBtn.LayoutOrder = i
-	tabBtn.Parent = tabBar
-
-	local indicator = Instance.new("Frame")
-	indicator.Name = "Indicator"
-	indicator.Size = UDim2.new(1, 0, 0, 2)
-	indicator.Position = UDim2.new(0, 0, 1, -2)
-	indicator.BackgroundColor3 = COLORS.accent
-	indicator.BorderSizePixel = 0
-	indicator.Visible = (tabName == "Main")
-	indicator.Parent = tabBtn
-
-	tabButtons[tabName] = tabBtn
-
-	local contentFrame = Instance.new("ScrollingFrame")
-	contentFrame.Name = tabName .. "Content"
-	contentFrame.Size = UDim2.new(1, -16, 1, -110)
-	contentFrame.Position = UDim2.new(0, 8, 0, 68)
-	contentFrame.BackgroundTransparency = 1
-	contentFrame.BorderSizePixel = 0
-	contentFrame.ScrollBarThickness = 4
-	contentFrame.ScrollBarImageColor3 = COLORS.accent
-	contentFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-	contentFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-	contentFrame.Visible = (tabName == "Main")
-	contentFrame.Parent = mainWindow
-
-	local contentLayout = Instance.new("UIListLayout")
-	contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	contentLayout.Padding = UDim.new(0, 4)
-	contentLayout.Parent = contentFrame
-
-	addPadding(contentFrame, 4, 4, 4, 4)
-	tabFrames[tabName] = contentFrame
+for _, name in ipairs(tabNames) do
+	tabFrames[name] = Window:Tab({Title = name})
 end
 
-local activeTab = "Main"
-local function setActiveTab(name)
-	activeTab = name
-	for tabName, frame in pairs(tabFrames) do
-		frame.Visible = (tabName == name)
-	end
-	for tabName, btn in pairs(tabButtons) do
-		btn.TextColor3 = (tabName == name) and COLORS.accent or COLORS.textDim
-		btn.BackgroundTransparency = (tabName == name) and 0 or 1
-		local ind = btn:FindFirstChild("Indicator")
-		if ind then ind.Visible = (tabName == name) end
-	end
-end
+local function switchTab(tabName) uiState = uiState or {}; uiState.activeTab = tabName end
 
-for name, btn in pairs(tabButtons) do
-	btn.MouseButton1Click:Connect(function() setActiveTab(name) end)
-end
-
--- ===================== LOG PANEL =====================
-local logContainer = Instance.new("Frame")
-logContainer.Size = UDim2.new(1, -16, 0, 36)
-logContainer.Position = UDim2.new(0, 8, 1, -40)
-logContainer.BackgroundColor3 = COLORS.bgSecondary
-logContainer.BorderSizePixel = 0
-logContainer.Parent = mainWindow
-addCorner(logContainer, 4)
-
-logFrame = Instance.new("ScrollingFrame")
-logFrame.Size = UDim2.new(1, -8, 1, -4)
-logFrame.Position = UDim2.new(0, 4, 0, 2)
-logFrame.BackgroundTransparency = 1
-logFrame.BorderSizePixel = 0
-logFrame.ScrollBarThickness = 2
-logFrame.ScrollBarImageColor3 = COLORS.accent
-logFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-logFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-logFrame.Parent = logContainer
-
-local logLayout = Instance.new("UIListLayout")
-logLayout.SortOrder = Enum.SortOrder.LayoutOrder
-logLayout.Padding = UDim.new(0, 1)
-logLayout.Parent = logFrame
-
--- ===================== MINIMIZE LOGIC =====================
-local windowMinimized = false
-minimizeBtn.MouseButton1Click:Connect(function()
-	windowMinimized = not windowMinimized
-	for _, frame in pairs(tabFrames) do frame.Visible = not windowMinimized and (activeTab == frame.Name:gsub("Content", "")) end
-	logContainer.Visible = not windowMinimized
-	mainWindow.Size = windowMinimized and UDim2.new(0, windowW, 0, 36) or UDim2.new(0, windowW, 0, windowH)
-	minimizeBtn.Text = windowMinimized and "+" or "-"
-end)
-
--- Toggle window with RightControl
-local windowVisible = true
-UserInputService.InputBegan:Connect(function(input, processed)
-	if processed then return end
-	if input.KeyCode == Enum.KeyCode.RightControl then
-		windowVisible = not windowVisible
-		mainWindow.Visible = windowVisible
-	end
-end)
-
--- ===================== HELPER FUNCTIONS =====================
+-- ===================== UI COMPONENT BUILDERS (WindUI) =====================
+-- order is accepted and ignored; WindUI lays out in creation order.
 local function createSectionLabel(parent, text, order)
-	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.new(1, 0, 0, 22)
-	lbl.BackgroundTransparency = 1
-	lbl.Text = text
-	lbl.TextColor3 = COLORS.accent
-	lbl.Font = Enum.Font.GothamBold
-	lbl.TextSize = 13
-	lbl.TextXAlignment = Enum.TextXAlignment.Left
-	lbl.LayoutOrder = order or 0
-	lbl.Parent = parent
+	if not parent then return end
+	return parent:Section({Title = text})
 end
-
-local function createToggle(parent, text, order, callback, default)
-	local row = Instance.new("Frame")
-	row.Size = UDim2.new(1, 0, 0, 30)
-	row.BackgroundColor3 = COLORS.tabBg
-	row.BorderSizePixel = 0
-	row.LayoutOrder = order or 0
-	row.Parent = parent
-	addCorner(row, 5)
-
-	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.new(1, -60, 1, 0)
-	lbl.Position = UDim2.new(0, 10, 0, 0)
-	lbl.BackgroundTransparency = 1
-	lbl.Text = text
-	lbl.TextColor3 = COLORS.textPrimary
-	lbl.Font = Enum.Font.Gotham
-	lbl.TextSize = 12
-	lbl.TextXAlignment = Enum.TextXAlignment.Left
-	lbl.Parent = row
-
-	local toggleFrame = Instance.new("Frame")
-	toggleFrame.Size = UDim2.new(0, 40, 0, 20)
-	toggleFrame.Position = UDim2.new(1, -50, 0.5, -10)
-	toggleFrame.BackgroundColor3 = COLORS.toggleOff
-	toggleFrame.BorderSizePixel = 0
-	toggleFrame.Parent = row
-	addCorner(toggleFrame, 10)
-
-	local toggleCircle = Instance.new("Frame")
-	toggleCircle.Size = UDim2.new(0, 16, 0, 16)
-	toggleCircle.Position = UDim2.new(0, 2, 0.5, -8)
-	toggleCircle.BackgroundColor3 = COLORS.textPrimary
-	toggleCircle.BorderSizePixel = 0
-	toggleCircle.Parent = toggleFrame
-	addCorner(toggleCircle, 8)
-
-	local isOn = false
-	local toggleButton = Instance.new("TextButton")
-	toggleButton.Size = UDim2.new(1, 0, 1, 0)
-	toggleButton.BackgroundTransparency = 1
-	toggleButton.Text = ""
-	toggleButton.Parent = row
-
-	local function setVisualState(on)
-		isOn = on
-		toggleFrame.BackgroundColor3 = on and COLORS.toggleOn or COLORS.toggleOff
-		toggleCircle.Position = on and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
-	end
-
-	if default then setVisualState(default) end
-
-	toggleButton.MouseButton1Click:Connect(function()
-		isOn = not isOn
-		setVisualState(isOn)
-		if callback then callback(isOn) end
-	end)
-
-	return {row = row, setVisualState = setVisualState}
-end
-
-local function createSlider(parent, text, min, max, default, order, callback)
-	local container = Instance.new("Frame")
-	container.Size = UDim2.new(1, 0, 0, 48)
-	container.BackgroundColor3 = COLORS.tabBg
-	container.BorderSizePixel = 0
-	container.LayoutOrder = order or 0
-	container.Parent = parent
-	addCorner(container, 5)
-
-	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.new(1, -80, 0, 20)
-	lbl.Position = UDim2.new(0, 10, 0, 2)
-	lbl.BackgroundTransparency = 1
-	lbl.Text = text
-	lbl.TextColor3 = COLORS.textPrimary
-	lbl.Font = Enum.Font.Gotham
-	lbl.TextSize = 12
-	lbl.TextXAlignment = Enum.TextXAlignment.Left
-	lbl.Parent = container
-
-	local valueLbl = Instance.new("TextLabel")
-	valueLbl.Size = UDim2.new(0, 70, 0, 20)
-	valueLbl.Position = UDim2.new(1, -75, 0, 2)
-	valueLbl.BackgroundTransparency = 1
-	valueLbl.Text = tostring(default)
-	valueLbl.TextColor3 = COLORS.accent
-	valueLbl.Font = Enum.Font.GothamBold
-	valueLbl.TextSize = 12
-	valueLbl.TextXAlignment = Enum.TextXAlignment.Right
-	valueLbl.Parent = container
-
-	local sliderBg = Instance.new("Frame")
-	sliderBg.Size = UDim2.new(1, -20, 0, 8)
-	sliderBg.Position = UDim2.new(0, 10, 0, 28)
-	sliderBg.BackgroundColor3 = COLORS.bgSecondary
-	sliderBg.BorderSizePixel = 0
-	sliderBg.Parent = container
-	addCorner(sliderBg, 4)
-
-	local sliderFill = Instance.new("Frame")
-	local initPct = (default - min) / (max - min)
-	sliderFill.Size = UDim2.new(initPct, 0, 1, 0)
-	sliderFill.BackgroundColor3 = COLORS.accent
-	sliderFill.BorderSizePixel = 0
-	sliderFill.Parent = sliderBg
-	addCorner(sliderFill, 4)
-
-	local currentValue = default
-	local draggingSlider = false
-
-	local function updateSlider(inputX)
-		local absPos = sliderBg.AbsolutePosition.X
-		local absSize = sliderBg.AbsoluteSize.X
-		local pct = (inputX - absPos) / absSize
-		if pct < 0 then pct = 0 end
-		if pct > 1 then pct = 1 end
-		sliderFill.Size = UDim2.new(pct, 0, 1, 0)
-		currentValue = math.floor(min + pct * (max - min))
-		valueLbl.Text = tostring(currentValue)
-		if callback then callback(currentValue) end
-	end
-
-	sliderBg.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			draggingSlider = true
-			updateSlider(input.Position.X)
-		end
-	end)
-	sliderBg.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			draggingSlider = false
-		end
-	end)
-	UserInputService.InputChanged:Connect(function(input)
-		if draggingSlider and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			updateSlider(input.Position.X)
-		end
-	end)
-
-	return {container = container, getValue = function() return currentValue end}
-end
-
-local function createActionButton(parent, text, order, callback)
-	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(1, 0, 0, 30)
-	btn.BackgroundColor3 = COLORS.tabBg
-	btn.Text = text
-	btn.TextColor3 = COLORS.accent
-	btn.Font = Enum.Font.GothamBold
-	btn.TextSize = 12
-	btn.LayoutOrder = order or 0
-	btn.Parent = parent
-	addCorner(btn, 5)
-
-	btn.MouseEnter:Connect(function() btn.BackgroundColor3 = COLORS.bgSecondary end)
-	btn.MouseLeave:Connect(function() btn.BackgroundColor3 = COLORS.tabBg end)
-	btn.MouseButton1Click:Connect(function() if callback then callback() end end)
-	return btn
-end
-
 local function createInfoLabel(parent, text, order)
-	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.new(1, 0, 0, 20)
-	lbl.BackgroundTransparency = 1
-	lbl.Text = text
-	lbl.TextColor3 = COLORS.textSecondary
-	lbl.Font = Enum.Font.Gotham
-	lbl.TextSize = 11
-	lbl.TextXAlignment = Enum.TextXAlignment.Left
-	lbl.LayoutOrder = order or 0
-	lbl.Parent = parent
+	if not parent then return end
+	return parent:Paragraph({Title = text})
 end
+local function createDynamicLabel(parent, text)
+	if not parent then return setmetatable({}, {__newindex = function() end}) end
+	local para = parent:Paragraph({Title = tostring(text or "")})
+	local last = tostring(text or "")
+	return setmetatable({}, {
+		__newindex = function(_, k, v)
+			if k == "Text" then
+				local str = tostring(v)
+				if str ~= last then last = str; pcall(function() para:SetTitle(str) end) end
+			end
+		end,
+		__index = function() return nil end,
+	})
+end
+local function createToggle(parent, text, order, callback)
+	if not parent then return end
+	return parent:Toggle({Title = text, Value = false, Callback = function(v)
+		if callback then pcall(callback, v) end
+	end})
+end
+local function createActionButton(parent, text, order, callback)
+	if not parent then return end
+	return parent:Button({Title = text, Callback = function()
+		if callback then pcall(callback) end
+	end})
+end
+local createButton = createActionButton
+local function createSlider(parent, text, min, max, default, order, callback)
+	if not parent then return end
+	return parent:Slider({Title = text, Step = 1, Value = {Min = min, Max = max, Default = default},
+		Callback = function(v)
+			local n = type(v) == "table" and (v.Value or v.Default) or v
+			if callback and type(n) == "number" then pcall(callback, n) end
+		end})
+end
+local function createDropdown(parent, text, options, default, callback)
+	if not parent then return end
+	return parent:Dropdown({Title = text, Values = options, Value = default, Callback = function(c)
+		local val = type(c) == "table" and c[1] or c
+		if callback and val then pcall(callback, val) end
+	end})
+end
+local function createInput(parent, text, placeholder, callback)
+	if not parent then return end
+	return parent:Input({Title = text, Placeholder = placeholder or "", Callback = function(v)
+		if callback then pcall(callback, v) end
+	end})
+end
+local function createSpacer(parent, order) return nil end
 
 -- ===================== FEATURE FUNCTIONS =====================
 
@@ -1706,69 +1345,26 @@ do
 	createSectionLabel(tab, "Player Teleport", 20)
 	createInfoLabel(tab, "Click a player to select, then Teleport/Spectate", 21)
 
-	local playerListFrame = Instance.new("Frame")
-	playerListFrame.Size = UDim2.new(1, 0, 0, 150)
-	playerListFrame.BackgroundColor3 = COLORS.bgSecondary
-	playerListFrame.BorderSizePixel = 0
-	playerListFrame.LayoutOrder = 22
-	playerListFrame.Parent = tab
-	addCorner(playerListFrame, 5)
-
-	local playerScroll = Instance.new("ScrollingFrame")
-	playerScroll.Size = UDim2.new(1, -4, 1, -4)
-	playerScroll.Position = UDim2.new(0, 2, 0, 2)
-	playerScroll.BackgroundTransparency = 1
-	playerScroll.BorderSizePixel = 0
-	playerScroll.ScrollBarThickness = 3
-	playerScroll.ScrollBarImageColor3 = COLORS.accent
-	playerScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-	playerScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-	playerScroll.Parent = playerListFrame
-
-	local playerListLayout = Instance.new("UIListLayout")
-	playerListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	playerListLayout.Padding = UDim.new(0, 2)
-	playerListLayout.Parent = playerScroll
-
-	local selectedLabel = Instance.new("TextLabel")
-	selectedLabel.Size = UDim2.new(1, 0, 0, 20)
-	selectedLabel.BackgroundTransparency = 1
-	selectedLabel.Text = "Selected: None"
-	selectedLabel.TextColor3 = COLORS.accent
-	selectedLabel.Font = Enum.Font.GothamBold
-	selectedLabel.TextSize = 11
-	selectedLabel.TextXAlignment = Enum.TextXAlignment.Left
-	selectedLabel.LayoutOrder = 23
-	selectedLabel.Parent = tab
-
+	local plPlayers, plDropdown = {}, nil
 	local function refreshPlayerList()
-		for _, child in ipairs(playerScroll:GetChildren()) do
-			if child:IsA("TextButton") then child:Destroy() end
-		end
-		for i, player in ipairs(Players:GetPlayers()) do
+		plPlayers = {}
+		local names = {}
+		for _, player in ipairs(Players:GetPlayers()) do
 			if player ~= LocalPlayer then
-				local isSelected = selectedPlayer and selectedPlayer == player
-				local pBtn = Instance.new("TextButton")
-				pBtn.Size = UDim2.new(1, -4, 0, 24)
-				pBtn.BackgroundColor3 = isSelected and COLORS.accent or COLORS.tabBg
-				pBtn.BorderSizePixel = 0
-				pBtn.Text = "  " .. player.DisplayName .. " (@" .. player.Name .. ")"
-				pBtn.TextColor3 = COLORS.textPrimary
-				pBtn.Font = isSelected and Enum.Font.GothamBold or Enum.Font.Gotham
-				pBtn.TextSize = 11
-				pBtn.TextXAlignment = Enum.TextXAlignment.Left
-				pBtn.LayoutOrder = i
-				pBtn.Parent = playerScroll
-				addCorner(pBtn, 4)
-				pBtn.MouseButton1Click:Connect(function()
-					selectedPlayer = player
-					selectedLabel.Text = "Selected: " .. player.DisplayName
-					refreshPlayerList()
-				end)
+				local label = player.DisplayName .. " (@" .. player.Name .. ")"
+				plPlayers[label] = player
+				table.insert(names, label)
 			end
 		end
+		if #names == 0 then names = {"(no players)"} end
+		if plDropdown then pcall(function() plDropdown:Refresh(names) end) end
 	end
-
+	plDropdown = createDropdown(tab, "Select Player", {"(refresh first)"}, "(refresh first)", function(choice)
+		local player = plPlayers[choice]
+		if not player then return end
+		selectedPlayer = player
+		selectedLabel.Text = "Selected: " .. player.DisplayName
+	end)
 	refreshPlayerList()
 	Players.PlayerAdded:Connect(function() _wait(1) refreshPlayerList() end)
 	Players.PlayerRemoving:Connect(function(player)
