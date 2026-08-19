@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v6.4
+-- Pebbleford Hub - NBTF Hub v6.5
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -373,6 +373,14 @@ local espState = {
 	crosshairLines = {},
 	itemEspHighlights = {},
 	savedLighting = {},
+	xrayActive = false,
+	xrayOrig = {},
+	chamsActive = false,
+	chamsHighlights = {},
+	vehicleEspActive = false,
+	vehicleEspHighlights = {},
+	vehicleEspConnection = nil,
+	chamsConnection = nil,
 	savedFog = nil,
 }
 
@@ -460,6 +468,16 @@ local miscState = {
 	joinNotifyActive = false,
 	antiRagdollConnection = nil,
 	chatSpyConnection = nil,
+	autoInteractActive = false,
+	autoInteractConnection = nil,
+	autoInteractRange = 25,
+	antiFlingActive = false,
+	antiFlingConnection = nil,
+	antiVoidActive = false,
+	antiVoidConnection = nil,
+	antiVoidHeight = -100,
+	jumpPowerValue = 50,
+	jumpPowerConnection = nil,
 	joinNotifyConnections = {},
 }
 
@@ -3247,7 +3265,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "Pebbleford Hub - NBTF Hub v6.4"
+titleText.Text = "Pebbleford Hub - NBTF Hub v6.5"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 12
@@ -3537,6 +3555,242 @@ function uiBuilder.createSpacer(parent, order)
 	s.BackgroundTransparency = 1
 	s.LayoutOrder = order or 0
 	s.Parent = parent
+end
+
+-- ===================== X-RAY =====================
+-- Makes the map itself see-through. Only large, anchored parts are touched:
+-- transparency is applied to the world, and players, vehicles and loose items
+-- are deliberately skipped so they stay solid-looking and easy to pick out.
+local function startXray()
+	espState.xrayOrig = {}
+	pcall(function()
+		for _, part in ipairs(workspace:GetDescendants()) do
+			if part:IsA("BasePart") and part.Anchored and part.Transparency < 1 then
+				local model = part:FindFirstAncestorOfClass("Model")
+				local isPlayer = model and Players:GetPlayerFromCharacter(model)
+				if not isPlayer and part.Size.Magnitude > 6 then
+					espState.xrayOrig[part] = part.Transparency
+					part.Transparency = 0.72
+				end
+			end
+		end
+	end)
+	helpers.notify("X-Ray", "Walls are see-through")
+end
+
+local function stopXray()
+	pcall(function()
+		for part, orig in pairs(espState.xrayOrig) do
+			if part and part.Parent then part.Transparency = orig end
+		end
+	end)
+	espState.xrayOrig = {}
+	helpers.notify("X-Ray", "OFF")
+end
+
+-- ===================== CHAMS =====================
+-- Highlight with DepthMode set to AlwaysOnTop, so enemies stay visible through
+-- geometry. Kept separate from Player ESP: that draws names and distance,
+-- this fills the body so a target is readable at a glance in a firefight.
+local function updateChams()
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer and helpers.isAlive(player) then
+			local char = player.Character
+			if char and not espState.chamsHighlights[player] then
+				local hl = Instance.new("Highlight")
+				hl.Name = "NBTF_Chams"
+				hl.FillTransparency = 0.4
+				hl.OutlineTransparency = 0
+				hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+				hl.FillColor = helpers.isEnemy(player) and Color3.fromRGB(255, 60, 60)
+					or Color3.fromRGB(60, 160, 255)
+				hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+				hl.Adornee = char
+				hl.Parent = char
+				espState.chamsHighlights[player] = hl
+			end
+		elseif espState.chamsHighlights[player] then
+			pcall(function() espState.chamsHighlights[player]:Destroy() end)
+			espState.chamsHighlights[player] = nil
+		end
+	end
+end
+
+local function startChams()
+	espState.chamsConnection = RunService.Heartbeat:Connect(function()
+		if not espState.chamsActive then return end
+		pcall(updateChams)
+	end)
+	helpers.notify("Chams", "Players visible through walls")
+end
+
+local function stopChams()
+	if espState.chamsConnection then espState.chamsConnection:Disconnect() espState.chamsConnection = nil end
+	for _, hl in pairs(espState.chamsHighlights) do
+		pcall(function() hl:Destroy() end)
+	end
+	espState.chamsHighlights = {}
+	helpers.notify("Chams", "OFF")
+end
+
+-- ===================== VEHICLE ESP =====================
+-- Vehicles are the one thing that can actually strike a player in this game,
+-- so knowing where they are matters more here than in most hubs.
+local function startVehicleEsp()
+	espState.vehicleEspConnection = RunService.Heartbeat:Connect(function()
+		if not espState.vehicleEspActive then return end
+		pcall(function()
+			for _, obj in ipairs(workspace:GetDescendants()) do
+				if obj:IsA("VehicleSeat") then
+					local model = obj:FindFirstAncestorOfClass("Model")
+					if model and not espState.vehicleEspHighlights[model] then
+						local hl = Instance.new("Highlight")
+						hl.Name = "NBTF_VehicleESP"
+						hl.FillTransparency = 0.75
+						hl.FillColor = Color3.fromRGB(255, 200, 60)
+						hl.OutlineColor = Color3.fromRGB(255, 230, 120)
+						hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+						hl.Adornee = model
+						hl.Parent = model
+						espState.vehicleEspHighlights[model] = hl
+					end
+				end
+			end
+			-- Drop highlights whose vehicle has since been removed.
+			for model, hl in pairs(espState.vehicleEspHighlights) do
+				if not model or not model.Parent then
+					pcall(function() hl:Destroy() end)
+					espState.vehicleEspHighlights[model] = nil
+				end
+			end
+		end)
+	end)
+	helpers.notify("Vehicle ESP", "Vehicles highlighted")
+end
+
+local function stopVehicleEsp()
+	if espState.vehicleEspConnection then espState.vehicleEspConnection:Disconnect() espState.vehicleEspConnection = nil end
+	for _, hl in pairs(espState.vehicleEspHighlights) do
+		pcall(function() hl:Destroy() end)
+	end
+	espState.vehicleEspHighlights = {}
+	helpers.notify("Vehicle ESP", "OFF")
+end
+
+-- ===================== AUTO INTERACT =====================
+-- Continuously fires nearby ProximityPrompts. The hub already had a one-shot
+-- button for this; as a toggle it opens doors and picks things up as you move
+-- rather than needing a press each time.
+local function startAutoInteract()
+	miscState.autoInteractConnection = RunService.Heartbeat:Connect(function()
+		if not miscState.autoInteractActive then return end
+		pcall(function()
+			local hrp = helpers.getRoot()
+			if not hrp then return end
+			for _, obj in ipairs(workspace:GetDescendants()) do
+				if obj:IsA("ProximityPrompt") and obj.Enabled then
+					local part = obj.Parent
+					if part and part:IsA("BasePart")
+						and (part.Position - hrp.Position).Magnitude <= miscState.autoInteractRange then
+						-- Zeroed so prompts fire instantly instead of needing a hold.
+						obj.HoldDuration = 0
+						obj.MaxActivationDistance = math.max(obj.MaxActivationDistance, miscState.autoInteractRange)
+						-- Not every executor exposes this, so it is checked
+						-- rather than assumed; without it the toggle would
+						-- error every frame instead of simply doing nothing.
+						if type(fireproximityprompt) == "function" then
+							fireproximityprompt(obj)
+						end
+					end
+				end
+			end
+		end)
+	end)
+	helpers.notify("Auto Interact", "Firing nearby prompts")
+end
+
+local function stopAutoInteract()
+	if miscState.autoInteractConnection then miscState.autoInteractConnection:Disconnect() miscState.autoInteractConnection = nil end
+	helpers.notify("Auto Interact", "OFF")
+end
+
+-- ===================== ANTI-FLING =====================
+-- Clamps absurd velocity on your own character. Being launched across the map
+-- is someone else's fling landing on you; capping the spike leaves normal
+-- movement untouched because walking and jumping never come near the limit.
+local function startAntiFling()
+	miscState.antiFlingConnection = RunService.Heartbeat:Connect(function()
+		if not miscState.antiFlingActive then return end
+		pcall(function()
+			local hrp = helpers.getRoot()
+			if not hrp then return end
+			local v = hrp.AssemblyLinearVelocity
+			if v.Magnitude > 350 then
+				hrp.AssemblyLinearVelocity = v.Unit * 60
+			end
+			local av = hrp.AssemblyAngularVelocity
+			if av.Magnitude > 40 then
+				hrp.AssemblyAngularVelocity = Vector3.zero
+			end
+		end)
+	end)
+	helpers.notify("Anti-Fling", "Velocity spikes clamped")
+end
+
+local function stopAntiFling()
+	if miscState.antiFlingConnection then miscState.antiFlingConnection:Disconnect() miscState.antiFlingConnection = nil end
+	helpers.notify("Anti-Fling", "OFF")
+end
+
+-- ===================== ANTI-VOID =====================
+-- Records the last safe position and restores it if you drop below the map.
+local function startAntiVoid()
+	local lastSafe = nil
+	miscState.antiVoidConnection = RunService.Heartbeat:Connect(function()
+		if not miscState.antiVoidActive then return end
+		pcall(function()
+			local hrp = helpers.getRoot()
+			if not hrp then return end
+			if hrp.Position.Y < miscState.antiVoidHeight then
+				if lastSafe then
+					hrp.CFrame = lastSafe
+					hrp.AssemblyLinearVelocity = Vector3.zero
+				end
+			elseif hrp.Position.Y > miscState.antiVoidHeight + 20 then
+				-- Only remember spots well clear of the void, or the saved
+				-- position ends up being mid-fall and puts you straight back.
+				lastSafe = hrp.CFrame
+			end
+		end)
+	end)
+	helpers.notify("Anti-Void", "You will be pulled back from falls")
+end
+
+local function stopAntiVoid()
+	if miscState.antiVoidConnection then miscState.antiVoidConnection:Disconnect() miscState.antiVoidConnection = nil end
+	helpers.notify("Anti-Void", "OFF")
+end
+
+-- ===================== JUMP POWER =====================
+-- Reapplied on a loop because the game resets humanoid properties on respawn
+-- and after some state changes.
+local function startJumpPower()
+	miscState.jumpPowerConnection = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			local hum = helpers.getHumanoid()
+			if not hum then return end
+			hum.UseJumpPower = true
+			hum.JumpPower = miscState.jumpPowerValue
+		end)
+	end)
+end
+
+local function stopJumpPower()
+	if miscState.jumpPowerConnection then miscState.jumpPowerConnection:Disconnect() miscState.jumpPowerConnection = nil end
+	pcall(function()
+		local hum = helpers.getHumanoid()
+		if hum then hum.JumpPower = 50 end
+	end)
 end
 
 -- ===================== BUILD AIM TAB =====================
@@ -4312,6 +4566,11 @@ do
 	end)
 	uiBuilder.createButton(tab, "Long Jump (Launch Forward)", o(), function() actions.doLongJump() end)
 	uiBuilder.createSlider(tab, "Long Jump Power", 50, 400, moveState.longJumpPower, o(), function(val) moveState.longJumpPower = val end)
+	uiBuilder.createSlider(tab, "Jump Power", 50, 400, miscState.jumpPowerValue, o(), function(val)
+		miscState.jumpPowerValue = val
+		if val > 50 then startJumpPower() else stopJumpPower() end
+	end)
+	uiBuilder.createInfoLabel(tab, "Raise above 50 to jump higher. Reapplied after respawn.", o())
 	uiBuilder.createInfoLabel(tab, "Bunny hop auto-jumps for max speed. Long jump launches you forward.", o())
 
 	uiBuilder.createSpacer(tab, o())
@@ -4355,6 +4614,29 @@ do
 		if on then startESP() else clearESP() end
 	end)
 	uiBuilder.createInfoLabel(tab, "Blue = Facility, Red = Rebel. Shows role + weapon.", o())
+	uiBuilder.createToggle(tab, "Chams (See Players Through Walls)", o(), function(on)
+		espState.chamsActive = on
+		if on then startChams() else stopChams() end
+	end)
+	uiBuilder.createToggle(tab, "Vehicle ESP", o(), function(on)
+		espState.vehicleEspActive = on
+		if on then startVehicleEsp() else stopVehicleEsp() end
+	end)
+	uiBuilder.createToggle(tab, "X-Ray (See Through Walls)", o(), function(on)
+		espState.xrayActive = on
+		if on then startXray() else stopXray() end
+	end)
+	uiBuilder.createInfoLabel(tab, "X-Ray fades large map parts. Re-toggle after moving areas.", o())
+
+	uiBuilder.createSpacer(tab, o())
+
+	uiBuilder.createSectionLabel(tab, "Camera", o())
+	uiBuilder.createSlider(tab, "Field of View", 40, 120, 70, o(), function(val)
+		pcall(function() camera.FieldOfView = val end)
+	end)
+	uiBuilder.createSlider(tab, "Max Zoom Distance", 10, 800, 128, o(), function(val)
+		pcall(function() LocalPlayer.CameraMaxZoomDistance = val end)
+	end)
 
 	uiBuilder.createSpacer(tab, o())
 
@@ -4942,6 +5224,31 @@ do
 	local n = 0
 	local function o() n = n + 1 return n end
 
+	uiBuilder.createSectionLabel(tab, "Utility", o())
+	uiBuilder.createToggle(tab, "Auto Interact (Doors / Pickups)", o(), function(on)
+		miscState.autoInteractActive = on
+		if on then startAutoInteract() else stopAutoInteract() end
+	end)
+	uiBuilder.createSlider(tab, "Auto Interact Range", 5, 80, miscState.autoInteractRange, o(), function(val)
+		miscState.autoInteractRange = val
+	end)
+	uiBuilder.createInfoLabel(tab, "Fires nearby prompts continuously as you move.", o())
+
+	uiBuilder.createSpacer(tab, o())
+
+	uiBuilder.createSectionLabel(tab, "Protection", o())
+	uiBuilder.createToggle(tab, "Anti-Fling (Clamp Velocity Spikes)", o(), function(on)
+		miscState.antiFlingActive = on
+		if on then startAntiFling() else stopAntiFling() end
+	end)
+	uiBuilder.createToggle(tab, "Anti-Void (Return From Falls)", o(), function(on)
+		miscState.antiVoidActive = on
+		if on then startAntiVoid() else stopAntiVoid() end
+	end)
+	uiBuilder.createInfoLabel(tab, "Anti-Fling blocks others flinging you. Anti-Void restores your last safe spot.", o())
+
+	uiBuilder.createSpacer(tab, o())
+
 	uiBuilder.createSectionLabel(tab, "Chat Spy", o())
 	uiBuilder.createToggle(tab, "Chat Spy (Log All Chat to F9)", o(), function(on)
 		miscState.chatSpyActive = on
@@ -5268,7 +5575,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v6.4", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v6.5", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -5361,7 +5668,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("SX NBTF v4.0", "Loaded! Right Shift to toggle")
-print("[SX NBTF v6.4] Pebbleford Hub - NBTF Hub v6.4")
-print("[SX NBTF v6.4] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v6.4] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v6.4] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v6.5] Pebbleford Hub - NBTF Hub v6.5")
+print("[SX NBTF v6.5] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v6.5] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v6.5] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
