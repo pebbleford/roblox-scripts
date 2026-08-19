@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v5.7
+-- Pebbleford Hub - NBTF Hub v5.8
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -411,6 +411,8 @@ local moveState = {
 	carFlingPower = 20000,
 	carFlingLoopActive = false,
 	carNoclipActive = false,
+	noclipAntiSink = true,
+	noclipFloor = {},
 	carNoclipConnection = nil,
 	carNoclipOrig = {},
 	backseatDriveActive = false,
@@ -1734,7 +1736,33 @@ local function stopFly()
 end
 
 -- ===================== NOCLIP =====================
+-- Anti-sink, shared by character and vehicle noclip.
+--
+-- Turning collision off removes the ground as well as the walls, so gravity
+-- drags you straight through the map: that is the sinking, not a bug in the
+-- collision code. Downward velocity is cancelled and a floor height is kept,
+-- so you hold your level while still passing through walls. The floor rises
+-- with you, so flying or jumping upward still works; you simply will not
+-- drift below where you already are. Switch noclip off to land normally.
+local function holdAltitude(part, key)
+	if not part or not part.Parent then return end
+	local v = part.AssemblyLinearVelocity
+	if v.Y < 0 then
+		part.AssemblyLinearVelocity = Vector3.new(v.X, 0, v.Z)
+	end
+	local y = part.Position.Y
+	local floor = moveState.noclipFloor[key]
+	if floor == nil or y > floor then
+		moveState.noclipFloor[key] = y
+	elseif y < floor - 0.75 then
+		-- Slipped through something: lift straight back to the held level.
+		part.CFrame = part.CFrame + Vector3.new(0, floor - y, 0)
+		part.AssemblyLinearVelocity = Vector3.new(v.X, 0, v.Z)
+	end
+end
+
 local function startNoclip()
+	moveState.noclipFloor.character = nil
 	moveState.noclipConnection = RunService.Stepped:Connect(function()
 		pcall(function()
 			local char = LocalPlayer.Character
@@ -1744,6 +1772,12 @@ local function startNoclip()
 					part.CanCollide = false
 				end
 			end
+			if moveState.noclipAntiSink then
+				-- Flying already controls height, so leave it alone.
+				if not (moveState.flyActive or moveState.vehicleFlyActive) then
+					holdAltitude(char:FindFirstChild("HumanoidRootPart"), "character")
+				end
+			end
 		end)
 	end)
 	helpers.notify("Noclip", "Walk through walls!")
@@ -1751,6 +1785,7 @@ end
 
 local function stopNoclip()
 	if moveState.noclipConnection then moveState.noclipConnection:Disconnect() moveState.noclipConnection = nil end
+	moveState.noclipFloor.character = nil
 end
 
 -- ===================== WALK FLING =====================
@@ -2332,6 +2367,10 @@ local function startCarNoclip()
 					part.CanCollide = false
 				end
 			end
+			if moveState.noclipAntiSink and not moveState.vehicleFlyActive then
+				local _, drivePart = actions.getVehicle()
+				holdAltitude(drivePart, "vehicle")
+			end
 		end)
 	end)
 	helpers.notify("Vehicle Noclip", "ON - drive through walls!")
@@ -2348,6 +2387,7 @@ local function stopCarNoclip()
 		end
 	end)
 	moveState.carNoclipOrig = {}
+	moveState.noclipFloor.vehicle = nil
 	helpers.notify("Vehicle Noclip", "OFF")
 end
 
@@ -3124,7 +3164,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "Pebbleford Hub - NBTF Hub v5.7"
+titleText.Text = "Pebbleford Hub - NBTF Hub v5.8"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 12
@@ -4090,7 +4130,12 @@ do
 		moveState.carNoclipActive = on
 		if on then startCarNoclip() else stopCarNoclip() end
 	end)
-	uiBuilder.createInfoLabel(tab, "Drive through walls. Pair with Vehicle Fly or you sink.", o())
+	uiBuilder.createInfoLabel(tab, "Drive through walls. Altitude is held so it will not sink.", o())
+	uiBuilder.createToggle(tab, "Noclip Anti-Sink", o(), function(on)
+		moveState.noclipAntiSink = on
+		moveState.noclipFloor = {}
+	end)
+	uiBuilder.createInfoLabel(tab, "Holds your height while noclipping. Turn off to descend.", o())
 
 	uiBuilder.createSpacer(tab, o())
 
@@ -5140,7 +5185,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v5.7", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v5.8", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -5233,7 +5278,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("SX NBTF v4.0", "Loaded! Right Shift to toggle")
-print("[SX NBTF v5.7] Pebbleford Hub - NBTF Hub v5.7")
-print("[SX NBTF v5.7] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v5.7] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v5.7] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v5.8] Pebbleford Hub - NBTF Hub v5.8")
+print("[SX NBTF v5.8] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v5.8] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v5.8] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
