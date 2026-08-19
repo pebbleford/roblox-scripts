@@ -34,6 +34,8 @@ SCRIPTS = [
     "psteleport.lua",
     "translator.lua",
     "nbtfdump.lua",
+    "uidemo_fluent.lua",
+    "uidemo_windui.lua",
 ]
 
 def random_var(length=8):
