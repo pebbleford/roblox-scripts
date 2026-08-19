@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v6.8
+-- Pebbleford Hub - NBTF Hub v6.9
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -562,9 +562,9 @@ end
 function helpers.notify(title, msg)
 	-- Resolved at call time: Rayfield is created much further down the file,
 	-- so this cannot capture it when the function is defined.
-	if _G.SXNBTF_Rayfield then
+	if _G.SXNBTF_UI then
 		local ok = pcall(function()
-			_G.SXNBTF_Rayfield:Notify({Title = title, Content = msg, Duration = 3})
+			_G.SXNBTF_UI:Notify({Title = title, Content = msg, Duration = 3})
 		end)
 		if ok then return end
 	end
@@ -3239,26 +3239,19 @@ function actions.scanLocations()
 	return found
 end
 
--- ===================== GUI SETUP (Rayfield) =====================
--- The hand-built interface was replaced with Rayfield. Every feature call site
--- is untouched: uiBuilder keeps the same function signatures and simply builds
--- Rayfield elements instead of raw frames, and tabFrames now holds Rayfield tab
--- objects rather than ScrollingFrames. That kept a fifty-control port to one
--- adapter rather than fifty rewrites.
-local Rayfield
+-- ===================== GUI SETUP (WindUI) =====================
+-- The hand-built interface was replaced with a library. Every feature call
+-- site is untouched: uiBuilder keeps the same signatures and builds WindUI
+-- elements instead, and tabFrames holds WindUI tab objects. That kept a
+-- fifty-control port to one adapter rather than fifty rewrites.
+local WindUI
 do
 	local ok, lib = pcall(function()
-		return loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+		return loadstring(game:HttpGet(
+			"https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
 	end)
 	if not ok or not lib then
-		-- Try the raw source directly in case the short domain is unreachable.
-		ok, lib = pcall(function()
-			return loadstring(game:HttpGet(
-				"https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/main/source.lua"))()
-		end)
-	end
-	if not ok or not lib then
-		warn("[SX NBTF] Rayfield failed to load: " .. tostring(lib))
+		warn("[SX NBTF] WindUI failed to load: " .. tostring(lib))
 		pcall(function()
 			game:GetService("StarterGui"):SetCore("SendNotification", {
 				Title = "Pebbleford NBTF",
@@ -3268,26 +3261,23 @@ do
 		end)
 		return
 	end
-	Rayfield = lib
+	WindUI = lib
 	-- Published so helpers.notify, defined earlier in the file, can find it.
-	_G.SXNBTF_Rayfield = lib
+	_G.SXNBTF_UI = lib
 end
 
-local Window = Rayfield:CreateWindow({
-	Name = "Pebbleford Hub - NBTF Hub v6.8",
-	LoadingTitle = "Pebbleford Hub",
-	LoadingSubtitle = "NBTF Hub",
-	ShowText = "NBTF",
-	Theme = "Default",
-	ToggleUIKeybind = Enum.KeyCode.RightShift,
-	DisableRayfieldPrompts = true,
-	DisableBuildWarnings = true,
-	ConfigurationSaving = {
+local Window = WindUI:CreateWindow({
+	Title = "Pebbleford Hub - NBTF",
+	Author = "NBTF Hub v6.9",
+	Folder = "PebblefordHub",
+	Size = UDim2.fromOffset(580, 460),
+	HideSearchBar = false,
+	OpenButton = {
+		Title = "NBTF",
 		Enabled = true,
-		FolderName = "PebblefordHub",
-		FileName = "NBTF",
+		Draggable = true,
+		OnlyMobile = false,
 	},
-	KeySystem = false,
 })
 
 -- Declared here because the old declaration lived in the hand-built GUI that
@@ -3296,11 +3286,11 @@ local tabFrames = {}
 
 -- Same tab names as before, so every build block below still finds its tab.
 for _, name in ipairs({"Aim", "Combat", "Movement", "Visuals", "Teleport", "Players", "Misc", "Settings"}) do
-	tabFrames[name] = Window:CreateTab(name)
+	tabFrames[name] = Window:Tab({Title = name})
 end
 
--- ===================== UI BUILDERS (Rayfield adapters) =====================
--- The order argument is accepted and ignored: Rayfield lays elements out in
+-- ===================== UI BUILDERS (WindUI adapters) =====================
+-- The order argument is accepted and ignored: WindUI lays elements out in
 -- creation order, which is the order these were already being declared in.
 function uiBuilder.addCorner(inst, radius)
 	local c = Instance.new("UICorner")
@@ -3315,21 +3305,35 @@ end
 
 function uiBuilder.createSectionLabel(parent, text, order)
 	if not parent then return end
-	return parent:CreateSection(text)
+	return parent:Section({Title = text})
 end
 
 function uiBuilder.createInfoLabel(parent, text, order)
 	if not parent then return end
-	return parent:CreateLabel(text)
+	return parent:Paragraph({Title = "", Desc = text})
+end
+
+-- Returns a proxy, not a WindUI object. The feature code updates these labels
+-- by assigning .Text from timer loops, so __newindex forwards that to SetDesc
+-- and quietly absorbs the cosmetic properties the library manages itself.
+function uiBuilder.createDynamicLabel(parent, text)
+	if not parent then return setmetatable({}, {__newindex = function() end}) end
+	local para = parent:Paragraph({Title = "", Desc = tostring(text or "")})
+	return setmetatable({}, {
+		__newindex = function(_, key, value)
+			if key == "Text" then
+				pcall(function() para:SetDesc(tostring(value)) end)
+			end
+		end,
+		__index = function() return nil end,
+	})
 end
 
 function uiBuilder.createToggle(parent, text, order, callback)
 	if not parent then return end
-	return parent:CreateToggle({
-		Name = text,
-		CurrentValue = false,
-		-- Flags let Rayfield restore toggle states from the saved config.
-		Flag = "nbtf_" .. text,
+	return parent:Toggle({
+		Title = text,
+		Value = false,
 		Callback = function(value)
 			if callback then pcall(callback, value) end
 		end,
@@ -3338,8 +3342,8 @@ end
 
 function uiBuilder.createButton(parent, text, order, callback)
 	if not parent then return end
-	return parent:CreateButton({
-		Name = text,
+	return parent:Button({
+		Title = text,
 		Callback = function()
 			if callback then pcall(callback) end
 		end,
@@ -3348,47 +3352,25 @@ end
 
 function uiBuilder.createSlider(parent, text, min, max, default, order, callback)
 	if not parent then return end
-	return parent:CreateSlider({
-		Name = text,
-		Range = {min, max},
-		Increment = 1,
-		Suffix = "",
-		CurrentValue = default,
-		Flag = "nbtf_" .. text,
+	return parent:Slider({
+		Title = text,
+		Step = 1,
+		Value = {Min = min, Max = max, Default = default},
 		Callback = function(value)
-			if callback then pcall(callback, value) end
+			-- WindUI can hand back a table for range sliders; take the number.
+			local n = type(value) == "table" and (value.Value or value.Default) or value
+			if callback and type(n) == "number" then pcall(callback, n) end
 		end,
-	})
-end
-
--- Returns a proxy, not a Rayfield object. The feature code updates these
--- labels by assigning .Text (and sometimes .TextColor3) from timer loops, so
--- __newindex forwards .Text to Rayfield's Set and quietly absorbs the cosmetic
--- properties Rayfield manages itself. That leaves every existing update site
--- working untouched instead of needing a rewrite each.
-function uiBuilder.createDynamicLabel(parent, text)
-	if not parent then return setmetatable({}, {__newindex = function() end}) end
-	local label = parent:CreateLabel(text or "")
-	return setmetatable({}, {
-		__newindex = function(_, key, value)
-			if key == "Text" then
-				pcall(function() label:Set(tostring(value)) end)
-			end
-		end,
-		__index = function() return nil end,
 	})
 end
 
 function uiBuilder.createDropdown(parent, text, options, default, callback)
 	if not parent then return end
-	return parent:CreateDropdown({
-		Name = text,
-		Options = options,
-		CurrentOption = {default},
-		MultipleOptions = false,
-		Flag = "nbtf_" .. text,
+	return parent:Dropdown({
+		Title = text,
+		Values = options,
+		Value = default,
 		Callback = function(chosen)
-			-- Rayfield hands back a table of selected options.
 			local value = type(chosen) == "table" and chosen[1] or chosen
 			if callback and value then pcall(callback, value) end
 		end,
@@ -3397,11 +3379,9 @@ end
 
 function uiBuilder.createInput(parent, text, placeholder, callback)
 	if not parent then return end
-	return parent:CreateInput({
-		Name = text,
-		CurrentValue = "",
-		PlaceholderText = placeholder or "",
-		RemoveTextAfterFocusLost = false,
+	return parent:Input({
+		Title = text,
+		Placeholder = placeholder or "",
 		Callback = function(value)
 			if callback then pcall(callback, value) end
 		end,
@@ -3409,9 +3389,8 @@ function uiBuilder.createInput(parent, text, placeholder, callback)
 end
 
 function uiBuilder.createSpacer(parent, order)
-	-- Rayfield spaces sections itself; a divider reads better than empty space.
-	if not parent then return end
-	return parent:CreateDivider()
+	-- WindUI spaces its own elements; nothing to add.
+	return nil
 end
 
 -- ===================== X-RAY =====================
@@ -5103,7 +5082,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v6.8", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v6.9", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -5134,7 +5113,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("Pebbleford NBTF", "Loaded - Right Shift toggles the menu")
-print("[SX NBTF v6.8] Pebbleford Hub - NBTF Hub v6.8")
-print("[SX NBTF v6.8] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v6.8] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v6.8] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v6.9] Pebbleford Hub - NBTF Hub v6.9")
+print("[SX NBTF v6.9] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v6.9] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v6.9] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
