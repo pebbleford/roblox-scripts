@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v4.6
+-- Pebbleford Hub - NBTF Hub v4.7
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -235,6 +235,7 @@ combatState = {
 	noRecoilConnection = nil,
 	hitboxConnection = nil,
 	ammoConnection = nil,
+	ammoUseGC = false,
 	killAllDelay = 0.3,
 }
 
@@ -1359,12 +1360,97 @@ function actions.modGuns()
 	end)
 end
 
+-- The WeaponsSystem kit keeps the live magazine count inside its client-side
+-- weapon objects, not in the Configuration values. Configuration is only read
+-- when a weapon initialises, so maxing it afterwards does nothing to the
+-- current clip, and client writes to those Value objects never replicate.
+-- Reaching the weapon objects themselves is what actually refills ammo.
+local AMMO_FIELDS = {
+	"ammoInWeapon", "ammoInReserve", "currentAmmo", "totalAmmo",
+	"ammo", "clipAmmo", "magazineAmmo",
+}
+local AMMO_BIG = 9999999
+
+local cachedWeaponsSystem = nil
+local function getWeaponsSystem()
+	if cachedWeaponsSystem then return cachedWeaponsSystem end
+	pcall(function()
+		local ws = game:GetService("ReplicatedStorage"):FindFirstChild("WeaponsSystem")
+		if not ws then return end
+		local mod = ws:FindFirstChild("WeaponsSystem")
+		if mod and mod:IsA("ModuleScript") then
+			-- ModuleScripts are cached per environment, so this returns the same
+			-- live table the game's own client scripts are using.
+			cachedWeaponsSystem = require(mod)
+		end
+	end)
+	return cachedWeaponsSystem
+end
+
+-- Refill every weapon object the kit is tracking. Returns how many fields
+-- were written, so a failure can be told apart from "found nothing".
+local function refillWeaponObjects()
+	local written = 0
+	local ws = getWeaponsSystem()
+	if type(ws) ~= "table" then return 0 end
+	local weapons = rawget(ws, "weapons")
+	if type(weapons) ~= "table" then return 0 end
+
+	for _, weapon in pairs(weapons) do
+		if type(weapon) == "table" then
+			for _, field in ipairs(AMMO_FIELDS) do
+				if type(rawget(weapon, field)) == "number" then
+					pcall(function() weapon[field] = AMMO_BIG end)
+					written = written + 1
+				end
+			end
+			pcall(function()
+				if type(weapon.setAmmoInWeapon) == "function" then
+					weapon:setAmmoInWeapon(AMMO_BIG)
+					written = written + 1
+				end
+			end)
+		end
+	end
+	return written
+end
+
+-- Fallback for when the module cannot be required (renamed, or the kit was
+-- rebuilt): sweep the garbage collector for the weapon tables directly.
+-- getgc is expensive, so this only runs when the module route finds nothing.
+local function refillViaGC()
+	if type(getgc) ~= "function" then return 0 end
+	local written = 0
+	pcall(function()
+		for _, obj in pairs(getgc(true)) do
+			if type(obj) == "table" and type(rawget(obj, "ammoInWeapon")) == "number" then
+				pcall(function() obj.ammoInWeapon = AMMO_BIG end)
+				written = written + 1
+			end
+		end
+	end)
+	return written
+end
+
 local function startInfAmmo()
-	-- Mod guns once immediately
+	-- Configuration maxing still runs: it is what raises damage/range, and it
+	-- does set the clip size for weapons equipped after this point.
 	actions.modGuns()
-	-- Keep modding on heartbeat (in case guns reset)
+
+	local written = refillWeaponObjects()
+	if written == 0 then
+		written = refillViaGC()
+		if written > 0 then
+			combatState.ammoUseGC = true
+		end
+	end
+
 	combatState.ammoConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
+			-- Refill the live weapon objects every frame; the kit decrements
+			-- them on each shot, so a one-shot write runs out immediately.
+			refillWeaponObjects()
+
 			local char = LocalPlayer.Character
 			if not char then return end
 			for _, tool in ipairs(char:GetChildren()) do
@@ -1373,7 +1459,7 @@ local function startInfAmmo()
 					if config then
 						for _, val in ipairs(config:GetChildren()) do
 							for _, maxName in ipairs(NBTF_MAX_VALUES) do
-								if val.Name == maxName and val.Value < 9999 then val.Value = 9999999 end
+								if val.Name == maxName and val.Value < 9999 then val.Value = AMMO_BIG end
 							end
 						end
 					end
@@ -1381,11 +1467,31 @@ local function startInfAmmo()
 			end
 		end)
 	end)
-	helpers.notify("Ammo", "Unlimited ammo + max damage active!")
+
+	-- The GC sweep is too slow for a per-frame loop, so when that is the only
+	-- route that works it runs on a slower timer instead.
+	if combatState.ammoUseGC then
+		task.spawn(function()
+			while combatState.ammoConnection do
+				refillViaGC()
+				task.wait(1)
+			end
+		end)
+	end
+
+	if written > 0 then
+		helpers.notify("Ammo", "Unlimited ammo active (" .. written .. " fields)")
+	else
+		-- Be explicit rather than silently claiming success: the config values
+		-- are maxed but no live weapon object was reachable.
+		helpers.notify("Ammo", "Config maxed, but no live weapon found - equip a gun and retoggle")
+	end
 end
 
 local function stopInfAmmo()
 	if combatState.ammoConnection then combatState.ammoConnection:Disconnect() combatState.ammoConnection = nil end
+	-- Clears the flag and stops the slow GC loop, which watches ammoConnection.
+	combatState.ammoUseGC = false
 end
 
 -- ===================== HITBOX EXPANDER =====================
@@ -2641,7 +2747,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "Pebbleford Hub - NBTF Hub v4.6"
+titleText.Text = "Pebbleford Hub - NBTF Hub v4.7"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 12
@@ -3071,7 +3177,7 @@ do
 		combatState.infAmmoActive = on
 		if on then startInfAmmo() else stopInfAmmo() end
 	end)
-	uiBuilder.createInfoLabel(tab, "Maxes AmmoCapacity/Reserves/Damage in weapon Configuration", o())
+	uiBuilder.createInfoLabel(tab, "Refills the live weapon each frame + maxes damage/range", o())
 	uiBuilder.createButton(tab, "Mod All Guns (Ammo + Damage + No Recoil)", o(), function()
 		actions.modGuns()
 		helpers.notify("Mod Guns", "All guns modded! Max ammo, damage, zero recoil/spread")
@@ -4606,7 +4712,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v4.6", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v4.7", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -4699,7 +4805,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("SX NBTF v4.0", "Loaded! Right Shift to toggle")
-print("[SX NBTF v4.6] Pebbleford Hub - NBTF Hub v4.6")
-print("[SX NBTF v4.6] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v4.6] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v4.6] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v4.7] Pebbleford Hub - NBTF Hub v4.7")
+print("[SX NBTF v4.7] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v4.7] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v4.7] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
