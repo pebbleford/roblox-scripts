@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v4.7
+-- Pebbleford Hub - NBTF Hub v4.8
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -126,45 +126,80 @@ function helpers.equipGun(gun)
 	return gun
 end
 
+-- Sends a hit to the server's WeaponsSystem handler.
+--
+-- Two things in the old payload stopped this from ever dealing damage:
+--   * "h" was the Head part, but the kit treats h as the HUMANOID and calls
+--     h:TakeDamage(). Handing it a BasePart made that call error out, so the
+--     shot registered and did nothing.
+--   * d and maxDist were both 0. Damage is scaled by distance falloff, so
+--     0/0 produced a NaN multiplier and NaN damage.
+-- Both now carry real values, and the position/normal describe the actual
+-- geometry, since the server sanity-checks the hit against the part.
 local function fireWeaponHit(targetPlayer, gun)
 	if not WeaponHitRemote then
-		-- Try to find it again in case game loaded late
 		pcall(function()
 			WeaponHitRemote = game:GetService("ReplicatedStorage").WeaponsSystem.Network.WeaponHit
 		end)
 		if not WeaponHitRemote then return false end
 	end
-	if not targetPlayer or not targetPlayer.Character then return false end
-	local head = targetPlayer.Character:FindFirstChild("Head")
-	if not head then return false end
+
+	local char = targetPlayer and targetPlayer.Character
+	if not char then return false end
+	local head = char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+	local humanoid = char:FindFirstChildOfClass("Humanoid")
+	if not head or not humanoid then return false end
+
 	if not gun then gun = helpers.findGunInBackpack() end
 	if not gun then return false end
-
-	-- Gun must be equipped for server to accept the hit
 	helpers.equipGun(gun)
 
-	-- d=0 and maxDist=0 bypasses server distance checks
-	-- p=zero and t=0 bypasses position/timing validation
-	local args = {
-		[1] = gun,
-		[2] = {
-			["p"] = Vector3.new(0, 0, 0),
-			["pid"] = 1,
-			["part"] = head,
-			["d"] = 0,
-			["maxDist"] = 0,
-			["h"] = head,
-			["m"] = Enum.Material.Plastic,
-			["sid"] = 2,
-			["t"] = 0,
-			["n"] = Vector3.new(0, 0, 0)
-		}
-	}
-	local ok, err = pcall(function()
-		WeaponHitRemote:FireServer(unpack(args))
+	-- Real distance, clamped inside the weapon's range so falloff keeps damage.
+	local myRoot = helpers.getRoot()
+	local origin = (myRoot and myRoot.Position) or head.Position
+	local maxDist = 9999
+	pcall(function()
+		local cfg = gun:FindFirstChild("Configuration")
+		local md = cfg and cfg:FindFirstChild("MaxDistance")
+		if md and tonumber(md.Value) and md.Value > 0 then maxDist = md.Value end
 	end)
-	if not ok then
-		warn("[SX NBTF] FireServer failed: " .. tostring(err))
+	local dist = (head.Position - origin).Magnitude
+	if dist >= maxDist then dist = maxDist * 0.05 end
+
+	local normal = origin - head.Position
+	normal = normal.Magnitude > 0 and normal.Unit or Vector3.new(0, 1, 0)
+
+	local function shoot()
+		local args = {
+			[1] = gun,
+			[2] = {
+				["p"] = head.Position,
+				["pid"] = 1,
+				["part"] = head,
+				["d"] = dist,
+				["maxDist"] = maxDist,
+				["h"] = humanoid,
+				["m"] = Enum.Material.Plastic,
+				["sid"] = 2,
+				["t"] = 0,
+				["n"] = normal,
+			}
+		}
+		return pcall(function() WeaponHitRemote:FireServer(unpack(args)) end)
+	end
+
+	-- One hit is one bullet, which rarely kills. Keep firing until the target
+	-- actually dies rather than assuming a single shot was enough.
+	local ok = false
+	for _ = 1, 20 do
+		local fired, err = shoot()
+		if not fired then
+			warn("[SX NBTF] FireServer failed: " .. tostring(err))
+			break
+		end
+		ok = true
+		if humanoid.Health <= 0 then break end
+		task.wait()
 	end
 	return ok
 end
@@ -291,6 +326,7 @@ local moveState = {
 	carFlingActive = false,
 	carFlingPower = 20000,
 	carFlingLoopActive = false,
+	carFlingRam = nil,
 }
 
 local playerState = {
@@ -2207,58 +2243,62 @@ local function stopCarSpeed()
 end
 
 -- ===================== CAR FLING =====================
--- Velocity-spike fling, the same technique as Walk Fling.
+-- Uses a separate "ram" part rather than the vehicle itself.
 --
--- Two earlier approaches failed. Spinning the vehicle also spun the driver,
--- because sitting welds the character into the same physics assembly as the
--- car. Setting the touched part's velocity directly did nothing, because
--- other players and most props are owned by the server, so a velocity written
--- from this client never replicates.
+-- Every previous attempt manipulated the car, and every one threw the driver,
+-- for the same structural reason: sitting welds the character into the SAME
+-- physics assembly as the car. Spin, velocity spikes, density -- an assembly
+-- has one velocity, so anything applied to the car is applied to you too.
 --
--- What does replicate is the vehicle's own velocity: the driver holds network
--- ownership of the car. So each frame the car's horizontal velocity is spiked
--- to an enormous value and restored on the very next frame. The car barely
--- moves, but any collision resolved during the spiked frame is computed by
--- the server against a part travelling absurdly fast, which launches it.
---
--- Y velocity is deliberately preserved: spiking it would fire the car (and
--- the driver) straight up. Nothing here changes density, because setting
--- density on wheels collapses the suspension constraints and breaks the car.
+-- The fling force therefore has to live on an object you are not part of.
+-- This creates an unanchored part, owned by this client (so its velocity
+-- replicates), parked just ahead of the vehicle's front bumper each frame and
+-- given a huge velocity. It is its own assembly, so nothing it does can reach
+-- the driver. It is held clear of the car's own bounding box so it rams what
+-- is in front of you rather than your own bodywork.
 local function startCarFling()
 	local ok, err = pcall(function()
-		local _, vPart = actions.getVehicle()
+		local vehicle, vPart = actions.getVehicle()
 		if not vPart then
 			helpers.notify("Car Fling", "Sit in a vehicle first!")
 			return
 		end
 
+		local ram = Instance.new("Part")
+		ram.Name = "NBTF_CarFlingRam"
+		ram.Size = Vector3.new(10, 6, 4)
+		ram.Transparency = 1
+		ram.CanCollide = true
+		ram.Anchored = false
+		ram.CanQuery = false
+		ram.CustomPhysicalProperties = PhysicalProperties.new(100, 0, 0)
+		ram.CFrame = vPart.CFrame
+		ram.Parent = workspace
+		moveState.carFlingRam = ram
 		moveState.carFlingLoopActive = true
+
+		-- How far ahead to sit, so the ram never collides with our own car.
+		local clearance = 9
+		pcall(function()
+			if vehicle and vehicle:IsA("Model") then
+				local extents = vehicle:GetExtentsSize()
+				clearance = math.max(extents.Z, extents.X) / 2 + 4
+			end
+		end)
 
 		task.spawn(function()
 			while moveState.carFlingLoopActive do
 				local _, part = actions.getVehicle()
-				if not part or not part.Parent then
+				if not part or not part.Parent or not ram.Parent then
 					RunService.Heartbeat:Wait()
 				else
-					local vel = part.AssemblyLinearVelocity
-					local mult = moveState.carFlingPower / 10
-					local spiked
-					if Vector3.new(vel.X, 0, vel.Z).Magnitude < 1 then
-						-- Sitting still there is nothing to multiply, so push along
-						-- the car's facing instead. Lets it fling while parked.
-						local look = part.CFrame.LookVector
-						spiked = Vector3.new(look.X * mult, vel.Y, look.Z * mult)
-					else
-						spiked = Vector3.new(vel.X * mult, vel.Y, vel.Z * mult)
-					end
-
-					pcall(function() part.AssemblyLinearVelocity = spiked end)
-					RunService.RenderStepped:Wait()
-					-- Restore immediately so the car itself does not fly away.
-					if part and part.Parent then
-						pcall(function() part.AssemblyLinearVelocity = vel end)
-					end
-					RunService.Stepped:Wait()
+					-- Ride in front of the bumper, matching the car's facing.
+					pcall(function()
+						ram.CFrame = part.CFrame * CFrame.new(0, 0, -clearance)
+						ram.AssemblyLinearVelocity =
+							part.CFrame.LookVector * moveState.carFlingPower
+					end)
+					RunService.Heartbeat:Wait()
 				end
 			end
 		end)
@@ -2270,15 +2310,10 @@ end
 
 local function stopCarFling()
 	moveState.carFlingLoopActive = false
-	-- Zero out any leftover spike so the car does not coast off after the
-	-- loop stops between the spike and its restore.
-	pcall(function()
-		local _, part = actions.getVehicle()
-		if part and part.Parent then
-			local v = part.AssemblyLinearVelocity
-			part.AssemblyLinearVelocity = Vector3.new(0, v.Y, 0)
-		end
-	end)
+	if moveState.carFlingRam then
+		pcall(function() moveState.carFlingRam:Destroy() end)
+		moveState.carFlingRam = nil
+	end
 	helpers.notify("Car Fling", "OFF")
 end
 
@@ -2747,7 +2782,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "Pebbleford Hub - NBTF Hub v4.7"
+titleText.Text = "Pebbleford Hub - NBTF Hub v4.8"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 12
@@ -3702,7 +3737,7 @@ do
 		if on then startCarFling() else stopCarFling() end
 	end)
 	uiBuilder.createSlider(tab, "Car Fling Power", 1000, 100000, moveState.carFlingPower, o(), function(val) moveState.carFlingPower = val end)
-	uiBuilder.createInfoLabel(tab, "Drive into things to launch them. Works best while moving.", o())
+	uiBuilder.createInfoLabel(tab, "Rams an invisible block ahead of your car to launch things", o())
 
 	uiBuilder.createSpacer(tab, o())
 
@@ -4712,7 +4747,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v4.7", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v4.8", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -4805,7 +4840,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("SX NBTF v4.0", "Loaded! Right Shift to toggle")
-print("[SX NBTF v4.7] Pebbleford Hub - NBTF Hub v4.7")
-print("[SX NBTF v4.7] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v4.7] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v4.7] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v4.8] Pebbleford Hub - NBTF Hub v4.8")
+print("[SX NBTF v4.8] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v4.8] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v4.8] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
