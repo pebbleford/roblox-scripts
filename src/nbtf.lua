@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v4.8
+-- Pebbleford Hub - NBTF Hub v4.9
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -2243,22 +2243,24 @@ local function stopCarSpeed()
 end
 
 -- ===================== CAR FLING =====================
--- Uses a separate "ram" part rather than the vehicle itself.
+-- SAFE MODE. This must never move the driver, so it never applies force to
+-- anything the driver is attached to.
 --
--- Every previous attempt manipulated the car, and every one threw the driver,
--- for the same structural reason: sitting welds the character into the SAME
--- physics assembly as the car. Spin, velocity spikes, density -- an assembly
--- has one velocity, so anything applied to the car is applied to you too.
+-- History, so this is not re-broken: sitting welds the character into the
+-- SAME physics assembly as the car, and an assembly has one velocity. Spin,
+-- velocity spikes and density therefore all reached the driver. Moving the
+-- force onto a separate collidable block was worse still -- it spawned
+-- overlapping the car and Roblox resolved the interpenetration by launching
+-- the car and driver skyward.
 --
--- The fling force therefore has to live on an object you are not part of.
--- This creates an unanchored part, owned by this client (so its velocity
--- replicates), parked just ahead of the vehicle's front bumper each frame and
--- given a huge velocity. It is its own assembly, so nothing it does can reach
--- the driver. It is held clear of the car's own bounding box so it rams what
--- is in front of you rather than your own bodywork.
+-- So the ram block is now non-collidable: it cannot push the car under any
+-- circumstance. It only reports what it overlaps, and the fling is applied
+-- to that target directly. Note this only moves targets whose physics this
+-- client owns (loose props, and players whose ownership has been handed
+-- over); characters held by the server will not move.
 local function startCarFling()
 	local ok, err = pcall(function()
-		local vehicle, vPart = actions.getVehicle()
+		local _, vPart = actions.getVehicle()
 		if not vPart then
 			helpers.notify("Car Fling", "Sit in a vehicle first!")
 			return
@@ -2266,40 +2268,50 @@ local function startCarFling()
 
 		local ram = Instance.new("Part")
 		ram.Name = "NBTF_CarFlingRam"
-		ram.Size = Vector3.new(10, 6, 4)
+		ram.Size = Vector3.new(12, 6, 6)
 		ram.Transparency = 1
-		ram.CanCollide = true
-		ram.Anchored = false
+		-- Non-collidable and massless: physically inert, so it cannot shove
+		-- the car no matter where it ends up.
+		ram.CanCollide = false
+		ram.Massless = true
 		ram.CanQuery = false
-		ram.CustomPhysicalProperties = PhysicalProperties.new(100, 0, 0)
-		ram.CFrame = vPart.CFrame
+		ram.Anchored = true
+		-- Spawned ahead of the car, never on top of it.
+		ram.CFrame = vPart.CFrame * CFrame.new(0, 0, -12)
 		ram.Parent = workspace
 		moveState.carFlingRam = ram
 		moveState.carFlingLoopActive = true
 
-		-- How far ahead to sit, so the ram never collides with our own car.
-		local clearance = 9
-		pcall(function()
-			if vehicle and vehicle:IsA("Model") then
-				local extents = vehicle:GetExtentsSize()
-				clearance = math.max(extents.Z, extents.X) / 2 + 4
-			end
+		ram.Touched:Connect(function(hit)
+			if not moveState.carFlingLoopActive then return end
+			if not hit or not hit:IsA("BasePart") or hit.Anchored then return end
+
+			local char = LocalPlayer.Character
+			if char and hit:IsDescendantOf(char) then return end
+			-- Never touch our own vehicle.
+			local _, myPart = actions.getVehicle()
+			if myPart and hit:IsDescendantOf(myPart.Parent) then return end
+
+			local dir = hit.Position - ram.Position
+			dir = dir.Magnitude > 0.01 and dir.Unit or ram.CFrame.LookVector
+			local power = moveState.carFlingPower / 100
+			pcall(function()
+				hit.AssemblyLinearVelocity =
+					Vector3.new(dir.X * power, power * 0.5, dir.Z * power)
+			end)
 		end)
 
 		task.spawn(function()
 			while moveState.carFlingLoopActive do
 				local _, part = actions.getVehicle()
-				if not part or not part.Parent or not ram.Parent then
-					RunService.Heartbeat:Wait()
-				else
-					-- Ride in front of the bumper, matching the car's facing.
+				if part and part.Parent and ram.Parent then
+					-- Anchored + CFrame each frame: it is carried along without
+					-- ever participating in the physics solver.
 					pcall(function()
-						ram.CFrame = part.CFrame * CFrame.new(0, 0, -clearance)
-						ram.AssemblyLinearVelocity =
-							part.CFrame.LookVector * moveState.carFlingPower
+						ram.CFrame = part.CFrame * CFrame.new(0, 0, -12)
 					end)
-					RunService.Heartbeat:Wait()
 				end
+				RunService.Heartbeat:Wait()
 			end
 		end)
 
@@ -2782,7 +2794,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "Pebbleford Hub - NBTF Hub v4.8"
+titleText.Text = "Pebbleford Hub - NBTF Hub v4.9"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 12
@@ -3737,7 +3749,7 @@ do
 		if on then startCarFling() else stopCarFling() end
 	end)
 	uiBuilder.createSlider(tab, "Car Fling Power", 1000, 100000, moveState.carFlingPower, o(), function(val) moveState.carFlingPower = val end)
-	uiBuilder.createInfoLabel(tab, "Rams an invisible block ahead of your car to launch things", o())
+	uiBuilder.createInfoLabel(tab, "Launches loose objects you drive into. Cannot move your car.", o())
 
 	uiBuilder.createSpacer(tab, o())
 
@@ -4747,7 +4759,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v4.8", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v4.9", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -4840,7 +4852,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("SX NBTF v4.0", "Loaded! Right Shift to toggle")
-print("[SX NBTF v4.8] Pebbleford Hub - NBTF Hub v4.8")
-print("[SX NBTF v4.8] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v4.8] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v4.8] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v4.9] Pebbleford Hub - NBTF Hub v4.9")
+print("[SX NBTF v4.9] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v4.9] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v4.9] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
