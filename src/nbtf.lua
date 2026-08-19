@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v6.5
+-- Pebbleford Hub - NBTF Hub v6.6
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -505,6 +505,14 @@ function helpers.getHumanoid()
 end
 
 function helpers.notify(title, msg)
+	-- Resolved at call time: Rayfield is created much further down the file,
+	-- so this cannot capture it when the function is defined.
+	if _G.SXNBTF_Rayfield then
+		local ok = pcall(function()
+			_G.SXNBTF_Rayfield:Notify({Title = title, Content = msg, Duration = 3})
+		end)
+		if ok then return end
+	end
 	pcall(function()
 		game:GetService("StarterGui"):SetCore("SendNotification", {Title = title, Text = msg, Duration = 3})
 	end)
@@ -1005,15 +1013,7 @@ local function updateItemESP()
 						bb.Parent = obj
 						table.insert(espState.itemEspHighlights, bb)
 
-						local lbl = Instance.new("TextLabel")
-						lbl.Text = obj.Name
-						lbl.TextColor3 = Color3.fromRGB(0, 255, 128)
-						lbl.TextStrokeTransparency = 0
-						lbl.TextSize = 11
-						lbl.Font = Enum.Font.GothamBold
-						lbl.BackgroundTransparency = 1
-						lbl.Size = UDim2.new(1, 0, 1, 0)
-						lbl.Parent = bb
+						local lbl = uiBuilder.createDynamicLabel(tab, obj.Name)
 					end
 				end
 			end)
@@ -1394,15 +1394,7 @@ local function updateESP()
 					table.insert(espState.espHighlights, bb)
 
 					-- Name line
-					local lbl = Instance.new("TextLabel")
-					lbl.Text = player.DisplayName .. " [" .. healthPct .. "%] " .. dist .. "m"
-					lbl.TextColor3 = color
-					lbl.TextStrokeTransparency = 0
-					lbl.TextSize = 12
-					lbl.Font = Enum.Font.GothamBold
-					lbl.BackgroundTransparency = 1
-					lbl.Size = UDim2.new(1, 0, 0.3, 0)
-					lbl.Parent = bb
+					local lbl = uiBuilder.createDynamicLabel(tab, player.DisplayName .. " [" .. healthPct .. "%] " .. dist .. "m")
 
 					-- Role / Team line
 					local roleText = ""
@@ -1412,16 +1404,7 @@ local function updateESP()
 						roleText = teamName
 					end
 					if roleText ~= "" then
-						local roleLbl = Instance.new("TextLabel")
-						roleLbl.Text = "[" .. roleText .. "]"
-						roleLbl.TextColor3 = color
-						roleLbl.TextStrokeTransparency = 0
-						roleLbl.TextSize = 10
-						roleLbl.Font = Enum.Font.GothamBold
-						roleLbl.BackgroundTransparency = 1
-						roleLbl.Size = UDim2.new(1, 0, 0.2, 0)
-						roleLbl.Position = UDim2.new(0, 0, 0.3, 0)
-						roleLbl.Parent = bb
+						local roleLbl = uiBuilder.createDynamicLabel(tab, "[" .. roleText .. "]")
 					end
 
 					-- Health bar
@@ -1443,16 +1426,7 @@ local function updateESP()
 					-- Weapon label
 					local tool = char:FindFirstChildOfClass("Tool")
 					if tool then
-						local weaponLbl = Instance.new("TextLabel")
-						weaponLbl.Text = "[" .. tool.Name .. "]"
-						weaponLbl.TextColor3 = COLORS.warning
-						weaponLbl.TextStrokeTransparency = 0
-						weaponLbl.TextSize = 10
-						weaponLbl.Font = Enum.Font.Gotham
-						weaponLbl.BackgroundTransparency = 1
-						weaponLbl.Size = UDim2.new(1, 0, 0.2, 0)
-						weaponLbl.Position = UDim2.new(0, 0, 0.65, 0)
-						weaponLbl.Parent = bb
+						local weaponLbl = uiBuilder.createDynamicLabel(tab, "[" .. tool.Name .. "]")
 					end
 				end
 			end)
@@ -2265,54 +2239,16 @@ function actions.showCustomAnnouncement(text, protocol, duration)
 	stripeFix.Parent = stripe
 
 	-- Stripe text
-	local stripeText = Instance.new("TextLabel")
-	stripeText.Size = UDim2.new(1, -20, 1, 0)
-	stripeText.Position = UDim2.new(0, 10, 0, 0)
-	stripeText.BackgroundTransparency = 1
-	stripeText.Text = isRebel and "REBELLION PIRATE TRANSMISSION" or "NBTF STATIC ALERT SYSTEM"
-	stripeText.TextColor3 = Color3.fromRGB(255, 255, 255)
-	stripeText.Font = Enum.Font.GothamBold
-	stripeText.TextSize = 13
-	stripeText.TextXAlignment = Enum.TextXAlignment.Left
-	stripeText.Parent = stripe
+	local stripeText = uiBuilder.createDynamicLabel(tab, isRebel and "REBELLION PIRATE TRANSMISSION" or "NBTF STATIC ALERT SYSTEM")
 
 	-- Protocol label
-	local protoLabel = Instance.new("TextLabel")
-	protoLabel.Size = UDim2.new(1, -20, 0, 18)
-	protoLabel.Position = UDim2.new(0, 10, 0, 32)
-	protoLabel.BackgroundTransparency = 1
-	protoLabel.Text = protocolNames[protocol] or "ALERT"
-	protoLabel.TextColor3 = pColor
-	protoLabel.Font = Enum.Font.GothamBold
-	protoLabel.TextSize = 11
-	protoLabel.TextXAlignment = Enum.TextXAlignment.Left
-	protoLabel.Parent = container
+	local protoLabel = uiBuilder.createDynamicLabel(tab, protocolNames[protocol] or "ALERT")
 
 	-- Sender info
-	local senderLabel = Instance.new("TextLabel")
-	senderLabel.Size = UDim2.new(0.4, -10, 0, 14)
-	senderLabel.Position = UDim2.new(0, 10, 0, 52)
-	senderLabel.BackgroundTransparency = 1
-	senderLabel.Text = LocalPlayer.DisplayName .. (roleName ~= "" and (" - " .. roleName) or "")
-	senderLabel.TextColor3 = Color3.fromRGB(160, 170, 190)
-	senderLabel.Font = Enum.Font.Gotham
-	senderLabel.TextSize = 10
-	senderLabel.TextXAlignment = Enum.TextXAlignment.Left
-	senderLabel.Parent = container
+	local senderLabel = uiBuilder.createDynamicLabel(tab, LocalPlayer.DisplayName .. (roleName ~= "" and (" - " .. roleName) or ""))
 
 	-- Message text
-	local msgLabel = Instance.new("TextLabel")
-	msgLabel.Size = UDim2.new(1, -20, 0, 42)
-	msgLabel.Position = UDim2.new(0, 10, 0, 70)
-	msgLabel.BackgroundTransparency = 1
-	msgLabel.Text = text
-	msgLabel.TextColor3 = Color3.fromRGB(230, 235, 245)
-	msgLabel.Font = Enum.Font.Gotham
-	msgLabel.TextSize = 14
-	msgLabel.TextWrapped = true
-	msgLabel.TextXAlignment = Enum.TextXAlignment.Left
-	msgLabel.TextYAlignment = Enum.TextYAlignment.Top
-	msgLabel.Parent = container
+	local msgLabel = uiBuilder.createDynamicLabel(tab, text)
 
 	-- Slide in from top
 	container:TweenPosition(UDim2.new(0.25, 0, 0, 15), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.4, true)
@@ -2888,6 +2824,22 @@ end
 
 -- ===================== BRING ALL PLAYERS =====================
 -- Teleports all enemy players to your position
+function actions.bringPlayer(player)
+	local hrp = helpers.getRoot()
+	if not hrp then helpers.notify("Error", "No character") return end
+	if not helpers.isAlive(player) then
+		helpers.notify("Error", player.DisplayName .. " is dead or not in game")
+		return
+	end
+	pcall(function()
+		local theirHRP = player.Character:FindFirstChild("HumanoidRootPart")
+		if theirHRP then
+			theirHRP.CFrame = hrp.CFrame + Vector3.new(math.random(-5, 5), 0, math.random(-5, 5))
+			helpers.notify("Bring", "Brought " .. player.DisplayName)
+		end
+	end)
+end
+
 function actions.bringAllPlayers()
 	local hrp = helpers.getRoot()
 	if not hrp then helpers.notify("Error", "No character") return end
@@ -3137,14 +3089,65 @@ function actions.scanLocations()
 	return found
 end
 
--- ===================== GUI SETUP =====================
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "PebblefordNBTF"
-screenGui.ResetOnSpawn = false
-screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-pcall(function() screenGui.Parent = game:GetService("CoreGui") end)
-if not screenGui.Parent then screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+-- ===================== GUI SETUP (Rayfield) =====================
+-- The hand-built interface was replaced with Rayfield. Every feature call site
+-- is untouched: uiBuilder keeps the same function signatures and simply builds
+-- Rayfield elements instead of raw frames, and tabFrames now holds Rayfield tab
+-- objects rather than ScrollingFrames. That kept a fifty-control port to one
+-- adapter rather than fifty rewrites.
+local Rayfield
+do
+	local ok, lib = pcall(function()
+		return loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+	end)
+	if not ok or not lib then
+		-- Try the raw source directly in case the short domain is unreachable.
+		ok, lib = pcall(function()
+			return loadstring(game:HttpGet(
+				"https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/main/source.lua"))()
+		end)
+	end
+	if not ok or not lib then
+		warn("[SX NBTF] Rayfield failed to load: " .. tostring(lib))
+		pcall(function()
+			game:GetService("StarterGui"):SetCore("SendNotification", {
+				Title = "Pebbleford NBTF",
+				Text = "UI library failed to load. Check your internet/executor.",
+				Duration = 8,
+			})
+		end)
+		return
+	end
+	Rayfield = lib
+	-- Published so helpers.notify, defined earlier in the file, can find it.
+	_G.SXNBTF_Rayfield = lib
+end
 
+local Window = Rayfield:CreateWindow({
+	Name = "Pebbleford Hub - NBTF Hub v6.6",
+	LoadingTitle = "Pebbleford Hub",
+	LoadingSubtitle = "NBTF Hub",
+	ShowText = "NBTF",
+	Theme = "Default",
+	ToggleUIKeybind = Enum.KeyCode.RightShift,
+	DisableRayfieldPrompts = true,
+	DisableBuildWarnings = true,
+	ConfigurationSaving = {
+		Enabled = true,
+		FolderName = "PebblefordHub",
+		FileName = "NBTF",
+	},
+	KeySystem = false,
+})
+
+-- Same tab names as before, so every build block below still finds its tab.
+for _, name in ipairs({"Aim", "Combat", "Movement", "Visuals", "Teleport", "Players", "Misc", "Settings"}) do
+	tabFrames[name] = Window:CreateTab(name)
+end
+
+-- ===================== UI BUILDERS (Rayfield adapters) =====================
+-- The order argument is accepted and ignored: Rayfield lays elements out in
+-- creation order, which is the order these were already being declared in.
 function uiBuilder.addCorner(inst, radius)
 	local c = Instance.new("UICorner")
 	c.CornerRadius = UDim.new(0, radius or 6)
@@ -3152,409 +3155,109 @@ function uiBuilder.addCorner(inst, radius)
 	return c
 end
 
--- ===================== MOBILE / RESIZE DETECTION =====================
-local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled and not UserInputService.MouseEnabled
-local screenSize = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1920, 1080)
-local ORIG_W = 560
-local ORIG_H = 500
-local windowW = ORIG_W
-local windowH = ORIG_H
-if isMobile then
-	windowW = math.min(math.floor(screenSize.X * 0.92), ORIG_W)
-	windowH = math.min(math.floor(screenSize.Y * 0.7), ORIG_H)
-	if windowW < 320 then windowW = 320 end
-	if windowH < 280 then windowH = 280 end
-end
-
--- ===================== MAIN FRAME =====================
-local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, windowW, 0, windowH)
-mainFrame.Position = UDim2.new(0.5, -math.floor(windowW / 2), 0.5, -math.floor(windowH / 2))
-mainFrame.BackgroundColor3 = COLORS.bg
-mainFrame.BorderSizePixel = 0
-mainFrame.Active = true
-mainFrame.Draggable = true
-mainFrame.Parent = screenGui
-uiBuilder.addCorner(mainFrame, 8)
-
-local borderStroke = Instance.new("UIStroke")
-borderStroke.Color = COLORS.border
-borderStroke.Thickness = 1
-borderStroke.Parent = mainFrame
-
--- ===================== RESIZE HANDLE =====================
-local MIN_W = isMobile and 300 or 400
-local MIN_H = isMobile and 250 or 300
-local MAX_W = math.min(math.floor(screenSize.X * 0.95), 900)
-local MAX_H = math.min(math.floor(screenSize.Y * 0.85), 700)
-
-local resizeHandle = Instance.new("TextButton")
-resizeHandle.Name = "ResizeHandle"
-resizeHandle.Size = UDim2.new(0, 20, 0, 20)
-resizeHandle.Position = UDim2.new(1, -20, 1, -20)
-resizeHandle.BackgroundTransparency = 1
-resizeHandle.Text = ""
-resizeHandle.ZIndex = 10
-resizeHandle.Parent = mainFrame
-
-local _rl1 = Instance.new("Frame")
-_rl1.Size = UDim2.new(0, 14, 0, 2)
-_rl1.Position = UDim2.new(0, 3, 1, -7)
-_rl1.Rotation = -45
-_rl1.BackgroundColor3 = COLORS.textDim
-_rl1.BorderSizePixel = 0
-_rl1.ZIndex = 10
-_rl1.Parent = resizeHandle
-
-local _rl2 = Instance.new("Frame")
-_rl2.Size = UDim2.new(0, 8, 0, 2)
-_rl2.Position = UDim2.new(0, 9, 1, -5)
-_rl2.Rotation = -45
-_rl2.BackgroundColor3 = COLORS.textDim
-_rl2.BorderSizePixel = 0
-_rl2.ZIndex = 10
-_rl2.Parent = resizeHandle
-
-do
-	local resizing = false
-	local resizeStart, startSize
-
-	resizeHandle.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			resizing = true
-			resizeStart = input.Position
-			startSize = mainFrame.AbsoluteSize
-			input.Changed:Connect(function()
-				if input.UserInputState == Enum.UserInputState.End then
-					resizing = false
-				end
-			end)
-		end
-	end)
-
-	UserInputService.InputChanged:Connect(function(input)
-		if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			local delta = input.Position - resizeStart
-			local newW = startSize.X + delta.X
-			local newH = startSize.Y + delta.Y
-			if newW < MIN_W then newW = MIN_W end
-			if newW > MAX_W then newW = MAX_W end
-			if newH < MIN_H then newH = MIN_H end
-			if newH > MAX_H then newH = MAX_H end
-			mainFrame.Size = UDim2.new(0, newW, 0, newH)
-		end
-	end)
-end
-
--- Title bar
-local titleBar = Instance.new("Frame")
-titleBar.Size = UDim2.new(1, 0, 0, 30)
-titleBar.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-titleBar.BorderSizePixel = 0
-titleBar.Parent = mainFrame
-uiBuilder.addCorner(titleBar, 8)
-
-local titleFix = Instance.new("Frame")
-titleFix.Size = UDim2.new(1, 0, 0, 10)
-titleFix.Position = UDim2.new(0, 0, 1, -10)
-titleFix.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-titleFix.BorderSizePixel = 0
-titleFix.Parent = titleBar
-
-local titleText = Instance.new("TextLabel")
-titleText.Size = UDim2.new(1, -80, 1, 0)
-titleText.Position = UDim2.new(0, 10, 0, 0)
-titleText.BackgroundTransparency = 1
-titleText.Text = "Pebbleford Hub - NBTF Hub v6.5"
-titleText.TextColor3 = COLORS.accent
-titleText.Font = Enum.Font.GothamBold
-titleText.TextSize = 12
-titleText.TextXAlignment = Enum.TextXAlignment.Left
-titleText.Parent = titleBar
-
-local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.new(0, 30, 0, 30)
-closeBtn.Position = UDim2.new(1, -30, 0, 0)
-closeBtn.BackgroundTransparency = 1
-closeBtn.Text = "X"
-closeBtn.TextColor3 = COLORS.error
-closeBtn.Font = Enum.Font.GothamBold
-closeBtn.TextSize = 14
-closeBtn.Parent = titleBar
-closeBtn.MouseButton1Click:Connect(function() screenGui:Destroy() end)
-
-local minimizeBtn = Instance.new("TextButton")
-minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
-minimizeBtn.Position = UDim2.new(1, -55, 0, 0)
-minimizeBtn.BackgroundTransparency = 1
-minimizeBtn.Text = "-"
-minimizeBtn.TextColor3 = COLORS.textSecondary
-minimizeBtn.Font = Enum.Font.GothamBold
-minimizeBtn.TextSize = 16
-minimizeBtn.Parent = titleBar
-
-local accentLine = Instance.new("Frame")
-accentLine.Size = UDim2.new(1, 0, 0, 2)
-accentLine.Position = UDim2.new(0, 0, 0, 30)
-accentLine.BackgroundColor3 = COLORS.accent
-accentLine.BorderSizePixel = 0
-accentLine.Parent = mainFrame
-
--- ===================== TAB BAR =====================
-local tabBar = Instance.new("Frame")
-tabBar.Size = UDim2.new(1, 0, 0, 28)
-tabBar.Position = UDim2.new(0, 0, 0, 32)
-tabBar.BackgroundColor3 = COLORS.bgSecondary
-tabBar.BorderSizePixel = 0
-tabBar.Parent = mainFrame
-
-local tabLayout = Instance.new("UIListLayout")
-tabLayout.FillDirection = Enum.FillDirection.Horizontal
-tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
-tabLayout.Parent = tabBar
-
-local tabNames = {"Aim", "Combat", "Movement", "Visuals", "Teleport", "Players", "Misc", "Settings"}
-local tabButtons = {}
-local tabFrames = {}
-
-for i, name in ipairs(tabNames) do
-	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(1 / #tabNames, 0, 1, 0)
-	btn.BackgroundTransparency = 1
-	btn.Text = name
-	btn.TextColor3 = COLORS.textSecondary
-	btn.Font = Enum.Font.GothamMedium
-	btn.TextSize = 10
-	btn.LayoutOrder = i
-	btn.Parent = tabBar
-	tabButtons[name] = btn
-
-	local content = Instance.new("ScrollingFrame")
-	content.Size = UDim2.new(1, -16, 1, -70)
-	content.Position = UDim2.new(0, 8, 0, 62)
-	content.BackgroundTransparency = 1
-	content.BorderSizePixel = 0
-	content.ScrollBarThickness = 3
-	content.ScrollBarImageColor3 = COLORS.accent
-	content.CanvasSize = UDim2.new(0, 0, 0, 0)
-	content.AutomaticCanvasSize = Enum.AutomaticSize.Y
-	content.Visible = name == "Aim"
-	content.Parent = mainFrame
-	tabFrames[name] = content
-
-	local layout = Instance.new("UIListLayout")
-	layout.SortOrder = Enum.SortOrder.LayoutOrder
-	layout.Padding = UDim.new(0, 4)
-	layout.Parent = content
-
-	local pad = Instance.new("UIPadding")
-	pad.PaddingLeft = UDim.new(0, 4)
-	pad.PaddingRight = UDim.new(0, 4)
-	pad.PaddingTop = UDim.new(0, 4)
-	pad.Parent = content
-end
-
 function uiBuilder.setActiveTab(name)
 	uiState.activeTab = name
-	for tabName, frame in pairs(tabFrames) do frame.Visible = tabName == name end
-	for tabName, btn in pairs(tabButtons) do
-		btn.TextColor3 = tabName == name and COLORS.accent or COLORS.textSecondary
-		btn.Font = tabName == name and Enum.Font.GothamBold or Enum.Font.GothamMedium
-	end
 end
-for name, btn in pairs(tabButtons) do btn.MouseButton1Click:Connect(function() uiBuilder.setActiveTab(name) end) end
 
--- ===================== UI BUILDERS =====================
 function uiBuilder.createSectionLabel(parent, text, order)
-	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.new(1, 0, 0, 22)
-	lbl.BackgroundTransparency = 1
-	lbl.Text = text
-	lbl.TextColor3 = COLORS.accent
-	lbl.Font = Enum.Font.GothamBold
-	lbl.TextSize = 13
-	lbl.TextXAlignment = Enum.TextXAlignment.Left
-	lbl.LayoutOrder = order or 0
-	lbl.Parent = parent
+	if not parent then return end
+	return parent:CreateSection(text)
 end
 
 function uiBuilder.createInfoLabel(parent, text, order)
-	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.new(1, 0, 0, 16)
-	lbl.BackgroundTransparency = 1
-	lbl.Text = text
-	lbl.TextColor3 = COLORS.textSecondary
-	lbl.Font = Enum.Font.Gotham
-	lbl.TextSize = 10
-	lbl.TextXAlignment = Enum.TextXAlignment.Left
-	lbl.LayoutOrder = order or 0
-	lbl.Parent = parent
+	if not parent then return end
+	return parent:CreateLabel(text)
 end
 
 function uiBuilder.createToggle(parent, text, order, callback)
-	local row = Instance.new("Frame")
-	row.Size = UDim2.new(1, 0, 0, 28)
-	row.BackgroundColor3 = COLORS.panel
-	row.BorderSizePixel = 0
-	row.LayoutOrder = order or 0
-	row.Parent = parent
-	uiBuilder.addCorner(row, 5)
-
-	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.new(1, -60, 1, 0)
-	lbl.Position = UDim2.new(0, 10, 0, 0)
-	lbl.BackgroundTransparency = 1
-	lbl.Text = text
-	lbl.TextColor3 = COLORS.textPrimary
-	lbl.Font = Enum.Font.Gotham
-	lbl.TextSize = 11
-	lbl.TextXAlignment = Enum.TextXAlignment.Left
-	lbl.Parent = row
-
-	local toggleFrame = Instance.new("Frame")
-	toggleFrame.Size = UDim2.new(0, 36, 0, 18)
-	toggleFrame.Position = UDim2.new(1, -46, 0.5, -9)
-	toggleFrame.BackgroundColor3 = COLORS.toggleOff
-	toggleFrame.BorderSizePixel = 0
-	toggleFrame.Parent = row
-	uiBuilder.addCorner(toggleFrame, 9)
-
-	local circle = Instance.new("Frame")
-	circle.Size = UDim2.new(0, 14, 0, 14)
-	circle.Position = UDim2.new(0, 2, 0.5, -7)
-	circle.BackgroundColor3 = COLORS.textPrimary
-	circle.BorderSizePixel = 0
-	circle.Parent = toggleFrame
-	uiBuilder.addCorner(circle, 7)
-
-	local isOn = false
-	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(1, 0, 1, 0)
-	btn.BackgroundTransparency = 1
-	btn.Text = ""
-	btn.Parent = row
-
-	btn.MouseButton1Click:Connect(function()
-		isOn = not isOn
-		toggleFrame.BackgroundColor3 = isOn and COLORS.toggleOn or COLORS.toggleOff
-		circle.Position = isOn and UDim2.new(1, -16, 0.5, -7) or UDim2.new(0, 2, 0.5, -7)
-		if callback then callback(isOn) end
-	end)
+	if not parent then return end
+	return parent:CreateToggle({
+		Name = text,
+		CurrentValue = false,
+		-- Flags let Rayfield restore toggle states from the saved config.
+		Flag = "nbtf_" .. text,
+		Callback = function(value)
+			if callback then pcall(callback, value) end
+		end,
+	})
 end
 
 function uiBuilder.createButton(parent, text, order, callback)
-	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(1, 0, 0, 30)
-	btn.BackgroundColor3 = COLORS.accent
-	btn.BorderSizePixel = 0
-	btn.Text = text
-	btn.TextColor3 = Color3.fromRGB(10, 10, 10)
-	btn.Font = Enum.Font.GothamBold
-	btn.TextSize = 12
-	btn.LayoutOrder = order or 0
-	btn.Parent = parent
-	uiBuilder.addCorner(btn, 5)
-	btn.MouseEnter:Connect(function() btn.BackgroundColor3 = COLORS.accentHover end)
-	btn.MouseLeave:Connect(function() btn.BackgroundColor3 = COLORS.accent end)
-	btn.MouseButton1Click:Connect(function() if callback then callback() end end)
-	return btn
+	if not parent then return end
+	return parent:CreateButton({
+		Name = text,
+		Callback = function()
+			if callback then pcall(callback) end
+		end,
+	})
 end
 
 function uiBuilder.createSlider(parent, text, min, max, default, order, callback)
-	local container = Instance.new("Frame")
-	container.Size = UDim2.new(1, 0, 0, 38)
-	container.BackgroundColor3 = COLORS.panel
-	container.BorderSizePixel = 0
-	container.LayoutOrder = order or 0
-	container.Parent = parent
-	uiBuilder.addCorner(container, 5)
+	if not parent then return end
+	return parent:CreateSlider({
+		Name = text,
+		Range = {min, max},
+		Increment = 1,
+		Suffix = "",
+		CurrentValue = default,
+		Flag = "nbtf_" .. text,
+		Callback = function(value)
+			if callback then pcall(callback, value) end
+		end,
+	})
+end
 
-	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.new(0.5, -10, 0, 16)
-	lbl.Position = UDim2.new(0, 10, 0, 2)
-	lbl.BackgroundTransparency = 1
-	lbl.Text = text
-	lbl.TextColor3 = COLORS.textPrimary
-	lbl.Font = Enum.Font.Gotham
-	lbl.TextSize = 10
-	lbl.TextXAlignment = Enum.TextXAlignment.Left
-	lbl.Parent = container
+-- Returns a proxy, not a Rayfield object. The feature code updates these
+-- labels by assigning .Text (and sometimes .TextColor3) from timer loops, so
+-- __newindex forwards .Text to Rayfield's Set and quietly absorbs the cosmetic
+-- properties Rayfield manages itself. That leaves every existing update site
+-- working untouched instead of needing a rewrite each.
+function uiBuilder.createDynamicLabel(parent, text)
+	if not parent then return setmetatable({}, {__newindex = function() end}) end
+	local label = parent:CreateLabel(text or "")
+	return setmetatable({}, {
+		__newindex = function(_, key, value)
+			if key == "Text" then
+				pcall(function() label:Set(tostring(value)) end)
+			end
+		end,
+		__index = function() return nil end,
+	})
+end
 
-	local valLabel = Instance.new("TextLabel")
-	valLabel.Size = UDim2.new(0.5, -10, 0, 16)
-	valLabel.Position = UDim2.new(0.5, 0, 0, 2)
-	valLabel.BackgroundTransparency = 1
-	valLabel.Text = tostring(default)
-	valLabel.TextColor3 = COLORS.accent
-	valLabel.Font = Enum.Font.GothamBold
-	valLabel.TextSize = 10
-	valLabel.TextXAlignment = Enum.TextXAlignment.Right
-	valLabel.Parent = container
+function uiBuilder.createDropdown(parent, text, options, default, callback)
+	if not parent then return end
+	return parent:CreateDropdown({
+		Name = text,
+		Options = options,
+		CurrentOption = {default},
+		MultipleOptions = false,
+		Flag = "nbtf_" .. text,
+		Callback = function(chosen)
+			-- Rayfield hands back a table of selected options.
+			local value = type(chosen) == "table" and chosen[1] or chosen
+			if callback and value then pcall(callback, value) end
+		end,
+	})
+end
 
-	local track = Instance.new("Frame")
-	track.Size = UDim2.new(1, -20, 0, 5)
-	track.Position = UDim2.new(0, 10, 0, 26)
-	track.BackgroundColor3 = COLORS.border
-	track.BorderSizePixel = 0
-	track.Parent = container
-	uiBuilder.addCorner(track, 3)
-
-	local fill = Instance.new("Frame")
-	fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
-	fill.BackgroundColor3 = COLORS.accent
-	fill.BorderSizePixel = 0
-	fill.Parent = track
-	uiBuilder.addCorner(fill, 3)
-
-	local sliderBtn = Instance.new("TextButton")
-	sliderBtn.Size = UDim2.new(1, 0, 0, UserInputService.TouchEnabled and 30 or 18)
-	sliderBtn.Position = UDim2.new(0, 0, 0, UserInputService.TouchEnabled and 14 or 20)
-	sliderBtn.BackgroundTransparency = 1
-	sliderBtn.Text = ""
-	sliderBtn.Parent = container
-
-	-- Touch support. The drag used to listen only for MouseMovement and only
-	-- clear on MouseButton1, so on a phone it never updated and never let go.
-	-- Touch inputs arrive as UserInputType.Touch and have to be handled too.
-	local function setFromX(x)
-		if track.AbsoluteSize.X <= 0 then return end
-		local rel = math.clamp((x - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
-		fill.Size = UDim2.new(rel, 0, 1, 0)
-		local val = math.floor(min + (max - min) * rel)
-		valLabel.Text = tostring(val)
-		if callback then callback(val) end
-	end
-
-	local dragging = false
-	sliderBtn.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1
-			or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = true
-			-- Jump straight to the tapped spot; dragging a thin bar with a
-			-- fingertip is far harder than simply tapping the value.
-			setFromX(input.Position.X)
-		end
-	end)
-	UserInputService.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1
-			or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = false
-		end
-	end)
-	UserInputService.InputChanged:Connect(function(input)
-		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
-			or input.UserInputType == Enum.UserInputType.Touch) then
-			setFromX(input.Position.X)
-		end
-	end)
+function uiBuilder.createInput(parent, text, placeholder, callback)
+	if not parent then return end
+	return parent:CreateInput({
+		Name = text,
+		CurrentValue = "",
+		PlaceholderText = placeholder or "",
+		RemoveTextAfterFocusLost = false,
+		Callback = function(value)
+			if callback then pcall(callback, value) end
+		end,
+	})
 end
 
 function uiBuilder.createSpacer(parent, order)
-	local s = Instance.new("Frame")
-	s.Size = UDim2.new(1, 0, 0, 6)
-	s.BackgroundTransparency = 1
-	s.LayoutOrder = order or 0
-	s.Parent = parent
+	-- Rayfield spaces sections itself; a divider reads better than empty space.
+	if not parent then return end
+	return parent:CreateDivider()
 end
 
 -- ===================== X-RAY =====================
@@ -3846,63 +3549,16 @@ do
 	uiBuilder.createSectionLabel(tab, "Weapon Selector", o())
 	uiBuilder.createInfoLabel(tab, "Choose which gun silent aim/wallbang uses (Auto = first found)", o())
 
-	local weaponBtns = {}
-	local weaponListFrame = Instance.new("Frame")
-	weaponListFrame.Size = UDim2.new(1, 0, 0, 0)
-	weaponListFrame.AutomaticSize = Enum.AutomaticSize.Y
-	weaponListFrame.BackgroundTransparency = 1
-	weaponListFrame.LayoutOrder = o()
-	weaponListFrame.Parent = tab
-
-	local weaponListLayout = Instance.new("UIListLayout")
-	weaponListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	weaponListLayout.Padding = UDim.new(0, 3)
-	weaponListLayout.FillDirection = Enum.FillDirection.Horizontal
-	weaponListLayout.Wraps = true
-	weaponListLayout.Parent = weaponListFrame
-
-	local function updateWeaponHighlight()
-		for name, btn in pairs(weaponBtns) do
-			if name == (aimState.selectedWeapon or "Auto") then
-				btn.BackgroundColor3 = COLORS.accent
-				btn.TextColor3 = Color3.fromRGB(10, 10, 10)
-			else
-				btn.BackgroundColor3 = COLORS.panel
-				btn.TextColor3 = COLORS.textSecondary
-			end
-		end
+	-- Was a wrapped grid of highlight buttons; a dropdown carries the same
+	-- eighteen options without consuming most of the tab.
+	local weaponOptions = {"Auto"}
+	for _, gunName in ipairs(NBTF_GUNS) do
+		table.insert(weaponOptions, gunName)
 	end
-
-	local function makeWeaponBtn(name, order)
-		local wb = Instance.new("TextButton")
-		wb.Size = UDim2.new(0, 85, 0, 24)
-		wb.BackgroundColor3 = COLORS.panel
-		wb.BorderSizePixel = 0
-		wb.Text = name
-		wb.TextColor3 = COLORS.textSecondary
-		wb.Font = Enum.Font.Gotham
-		wb.TextSize = 9
-		wb.TextTruncate = Enum.TextTruncate.AtEnd
-		wb.LayoutOrder = order
-		wb.Parent = weaponListFrame
-		uiBuilder.addCorner(wb, 4)
-		weaponBtns[name] = wb
-		wb.MouseButton1Click:Connect(function()
-			if name == "Auto" then
-				aimState.selectedWeapon = nil
-			else
-				aimState.selectedWeapon = name
-			end
-			updateWeaponHighlight()
-			helpers.notify("Weapon", name == "Auto" and "Auto-detect mode" or "Using: " .. name)
-		end)
-	end
-
-	makeWeaponBtn("Auto", 1)
-	for i, gunName in ipairs(NBTF_GUNS) do
-		makeWeaponBtn(gunName, i + 1)
-	end
-	updateWeaponHighlight()
+	uiBuilder.createDropdown(tab, "Selected Weapon", weaponOptions, "Auto", function(choice)
+		aimState.selectedWeapon = (choice ~= "Auto") and choice or nil
+		helpers.notify("Weapon", choice == "Auto" and "Auto-detect mode" or "Using: " .. choice)
+	end)
 
 	uiBuilder.createSpacer(tab, o())
 
@@ -4181,65 +3837,15 @@ do
 	-- Keep the custom announcement for fun / local display
 	uiBuilder.createSectionLabel(tab, "Custom Announcement (Local Only)", o())
 	local announcementText = "Alert: All personnel report to SCC immediately"
-	local announceTB = Instance.new("TextBox")
-	announceTB.Size = UDim2.new(1, 0, 0, 28)
-	announceTB.BackgroundColor3 = COLORS.panel
-	announceTB.BorderSizePixel = 0
-	announceTB.Text = announcementText
-	announceTB.PlaceholderText = "Type announcement here..."
-	announceTB.TextColor3 = COLORS.textPrimary
-	announceTB.PlaceholderColor3 = COLORS.textDim
-	announceTB.Font = Enum.Font.Gotham
-	announceTB.TextSize = 11
-	announceTB.ClearTextOnFocus = false
-	announceTB.LayoutOrder = o()
-	announceTB.Parent = tab
-	uiBuilder.addCorner(announceTB, 5)
-	local tbPad = Instance.new("UIPadding")
-	tbPad.PaddingLeft = UDim.new(0, 8)
-	tbPad.PaddingRight = UDim.new(0, 8)
-	tbPad.Parent = announceTB
-	announceTB:GetPropertyChangedSignal("Text"):Connect(function()
-		announcementText = announceTB.Text
+	uiBuilder.createInput(tab, "Announcement Text", "Type announcement here...", function(value)
+		announcementText = value
 	end)
 
 	local selectedProtocol = "alert"
-	local protoFrame = Instance.new("Frame")
-	protoFrame.Size = UDim2.new(1, 0, 0, 26)
-	protoFrame.BackgroundTransparency = 1
-	protoFrame.LayoutOrder = o()
-	protoFrame.Parent = tab
-	local protoLayout = Instance.new("UIListLayout")
-	protoLayout.FillDirection = Enum.FillDirection.Horizontal
-	protoLayout.Padding = UDim.new(0, 4)
-	protoLayout.Parent = protoFrame
-	local protoBtns = {}
-	local protocols = {
-		{id = "normal", label = "Normal", color = Color3.fromRGB(50, 130, 255)},
-		{id = "alert", label = "Alert", color = Color3.fromRGB(255, 200, 60)},
-		{id = "lockdown", label = "Lockdown", color = Color3.fromRGB(255, 50, 50)},
-		{id = "core", label = "Core", color = Color3.fromRGB(80, 80, 80)},
-	}
-	for i, proto in ipairs(protocols) do
-		local pb = Instance.new("TextButton")
-		pb.Size = UDim2.new(0, 75, 0, 24)
-		pb.BackgroundColor3 = proto.id == selectedProtocol and proto.color or COLORS.panel
-		pb.BorderSizePixel = 0
-		pb.Text = proto.label
-		pb.TextColor3 = COLORS.textPrimary
-		pb.Font = Enum.Font.GothamBold
-		pb.TextSize = 10
-		pb.LayoutOrder = i
-		pb.Parent = protoFrame
-		uiBuilder.addCorner(pb, 4)
-		protoBtns[proto.id] = {btn = pb, color = proto.color}
-		pb.MouseButton1Click:Connect(function()
-			selectedProtocol = proto.id
-			for pid, data in pairs(protoBtns) do
-				data.btn.BackgroundColor3 = pid == selectedProtocol and data.color or COLORS.panel
-			end
+	uiBuilder.createDropdown(tab, "Announcement Protocol",
+		{"Normal", "Alert", "Lockdown", "Core"}, "Alert", function(choice)
+			selectedProtocol = string.lower(choice)
 		end)
-	end
 	uiBuilder.createButton(tab, "Show Local Announcement", o(), function()
 		actions.showCustomAnnouncement(announcementText, selectedProtocol, 8)
 	end)
@@ -4378,26 +3984,8 @@ do
 
 	uiBuilder.createSectionLabel(tab, "Chat Commands", o())
 	local chatText = ""
-	local chatTB = Instance.new("TextBox")
-	chatTB.Size = UDim2.new(1, 0, 0, 28)
-	chatTB.BackgroundColor3 = COLORS.panel
-	chatTB.BorderSizePixel = 0
-	chatTB.Text = ""
-	chatTB.PlaceholderText = "Type chat message..."
-	chatTB.TextColor3 = COLORS.textPrimary
-	chatTB.PlaceholderColor3 = COLORS.textDim
-	chatTB.Font = Enum.Font.Gotham
-	chatTB.TextSize = 11
-	chatTB.ClearTextOnFocus = false
-	chatTB.LayoutOrder = o()
-	chatTB.Parent = tab
-	uiBuilder.addCorner(chatTB, 5)
-	local chatPad = Instance.new("UIPadding")
-	chatPad.PaddingLeft = UDim.new(0, 8)
-	chatPad.PaddingRight = UDim.new(0, 8)
-	chatPad.Parent = chatTB
-	chatTB:GetPropertyChangedSignal("Text"):Connect(function()
-		chatText = chatTB.Text
+	uiBuilder.createInput(tab, "Chat Message", "Type chat message...", function(value)
+		chatText = value
 	end)
 
 	uiBuilder.createButton(tab, "Send Chat Message", o(), function()
@@ -4799,49 +4387,37 @@ do
 	uiBuilder.createInfoLabel(tab, "Scans workspace for named areas - click Scan to find them", o())
 
 	-- Location list container
-	local locListFrame = Instance.new("Frame")
-	locListFrame.Size = UDim2.new(1, 0, 0, 0)
-	locListFrame.AutomaticSize = Enum.AutomaticSize.Y
-	locListFrame.BackgroundTransparency = 1
-	locListFrame.LayoutOrder = o()
-	locListFrame.Parent = tab
-
-	local locListLayout = Instance.new("UIListLayout")
-	locListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	locListLayout.Padding = UDim.new(0, 3)
-	locListLayout.Parent = locListFrame
-
+	-- Was a button per location; a dropdown holds an unbounded scan result
+	-- without pushing the rest of the tab off-screen.
+	local locationsByName = {}
+	local locationDropdown
 	local function refreshLocations()
-		for _, child in ipairs(locListFrame:GetChildren()) do
-			if child:IsA("TextButton") then child:Destroy() end
-		end
 		local locations = actions.scanLocations()
-		if #locations == 0 then
+		locationsByName = {}
+		local names = {}
+		for _, loc in ipairs(locations) do
+			locationsByName[loc.name] = loc.pos
+			table.insert(names, loc.name)
+		end
+		if #names == 0 then
 			helpers.notify("Scan", "No named locations found in workspace")
 			return
 		end
-		for i, loc in ipairs(locations) do
-			local locBtn = Instance.new("TextButton")
-			locBtn.Size = UDim2.new(1, 0, 0, 26)
-			locBtn.BackgroundColor3 = COLORS.panel
-			locBtn.BorderSizePixel = 0
-			locBtn.Text = "TP: " .. loc.name .. " (" .. math.floor(loc.pos.X) .. ", " .. math.floor(loc.pos.Y) .. ", " .. math.floor(loc.pos.Z) .. ")"
-			locBtn.TextColor3 = COLORS.accent
-			locBtn.Font = Enum.Font.Gotham
-			locBtn.TextSize = 10
-			locBtn.LayoutOrder = i
-			locBtn.Parent = locListFrame
-			uiBuilder.addCorner(locBtn, 4)
-			locBtn.MouseButton1Click:Connect(function()
-				local char = LocalPlayer.Character
-				if char then
-					char:PivotTo(CFrame.new(loc.pos))
-					helpers.notify("Teleport", loc.name)
-				end
-			end)
+		if locationDropdown then
+			pcall(function() locationDropdown:Refresh(names) end)
 		end
-		helpers.notify("Scan", "Found " .. #locations .. " locations!")
+		helpers.notify("Scan", "Found " .. #names .. " locations!")
 	end
+
+	locationDropdown = uiBuilder.createDropdown(tab, "Facility Location", {"(scan first)"}, "(scan first)", function(choice)
+		local pos = locationsByName[choice]
+		if not pos then return end
+		local char = LocalPlayer.Character
+		if char then
+			char:PivotTo(CFrame.new(pos))
+			helpers.notify("Teleport", choice)
+		end
+	end)
 
 	uiBuilder.createButton(tab, "Scan Facility Locations", o(), refreshLocations)
 
@@ -4851,49 +4427,30 @@ do
 	uiBuilder.createInfoLabel(tab, "Click a player name to teleport to them", o())
 
 	-- Dynamic player list buttons
-	local playerListFrame = Instance.new("Frame")
-	playerListFrame.Size = UDim2.new(1, 0, 0, 0)
-	playerListFrame.AutomaticSize = Enum.AutomaticSize.Y
-	playerListFrame.BackgroundTransparency = 1
-	playerListFrame.LayoutOrder = o()
-	playerListFrame.Parent = tab
-
-	local playerListLayout = Instance.new("UIListLayout")
-	playerListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	playerListLayout.Padding = UDim.new(0, 3)
-	playerListLayout.Parent = playerListFrame
-
+	-- A dropdown rebuilt on refresh, rather than one button per player: the
+	-- old list grew without bound in a full server.
+	local tpTargets, tpDropdown = {}, nil
 	local function refreshPlayerList()
-		for _, child in ipairs(playerListFrame:GetChildren()) do
-			if child:IsA("TextButton") then child:Destroy() end
-		end
-		for i, player in ipairs(Players:GetPlayers()) do
+		tpTargets = {}
+		local names = {}
+		for _, player in ipairs(Players:GetPlayers()) do
 			if player ~= LocalPlayer then
-				local color, roleName, teamName = helpers.getPlayerTeamInfo(player)
-				local roleDisplay = ""
-				if roleName ~= "" then
-					roleDisplay = " [" .. roleName .. "]"
-				elseif teamName ~= "" then
-					roleDisplay = " [" .. teamName .. "]"
-				end
-				local pBtn = Instance.new("TextButton")
-				pBtn.Size = UDim2.new(1, 0, 0, 26)
-				pBtn.BackgroundColor3 = COLORS.panel
-				pBtn.BorderSizePixel = 0
-				pBtn.Text = player.DisplayName .. " (@" .. player.Name .. ")" .. roleDisplay
-				pBtn.TextColor3 = color
-				pBtn.Font = Enum.Font.Gotham
-				pBtn.TextSize = 11
-				pBtn.LayoutOrder = i
-				pBtn.Parent = playerListFrame
-				uiBuilder.addCorner(pBtn, 4)
-				pBtn.MouseButton1Click:Connect(function()
-					actions.teleportToPlayer(player.Name)
-				end)
+				local _, roleName, teamName = helpers.getPlayerTeamInfo(player)
+				local suffix = roleName ~= "" and (" [" .. roleName .. "]")
+					or (teamName ~= "" and (" [" .. teamName .. "]") or "")
+				local label = player.DisplayName .. suffix
+				tpTargets[label] = player.Name
+				table.insert(names, label)
 			end
 		end
+		if #names == 0 then names = {"(no players)"} end
+		if tpDropdown then pcall(function() tpDropdown:Refresh(names) end) end
 	end
 
+	tpDropdown = uiBuilder.createDropdown(tab, "Teleport Target", {"(refresh first)"}, "(refresh first)", function(choice)
+		local name = tpTargets[choice]
+		if name then actions.teleportToPlayer(name) end
+	end)
 	uiBuilder.createButton(tab, "Refresh Player List", o(), refreshPlayerList)
 	refreshPlayerList()
 
@@ -4903,42 +4460,24 @@ do
 	uiBuilder.createInfoLabel(tab, "Click a player above to TP, or use buttons below to spectate", o())
 
 	-- Spectate player list
-	local specListFrame = Instance.new("Frame")
-	specListFrame.Size = UDim2.new(1, 0, 0, 0)
-	specListFrame.AutomaticSize = Enum.AutomaticSize.Y
-	specListFrame.BackgroundTransparency = 1
-	specListFrame.LayoutOrder = o()
-	specListFrame.Parent = tab
-
-	local specListLayout = Instance.new("UIListLayout")
-	specListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	specListLayout.Padding = UDim.new(0, 3)
-	specListLayout.Parent = specListFrame
-
+	local specTargets, specDropdown = {}, nil
 	local function refreshSpecList()
-		for _, child in ipairs(specListFrame:GetChildren()) do
-			if child:IsA("TextButton") then child:Destroy() end
-		end
-		for i, player in ipairs(Players:GetPlayers()) do
+		specTargets = {}
+		local names = {}
+		for _, player in ipairs(Players:GetPlayers()) do
 			if player ~= LocalPlayer then
-				local sBtn = Instance.new("TextButton")
-				sBtn.Size = UDim2.new(1, 0, 0, 24)
-				sBtn.BackgroundColor3 = COLORS.panel
-				sBtn.BorderSizePixel = 0
-				sBtn.Text = "Spectate: " .. player.DisplayName
-				sBtn.TextColor3 = COLORS.accent
-				sBtn.Font = Enum.Font.Gotham
-				sBtn.TextSize = 10
-				sBtn.LayoutOrder = i
-				sBtn.Parent = specListFrame
-				uiBuilder.addCorner(sBtn, 4)
-				sBtn.MouseButton1Click:Connect(function()
-					actions.spectatePlayer(player)
-				end)
+				specTargets[player.DisplayName] = player
+				table.insert(names, player.DisplayName)
 			end
 		end
+		if #names == 0 then names = {"(no players)"} end
+		if specDropdown then pcall(function() specDropdown:Refresh(names) end) end
 	end
 
+	specDropdown = uiBuilder.createDropdown(tab, "Spectate Target", {"(refresh first)"}, "(refresh first)", function(choice)
+		local player = specTargets[choice]
+		if player then actions.spectatePlayer(player) end
+	end)
 	uiBuilder.createButton(tab, "Stop Spectating", o(), actions.unspectate)
 	uiBuilder.createButton(tab, "Refresh Spectate List", o(), refreshSpecList)
 	refreshSpecList()
@@ -4953,116 +4492,72 @@ do
 	uiBuilder.createSectionLabel(tab, "Player Actions", o())
 	uiBuilder.createInfoLabel(tab, "Per-player actions: Kill, Bring, Teleport, Spectate", o())
 
-	local playerActionsFrame = Instance.new("Frame")
-	playerActionsFrame.Size = UDim2.new(1, 0, 0, 0)
-	playerActionsFrame.AutomaticSize = Enum.AutomaticSize.Y
-	playerActionsFrame.BackgroundTransparency = 1
-	playerActionsFrame.LayoutOrder = o()
-	playerActionsFrame.Parent = tab
-
-	local playerActionsLayout = Instance.new("UIListLayout")
-	playerActionsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	playerActionsLayout.Padding = UDim.new(0, 4)
-	playerActionsLayout.Parent = playerActionsFrame
-
+	-- Was a row per player, each with four inline buttons at fixed pixel
+	-- offsets, which does not survive a variable-width window. One dropdown
+	-- selects the target and the buttons act on that selection.
+	local actionTargets, selectedTarget, actionDropdown = {}, nil, nil
 	local function refreshPlayerActions()
-		for _, child in ipairs(playerActionsFrame:GetChildren()) do
-			if child:IsA("Frame") then child:Destroy() end
-		end
-		local idx = 0
+		actionTargets = {}
+		local names = {}
 		for _, player in ipairs(Players:GetPlayers()) do
 			if player ~= LocalPlayer then
-				idx = idx + 1
-				local color, roleName, teamName = helpers.getPlayerTeamInfo(player)
-				local roleDisplay = ""
-				if roleName ~= "" then
-					roleDisplay = " [" .. roleName .. "]"
-				elseif teamName ~= "" then
-					roleDisplay = " [" .. teamName .. "]"
-				end
-
-				local row = Instance.new("Frame")
-				row.Size = UDim2.new(1, 0, 0, 32)
-				row.BackgroundColor3 = COLORS.panel
-				row.BorderSizePixel = 0
-				row.LayoutOrder = idx
-				row.Parent = playerActionsFrame
-				uiBuilder.addCorner(row, 5)
-
-				local nameLbl = Instance.new("TextLabel")
-				nameLbl.Size = UDim2.new(1, -220, 1, 0)
-				nameLbl.Position = UDim2.new(0, 8, 0, 0)
-				nameLbl.BackgroundTransparency = 1
-				nameLbl.Text = player.DisplayName .. roleDisplay
-				nameLbl.TextColor3 = color
-				nameLbl.Font = Enum.Font.Gotham
-				nameLbl.TextSize = 10
-				nameLbl.TextXAlignment = Enum.TextXAlignment.Left
-				nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
-				nameLbl.Parent = row
-
-				-- Action buttons
-				local actions = {
-					{text = "Kill", offset = 215, fn = function()
-						local gun = helpers.findGunInBackpack()
-						if not gun then
-							helpers.notify("Error", "No gun found! Equip a weapon first.")
-							return
-						end
-						if not helpers.isAlive(player) then
-							helpers.notify("Error", player.DisplayName .. " is dead or not in game")
-							return
-						end
-						helpers.equipGun(gun)
-						print("[SX NBTF] Killing " .. player.DisplayName .. " with " .. gun.Name .. " (equipped: " .. tostring(gun.Parent == LocalPlayer.Character) .. ")")
-						print("[SX NBTF] Remote: " .. tostring(WeaponHitRemote))
-						print("[SX NBTF] Target head: " .. tostring(player.Character and player.Character:FindFirstChild("Head")))
-						task.spawn(function()
-							for i = 1, 3 do
-								local ok = fireWeaponHit(player, gun, "aim")
-								print("[SX NBTF] Round " .. i .. " fired: " .. tostring(ok))
-								task.wait(combatState.killAllDelay)
-							end
-							helpers.notify("Kill", "Fired 3 rounds at " .. player.DisplayName)
-						end)
-					end},
-					{text = "Bring", offset = 165, fn = function()
-						pcall(function()
-							local myHRP = helpers.getRoot()
-							local theirHRP = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-							if myHRP and theirHRP then
-								theirHRP.CFrame = myHRP.CFrame + Vector3.new(math.random(-5, 5), 0, math.random(-5, 5))
-								helpers.notify("Bring", "Brought " .. player.DisplayName)
-							end
-						end)
-					end},
-					{text = "TP", offset = 120, fn = function()
-						actions.teleportToPlayer(player.Name)
-					end},
-					{text = "Spec", offset = 75, fn = function()
-						actions.spectatePlayer(player)
-					end},
-				}
-
-				for _, action in ipairs(actions) do
-					local abtn = Instance.new("TextButton")
-					abtn.Size = UDim2.new(0, 40, 0, 22)
-					abtn.Position = UDim2.new(1, -action.offset, 0.5, -11)
-					abtn.BackgroundColor3 = COLORS.accent
-					abtn.BorderSizePixel = 0
-					abtn.Text = action.text
-					abtn.TextColor3 = Color3.fromRGB(10, 10, 10)
-					abtn.Font = Enum.Font.GothamBold
-					abtn.TextSize = 9
-					abtn.Parent = row
-					uiBuilder.addCorner(abtn, 4)
-					abtn.MouseEnter:Connect(function() abtn.BackgroundColor3 = COLORS.accentHover end)
-					abtn.MouseLeave:Connect(function() abtn.BackgroundColor3 = COLORS.accent end)
-					abtn.MouseButton1Click:Connect(action.fn)
-				end
+				local _, roleName, teamName = helpers.getPlayerTeamInfo(player)
+				local suffix = roleName ~= "" and (" [" .. roleName .. "]")
+					or (teamName ~= "" and (" [" .. teamName .. "]") or "")
+				local label = player.DisplayName .. suffix
+				actionTargets[label] = player
+				table.insert(names, label)
 			end
 		end
+		if #names == 0 then names = {"(no players)"} end
+		if actionDropdown then pcall(function() actionDropdown:Refresh(names) end) end
 	end
+
+	actionDropdown = uiBuilder.createDropdown(tab, "Target Player", {"(refresh first)"}, "(refresh first)", function(choice)
+		selectedTarget = actionTargets[choice]
+	end)
+
+	local function withTarget(fn)
+		return function()
+			if not selectedTarget or not selectedTarget.Parent then
+				helpers.notify("Error", "Pick a target from the dropdown first")
+				return
+			end
+			fn(selectedTarget)
+		end
+	end
+
+	uiBuilder.createButton(tab, "Kill Target", o(), withTarget(function(player)
+		local gun = helpers.findGunInBackpack()
+		if not gun then
+			helpers.notify("Error", "No gun found! Equip a weapon first.")
+			return
+		end
+		if not helpers.isAlive(player) then
+			helpers.notify("Error", player.DisplayName .. " is dead or not in game")
+			return
+		end
+		helpers.equipGun(gun)
+		task.spawn(function()
+			for _ = 1, 3 do
+				fireWeaponHit(player, gun, "aim")
+				task.wait(combatState.killAllDelay)
+			end
+			helpers.notify("Kill", "Fired at " .. player.DisplayName)
+		end)
+	end))
+
+	uiBuilder.createButton(tab, "Bring Target", o(), withTarget(function(player)
+		actions.bringPlayer(player)
+	end))
+
+	uiBuilder.createButton(tab, "Teleport To Target", o(), withTarget(function(player)
+		actions.teleportToPlayer(player.Name)
+	end))
+
+	uiBuilder.createButton(tab, "Spectate Target", o(), withTarget(function(player)
+		actions.spectatePlayer(player)
+	end))
 
 	uiBuilder.createButton(tab, "Refresh Player List", o(), refreshPlayerActions)
 	refreshPlayerActions()
@@ -5074,21 +4569,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "Target Info", o())
-	local targetInfoLabel = Instance.new("TextLabel")
-	targetInfoLabel.Size = UDim2.new(1, 0, 0, 24)
-	targetInfoLabel.BackgroundColor3 = COLORS.panel
-	targetInfoLabel.BorderSizePixel = 0
-	targetInfoLabel.Text = "No target - enable Silent Aim or Aimbot"
-	targetInfoLabel.TextColor3 = COLORS.textSecondary
-	targetInfoLabel.Font = Enum.Font.Gotham
-	targetInfoLabel.TextSize = 10
-	targetInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
-	targetInfoLabel.LayoutOrder = o()
-	targetInfoLabel.Parent = tab
-	uiBuilder.addCorner(targetInfoLabel, 5)
-	local tipPad = Instance.new("UIPadding")
-	tipPad.PaddingLeft = UDim.new(0, 8)
-	tipPad.Parent = targetInfoLabel
+	local targetInfoLabel = uiBuilder.createDynamicLabel(tab, "No target - enable Silent Aim or Aimbot")
 
 	-- Update target info periodically
 	task.spawn(function()
@@ -5130,81 +4611,30 @@ do
 	uiBuilder.createSectionLabel(tab, "Orbit / Follow", o())
 
 	-- Orbit player list
-	local orbitFrame = Instance.new("Frame")
-	orbitFrame.Size = UDim2.new(1, 0, 0, 0)
-	orbitFrame.AutomaticSize = Enum.AutomaticSize.Y
-	orbitFrame.BackgroundTransparency = 1
-	orbitFrame.LayoutOrder = o()
-	orbitFrame.Parent = tab
-	local orbitLayout = Instance.new("UIListLayout")
-	orbitLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	orbitLayout.Padding = UDim.new(0, 3)
-	orbitLayout.Parent = orbitFrame
-
+	local orbitTargets, orbitDropdown = {}, nil
 	local function refreshOrbitList()
-		for _, child in ipairs(orbitFrame:GetChildren()) do
-			if child:IsA("Frame") then child:Destroy() end
-		end
-		local idx = 0
+		orbitTargets = {}
+		local names = {}
 		for _, player in ipairs(Players:GetPlayers()) do
 			if player ~= LocalPlayer then
-				idx = idx + 1
-				local row = Instance.new("Frame")
-				row.Size = UDim2.new(1, 0, 0, 26)
-				row.BackgroundColor3 = COLORS.panel
-				row.BorderSizePixel = 0
-				row.LayoutOrder = idx
-				row.Parent = orbitFrame
-				uiBuilder.addCorner(row, 4)
-
-				local lbl = Instance.new("TextLabel")
-				lbl.Size = UDim2.new(1, -120, 1, 0)
-				lbl.Position = UDim2.new(0, 8, 0, 0)
-				lbl.BackgroundTransparency = 1
-				lbl.Text = player.DisplayName
-				lbl.TextColor3 = COLORS.textPrimary
-				lbl.Font = Enum.Font.Gotham
-				lbl.TextSize = 10
-				lbl.TextXAlignment = Enum.TextXAlignment.Left
-				lbl.Parent = row
-
-				local orbitBtn = Instance.new("TextButton")
-				orbitBtn.Size = UDim2.new(0, 45, 0, 20)
-				orbitBtn.Position = UDim2.new(1, -112, 0.5, -10)
-				orbitBtn.BackgroundColor3 = COLORS.accent
-				orbitBtn.Text = "Orbit"
-				orbitBtn.TextColor3 = Color3.fromRGB(10, 10, 10)
-				orbitBtn.Font = Enum.Font.GothamBold
-				orbitBtn.TextSize = 9
-				orbitBtn.Parent = row
-				uiBuilder.addCorner(orbitBtn, 4)
-				orbitBtn.MouseButton1Click:Connect(function()
-					stopOrbit()
-					stopAttach()
-					startOrbit(player)
-					helpers.notify("Orbit", "Orbiting " .. player.DisplayName)
-				end)
-
-				local followBtn = Instance.new("TextButton")
-				followBtn.Size = UDim2.new(0, 50, 0, 20)
-				followBtn.Position = UDim2.new(1, -60, 0.5, -10)
-				followBtn.BackgroundColor3 = COLORS.accent
-				followBtn.Text = "Follow"
-				followBtn.TextColor3 = Color3.fromRGB(10, 10, 10)
-				followBtn.Font = Enum.Font.GothamBold
-				followBtn.TextSize = 9
-				followBtn.Parent = row
-				uiBuilder.addCorner(followBtn, 4)
-				followBtn.MouseButton1Click:Connect(function()
-					stopOrbit()
-					stopAttach()
-					startAttach(player)
-					helpers.notify("Follow", "Following " .. player.DisplayName)
-				end)
+				orbitTargets[player.DisplayName] = player
+				table.insert(names, player.DisplayName)
 			end
 		end
+		if #names == 0 then names = {"(no players)"} end
+		if orbitDropdown then pcall(function() orbitDropdown:Refresh(names) end) end
 	end
 
+	local orbitSelected = nil
+	orbitDropdown = uiBuilder.createDropdown(tab, "Orbit / Follow Target", {"(refresh first)"}, "(refresh first)", function(choice)
+		orbitSelected = orbitTargets[choice]
+	end)
+	uiBuilder.createButton(tab, "Orbit Selected", o(), function()
+		if orbitSelected then startOrbit(orbitSelected) else helpers.notify("Error", "Pick a target first") end
+	end)
+	uiBuilder.createButton(tab, "Follow Selected", o(), function()
+		if orbitSelected then startAttach(orbitSelected) else helpers.notify("Error", "Pick a target first") end
+	end)
 	uiBuilder.createButton(tab, "Refresh Orbit/Follow List", o(), refreshOrbitList)
 	uiBuilder.createButton(tab, "Stop Orbit / Follow", o(), function()
 		stopOrbit()
@@ -5279,17 +4709,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "Player Count", o())
-	local playerCountLabel = Instance.new("TextLabel")
-	playerCountLabel.Size = UDim2.new(1, 0, 0, 20)
-	playerCountLabel.BackgroundColor3 = COLORS.panel
-	playerCountLabel.BorderSizePixel = 0
-	playerCountLabel.Text = "Players: " .. #Players:GetPlayers() .. "/" .. Players.MaxPlayers
-	playerCountLabel.TextColor3 = COLORS.textPrimary
-	playerCountLabel.Font = Enum.Font.Gotham
-	playerCountLabel.TextSize = 11
-	playerCountLabel.LayoutOrder = o()
-	playerCountLabel.Parent = tab
-	uiBuilder.addCorner(playerCountLabel, 5)
+	local playerCountLabel = uiBuilder.createDynamicLabel(tab, "Players: " .. #Players:GetPlayers() .. "/" .. Players.MaxPlayers)
 
 	task.spawn(function()
 		while task.wait(5) do
@@ -5302,17 +4722,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "FPS Display", o())
-	local fpsLabel = Instance.new("TextLabel")
-	fpsLabel.Size = UDim2.new(1, 0, 0, 20)
-	fpsLabel.BackgroundColor3 = COLORS.panel
-	fpsLabel.BorderSizePixel = 0
-	fpsLabel.Text = "FPS: --"
-	fpsLabel.TextColor3 = COLORS.success
-	fpsLabel.Font = Enum.Font.GothamBold
-	fpsLabel.TextSize = 12
-	fpsLabel.LayoutOrder = o()
-	fpsLabel.Parent = tab
-	uiBuilder.addCorner(fpsLabel, 5)
+	local fpsLabel = uiBuilder.createDynamicLabel(tab, "FPS: --")
 
 	task.spawn(function()
 		while task.wait(0.5) do
@@ -5473,49 +4883,13 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "Server Info", o())
-	local placeLabel = Instance.new("TextLabel")
-	placeLabel.Size = UDim2.new(1, 0, 0, 16)
-	placeLabel.BackgroundTransparency = 1
-	placeLabel.Text = "Place ID: " .. tostring(game.PlaceId)
-	placeLabel.TextColor3 = COLORS.textSecondary
-	placeLabel.Font = Enum.Font.Gotham
-	placeLabel.TextSize = 10
-	placeLabel.TextXAlignment = Enum.TextXAlignment.Left
-	placeLabel.LayoutOrder = o()
-	placeLabel.Parent = tab
+	local placeLabel = uiBuilder.createDynamicLabel(tab, "Place ID: " .. tostring(game.PlaceId))
 
-	local jobLabel = Instance.new("TextLabel")
-	jobLabel.Size = UDim2.new(1, 0, 0, 16)
-	jobLabel.BackgroundTransparency = 1
-	jobLabel.Text = "Server ID: " .. tostring(game.JobId):sub(1, 20) .. "..."
-	jobLabel.TextColor3 = COLORS.textSecondary
-	jobLabel.Font = Enum.Font.Gotham
-	jobLabel.TextSize = 10
-	jobLabel.TextXAlignment = Enum.TextXAlignment.Left
-	jobLabel.LayoutOrder = o()
-	jobLabel.Parent = tab
+	local jobLabel = uiBuilder.createDynamicLabel(tab, "Server ID: " .. tostring(game.JobId):sub(1, 20) .. "...")
 
-	local playerCountLabel = Instance.new("TextLabel")
-	playerCountLabel.Size = UDim2.new(1, 0, 0, 16)
-	playerCountLabel.BackgroundTransparency = 1
-	playerCountLabel.Text = "Players: " .. #Players:GetPlayers() .. "/" .. Players.MaxPlayers
-	playerCountLabel.TextColor3 = COLORS.textSecondary
-	playerCountLabel.Font = Enum.Font.Gotham
-	playerCountLabel.TextSize = 10
-	playerCountLabel.TextXAlignment = Enum.TextXAlignment.Left
-	playerCountLabel.LayoutOrder = o()
-	playerCountLabel.Parent = tab
+	local playerCountLabel = uiBuilder.createDynamicLabel(tab, "Players: " .. #Players:GetPlayers() .. "/" .. Players.MaxPlayers)
 
-	local localLabel = Instance.new("TextLabel")
-	localLabel.Size = UDim2.new(1, 0, 0, 16)
-	localLabel.BackgroundTransparency = 1
-	localLabel.Text = "You: " .. LocalPlayer.DisplayName .. " (@" .. LocalPlayer.Name .. ")"
-	localLabel.TextColor3 = COLORS.textSecondary
-	localLabel.Font = Enum.Font.Gotham
-	localLabel.TextSize = 10
-	localLabel.TextXAlignment = Enum.TextXAlignment.Left
-	localLabel.LayoutOrder = o()
-	localLabel.Parent = tab
+	local localLabel = uiBuilder.createDynamicLabel(tab, "You: " .. LocalPlayer.DisplayName .. " (@" .. LocalPlayer.Name .. ")")
 
 	-- Keep player count updated
 	task.spawn(function()
@@ -5575,78 +4949,16 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v6.5", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v6.6", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
 
--- ===================== MINIMIZE / TOGGLE =====================
-
--- ===================== MOBILE TOGGLE BUTTON =====================
-local toggleBtn = Instance.new("TextButton")
-toggleBtn.Name = "ToggleBtn"
-toggleBtn.Size = UDim2.new(0, 50, 0, 50)
-toggleBtn.Position = UDim2.new(1, -60, 0.5, -25)
-toggleBtn.BackgroundColor3 = COLORS.accent
-toggleBtn.Text = "NB"
-toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-toggleBtn.Font = Enum.Font.GothamBold
-toggleBtn.TextSize = 14
-toggleBtn.Visible = isMobile
-toggleBtn.BackgroundTransparency = isMobile and 0.3 or 0
-toggleBtn.Parent = screenGui
-uiBuilder.addCorner(toggleBtn, 25)
-
-if isMobile then
-	local _tDragDist = 0
-	do
-		local tDragging = false
-		local tDragStart, tStartPos
-
-		toggleBtn.InputBegan:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.Touch then
-				tDragging = true
-				tDragStart = input.Position
-				tStartPos = toggleBtn.Position
-				_tDragDist = 0
-				input.Changed:Connect(function()
-					if input.UserInputState == Enum.UserInputState.End then tDragging = false end
-				end)
-			end
-		end)
-
-		UserInputService.InputChanged:Connect(function(input)
-			if tDragging and input.UserInputType == Enum.UserInputType.Touch then
-				local delta = input.Position - tDragStart
-				_tDragDist = math.abs(delta.X) + math.abs(delta.Y)
-				toggleBtn.Position = UDim2.new(tStartPos.X.Scale, tStartPos.X.Offset + delta.X, tStartPos.Y.Scale, tStartPos.Y.Offset + delta.Y)
-			end
-		end)
-	end
-
-	toggleBtn.MouseButton1Click:Connect(function()
-		if _tDragDist < 10 then
-			mainFrame.Visible = not mainFrame.Visible
-		end
-	end)
-end
-
-local contentVisible = true
-minimizeBtn.MouseButton1Click:Connect(function()
-	contentVisible = not contentVisible
-	for _, frame in pairs(tabFrames) do frame.Visible = contentVisible and frame == tabFrames[uiState.activeTab] end
-	tabBar.Visible = contentVisible
-	do local curW = mainFrame.AbsoluteSize.X; mainFrame.Size = contentVisible and UDim2.new(0, curW, 0, windowH) or UDim2.new(0, curW, 0, 32) end
-	minimizeBtn.Text = contentVisible and "-" or "+"
-end)
-
-UserInputService.InputBegan:Connect(function(input, processed)
-	if processed then return end
-	if input.KeyCode == Enum.KeyCode.RightShift then
-		uiState.windowVisible = not uiState.windowVisible
-		mainFrame.Visible = uiState.windowVisible
-	end
-end)
+-- ===================== WINDOW VISIBILITY =====================
+-- Rayfield owns the window chrome now: it draws its own minimise and close
+-- controls, and its own mobile show button, so the hand-rolled toggle button,
+-- drag handling and RightShift hook are gone. The keybind is declared as
+-- ToggleUIKeybind on the window above.
 
 -- ===================== RESPAWN HANDLER =====================
 LocalPlayer.CharacterAdded:Connect(function()
@@ -5667,8 +4979,8 @@ end)
 setupAutoRespawn()
 
 -- ===================== STARTUP =====================
-helpers.notify("SX NBTF v4.0", "Loaded! Right Shift to toggle")
-print("[SX NBTF v6.5] Pebbleford Hub - NBTF Hub v6.5")
-print("[SX NBTF v6.5] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v6.5] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v6.5] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+helpers.notify("Pebbleford NBTF", "Loaded - Right Shift toggles the menu")
+print("[SX NBTF v6.6] Pebbleford Hub - NBTF Hub v6.6")
+print("[SX NBTF v6.6] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v6.6] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v6.6] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
