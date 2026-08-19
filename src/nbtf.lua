@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v5.1
+-- Pebbleford Hub - NBTF Hub v5.2
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -130,14 +130,30 @@ end
 
 -- Sends a hit to the server's WeaponsSystem handler.
 --
--- Two things in the old payload stopped this from ever dealing damage:
---   * "h" was the Head part, but the kit treats h as the HUMANOID and calls
---     h:TakeDamage(). Handing it a BasePart made that call error out, so the
---     shot registered and did nothing.
---   * d and maxDist were both 0. Damage is scaled by distance falloff, so
---     0/0 produced a NaN multiplier and NaN damage.
--- Both now carry real values, and the position/normal describe the actual
--- geometry, since the server sanity-checks the hit against the part.
+-- A live dump of this game settled what was wrong. Each shot carries an
+-- incrementing id (weapon.nextShotId, observed at 20 on a fired MP5) and the
+-- client always raises WeaponFired before WeaponHit. The previous payload
+-- hard-coded sid = 2, so every hit referenced a shot the server had never
+-- been told about and was discarded. Each burst now takes a real id from the
+-- weapon object, announces it via WeaponFired, and only then reports the hit.
+--
+-- "h" is the Humanoid, not the Head part: the handler calls TakeDamage on it.
+local cachedWS = nil
+local function getWeaponsSystem()
+	if cachedWS then return cachedWS end
+	pcall(function()
+		local folder = game:GetService("ReplicatedStorage"):FindFirstChild("WeaponsSystem")
+		local mod = folder and folder:FindFirstChild("WeaponsSystem")
+		if mod and mod:IsA("ModuleScript") then cachedWS = require(mod) end
+	end)
+	return cachedWS
+end
+
+local WeaponFiredRemote = nil
+pcall(function()
+	WeaponFiredRemote = game:GetService("ReplicatedStorage").WeaponsSystem.Network.WeaponFired
+end)
+
 local function fireWeaponHit(targetPlayer, gun)
 	if not WeaponHitRemote then
 		pcall(function()
@@ -156,7 +172,15 @@ local function fireWeaponHit(targetPlayer, gun)
 	if not gun then return false end
 	helpers.equipGun(gun)
 
-	-- Real distance, clamped inside the weapon's range so falloff keeps damage.
+	-- The weapon object owns the shot counter the server expects.
+	local weapon = nil
+	local ws = getWeaponsSystem()
+	if ws and type(ws.getWeaponForInstance) == "function" then
+		local ok1, res = pcall(ws.getWeaponForInstance, gun)
+		if not ok1 then ok1, res = pcall(ws.getWeaponForInstance, ws, gun) end
+		if ok1 then weapon = res end
+	end
+
 	local myRoot = helpers.getRoot()
 	local origin = (myRoot and myRoot.Position) or head.Position
 	local maxDist = 9999
@@ -168,32 +192,53 @@ local function fireWeaponHit(targetPlayer, gun)
 	local dist = (head.Position - origin).Magnitude
 	if dist >= maxDist then dist = maxDist * 0.05 end
 
-	local normal = origin - head.Position
-	normal = normal.Magnitude > 0 and normal.Unit or Vector3.new(0, 1, 0)
+	local function nextShotId()
+		-- Keep the weapon's own counter moving so ids stay unique and in step
+		-- with what the game itself would send.
+		if weapon and type(weapon.nextShotId) == "number" then
+			local id = weapon.nextShotId
+			weapon.nextShotId = id + 1
+			return id
+		end
+		return math.random(1, 100000)
+	end
 
 	local function shoot()
-		local args = {
-			[1] = gun,
-			[2] = {
+		local shotId = nextShotId()
+		local dir = head.Position - origin
+		dir = dir.Magnitude > 0 and dir.Unit or Vector3.new(0, 0, -1)
+
+		-- Announce the shot first; a hit for an unknown shot is rejected.
+		if WeaponFiredRemote then
+			pcall(function()
+				WeaponFiredRemote:FireServer(gun, {
+					origin = origin,
+					dir = dir,
+					id = shotId,
+					t = tick(),
+				})
+			end)
+		end
+
+		return pcall(function()
+			WeaponHitRemote:FireServer(gun, {
 				["p"] = head.Position,
-				["pid"] = 1,
+				["pid"] = shotId,
 				["part"] = head,
 				["d"] = dist,
 				["maxDist"] = maxDist,
 				["h"] = humanoid,
 				["m"] = Enum.Material.Plastic,
-				["sid"] = 2,
-				["t"] = 0,
-				["n"] = normal,
-			}
-		}
-		return pcall(function() WeaponHitRemote:FireServer(unpack(args)) end)
+				["sid"] = shotId,
+				["t"] = tick(),
+				["n"] = (origin - head.Position).Unit,
+			})
+		end)
 	end
 
-	-- One hit is one bullet, which rarely kills. Keep firing until the target
-	-- actually dies rather than assuming a single shot was enough.
+	-- HitDamage is only 6-9 on these weapons, so a single hit never kills.
 	local ok = false
-	for _ = 1, 20 do
+	for _ = 1, 30 do
 		local fired, err = shoot()
 		if not fired then
 			warn("[SX NBTF] FireServer failed: " .. tostring(err))
@@ -2839,7 +2884,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "Pebbleford Hub - NBTF Hub v5.1"
+titleText.Text = "Pebbleford Hub - NBTF Hub v5.2"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 12
@@ -4816,7 +4861,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v5.1", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v5.2", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -4909,7 +4954,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("SX NBTF v4.0", "Loaded! Right Shift to toggle")
-print("[SX NBTF v5.1] Pebbleford Hub - NBTF Hub v5.1")
-print("[SX NBTF v5.1] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v5.1] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v5.1] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v5.2] Pebbleford Hub - NBTF Hub v5.2")
+print("[SX NBTF v5.2] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v5.2] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v5.2] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")

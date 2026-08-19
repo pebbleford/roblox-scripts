@@ -135,6 +135,24 @@ if type(wsModule) == "table" then
 			if ok and weapon then
 				found = found + 1
 				dumpWeaponTable("getWeaponForInstance(" .. tool.Name .. ")", weapon)
+				-- Methods live on the metatable, so a plain pairs() over the
+				-- object never lists them. These are the names needed to drive
+				-- the weapon through its own firing path.
+				pcall(function()
+					local mt = getmetatable(weapon)
+					if type(mt) == "table" then
+						out("    -- metatable of %s --", tool.Name)
+						for k, v in pairs(mt) do
+							out("      mt.%s = %s", tostring(k), type(v))
+						end
+						local idx = rawget(mt, "__index")
+						if type(idx) == "table" then
+							for k, v in pairs(idx) do
+								out("      __index.%s = %s", tostring(k), type(v))
+							end
+						end
+					end
+				end)
 				-- One level into nested tables, where ammo state often sits.
 				if type(weapon) == "table" then
 					for k, v in pairs(weapon) do
