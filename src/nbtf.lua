@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v6.0
+-- Pebbleford Hub - NBTF Hub v6.1
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -1844,9 +1844,16 @@ local function startWalkFling()
 		local root = character:FindFirstChild("HumanoidRootPart")
 		if not root then return end
 
-		-- Auto-noclip is deliberately NOT enabled here. With collision off the
-		-- character has nothing to stand on and sinks slowly through the floor,
-		-- which is what this did before. Noclip can still be toggled separately.
+		-- Noclip is required, not optional: without it you bump off a player
+		-- instead of overlapping them, and the spike never makes contact. It
+		-- was removed earlier because it sank the character through the floor,
+		-- but anti-sink now holds altitude, so it is safe to turn back on.
+		if not moveState.noclipActive then
+			moveState.noclipActive = true
+			moveState.noclipAntiSink = true
+			startNoclip()
+			moveState.walkFlingAutoNoclip = true
+		end
 
 		moveState.walkFlingActive = true
 		local movel = 0.1
@@ -1859,7 +1866,18 @@ local function startWalkFling()
 					RunService.Heartbeat:Wait()
 				else
 					local vel = rt.Velocity
-					rt.Velocity = Vector3.new(vel.X * 10000, vel.Y, vel.Z * 10000)
+					-- The spike is a multiplier, so standing still multiplies
+					-- zero and flings nothing. When barely moving, push along
+					-- the way the character faces instead so it still works.
+					local horiz = Vector3.new(vel.X, 0, vel.Z)
+					local spiked
+					if horiz.Magnitude < 1 then
+						local look = rt.CFrame.LookVector
+						spiked = Vector3.new(look.X * 9000, vel.Y, look.Z * 9000)
+					else
+						spiked = Vector3.new(vel.X * 10000, vel.Y, vel.Z * 10000)
+					end
+					rt.Velocity = spiked
 
 					RunService.RenderStepped:Wait()
 					if char and char.Parent and rt and rt.Parent then
@@ -3219,7 +3237,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "Pebbleford Hub - NBTF Hub v6.0"
+titleText.Text = "Pebbleford Hub - NBTF Hub v6.1"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 12
@@ -5240,7 +5258,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v6.0", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v6.1", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -5333,7 +5351,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("SX NBTF v4.0", "Loaded! Right Shift to toggle")
-print("[SX NBTF v6.0] Pebbleford Hub - NBTF Hub v6.0")
-print("[SX NBTF v6.0] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v6.0] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v6.0] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v6.1] Pebbleford Hub - NBTF Hub v6.1")
+print("[SX NBTF v6.1] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v6.1] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v6.1] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
