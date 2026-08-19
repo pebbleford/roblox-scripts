@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v6.7
+-- Pebbleford Hub - NBTF Hub v6.8
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -1068,7 +1068,15 @@ local function updateItemESP()
 						bb.Parent = obj
 						table.insert(espState.itemEspHighlights, bb)
 
-						local lbl = uiBuilder.createDynamicLabel(tab, obj.Name)
+						local lbl = Instance.new("TextLabel")
+						lbl.Text = obj.Name
+						lbl.TextColor3 = Color3.fromRGB(0, 255, 128)
+						lbl.TextStrokeTransparency = 0
+						lbl.TextSize = 11
+						lbl.Font = Enum.Font.GothamBold
+						lbl.BackgroundTransparency = 1
+						lbl.Size = UDim2.new(1, 0, 1, 0)
+						lbl.Parent = bb
 					end
 				end
 			end)
@@ -1472,7 +1480,15 @@ local function updateESP()
 					table.insert(espState.espHighlights, bb)
 
 					-- Name line
-					local lbl = uiBuilder.createDynamicLabel(tab, player.DisplayName .. " [" .. healthPct .. "%] " .. dist .. "m")
+					local lbl = Instance.new("TextLabel")
+					lbl.Text = player.DisplayName .. " [" .. healthPct .. "%] " .. dist .. "m"
+					lbl.TextColor3 = color
+					lbl.TextStrokeTransparency = 0
+					lbl.TextSize = 12
+					lbl.Font = Enum.Font.GothamBold
+					lbl.BackgroundTransparency = 1
+					lbl.Size = UDim2.new(1, 0, 0.3, 0)
+					lbl.Parent = bb
 
 					-- Role / Team line
 					local roleText = ""
@@ -1482,7 +1498,16 @@ local function updateESP()
 						roleText = teamName
 					end
 					if roleText ~= "" then
-						local roleLbl = uiBuilder.createDynamicLabel(tab, "[" .. roleText .. "]")
+						local roleLbl = Instance.new("TextLabel")
+						roleLbl.Text = "[" .. roleText .. "]"
+						roleLbl.TextColor3 = color
+						roleLbl.TextStrokeTransparency = 0
+						roleLbl.TextSize = 10
+						roleLbl.Font = Enum.Font.GothamBold
+						roleLbl.BackgroundTransparency = 1
+						roleLbl.Size = UDim2.new(1, 0, 0.2, 0)
+						roleLbl.Position = UDim2.new(0, 0, 0.3, 0)
+						roleLbl.Parent = bb
 					end
 
 					-- Health bar
@@ -1504,7 +1529,16 @@ local function updateESP()
 					-- Weapon label
 					local tool = char:FindFirstChildOfClass("Tool")
 					if tool then
-						local weaponLbl = uiBuilder.createDynamicLabel(tab, "[" .. tool.Name .. "]")
+						local weaponLbl = Instance.new("TextLabel")
+						weaponLbl.Text = "[" .. tool.Name .. "]"
+						weaponLbl.TextColor3 = COLORS.warning
+						weaponLbl.TextStrokeTransparency = 0
+						weaponLbl.TextSize = 10
+						weaponLbl.Font = Enum.Font.Gotham
+						weaponLbl.BackgroundTransparency = 1
+						weaponLbl.Size = UDim2.new(1, 0, 0.2, 0)
+						weaponLbl.Position = UDim2.new(0, 0, 0.65, 0)
+						weaponLbl.Parent = bb
 					end
 				end
 			end)
@@ -2317,16 +2351,54 @@ function actions.showCustomAnnouncement(text, protocol, duration)
 	stripeFix.Parent = stripe
 
 	-- Stripe text
-	local stripeText = uiBuilder.createDynamicLabel(tab, isRebel and "REBELLION PIRATE TRANSMISSION" or "NBTF STATIC ALERT SYSTEM")
+	local stripeText = Instance.new("TextLabel")
+	stripeText.Size = UDim2.new(1, -20, 1, 0)
+	stripeText.Position = UDim2.new(0, 10, 0, 0)
+	stripeText.BackgroundTransparency = 1
+	stripeText.Text = isRebel and "REBELLION PIRATE TRANSMISSION" or "NBTF STATIC ALERT SYSTEM"
+	stripeText.TextColor3 = Color3.fromRGB(255, 255, 255)
+	stripeText.Font = Enum.Font.GothamBold
+	stripeText.TextSize = 13
+	stripeText.TextXAlignment = Enum.TextXAlignment.Left
+	stripeText.Parent = stripe
 
 	-- Protocol label
-	local protoLabel = uiBuilder.createDynamicLabel(tab, protocolNames[protocol] or "ALERT")
+	local protoLabel = Instance.new("TextLabel")
+	protoLabel.Size = UDim2.new(1, -20, 0, 18)
+	protoLabel.Position = UDim2.new(0, 10, 0, 32)
+	protoLabel.BackgroundTransparency = 1
+	protoLabel.Text = protocolNames[protocol] or "ALERT"
+	protoLabel.TextColor3 = pColor
+	protoLabel.Font = Enum.Font.GothamBold
+	protoLabel.TextSize = 11
+	protoLabel.TextXAlignment = Enum.TextXAlignment.Left
+	protoLabel.Parent = container
 
 	-- Sender info
-	local senderLabel = uiBuilder.createDynamicLabel(tab, LocalPlayer.DisplayName .. (roleName ~= "" and (" - " .. roleName) or ""))
+	local senderLabel = Instance.new("TextLabel")
+	senderLabel.Size = UDim2.new(0.4, -10, 0, 14)
+	senderLabel.Position = UDim2.new(0, 10, 0, 52)
+	senderLabel.BackgroundTransparency = 1
+	senderLabel.Text = LocalPlayer.DisplayName .. (roleName ~= "" and (" - " .. roleName) or "")
+	senderLabel.TextColor3 = Color3.fromRGB(160, 170, 190)
+	senderLabel.Font = Enum.Font.Gotham
+	senderLabel.TextSize = 10
+	senderLabel.TextXAlignment = Enum.TextXAlignment.Left
+	senderLabel.Parent = container
 
 	-- Message text
-	local msgLabel = uiBuilder.createDynamicLabel(tab, text)
+	local msgLabel = Instance.new("TextLabel")
+	msgLabel.Size = UDim2.new(1, -20, 0, 42)
+	msgLabel.Position = UDim2.new(0, 10, 0, 70)
+	msgLabel.BackgroundTransparency = 1
+	msgLabel.Text = text
+	msgLabel.TextColor3 = Color3.fromRGB(230, 235, 245)
+	msgLabel.Font = Enum.Font.Gotham
+	msgLabel.TextSize = 14
+	msgLabel.TextWrapped = true
+	msgLabel.TextXAlignment = Enum.TextXAlignment.Left
+	msgLabel.TextYAlignment = Enum.TextYAlignment.Top
+	msgLabel.Parent = container
 
 	-- Slide in from top
 	container:TweenPosition(UDim2.new(0.25, 0, 0, 15), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.4, true)
@@ -3202,7 +3274,7 @@ do
 end
 
 local Window = Rayfield:CreateWindow({
-	Name = "Pebbleford Hub - NBTF Hub v6.7",
+	Name = "Pebbleford Hub - NBTF Hub v6.8",
 	LoadingTitle = "Pebbleford Hub",
 	LoadingSubtitle = "NBTF Hub",
 	ShowText = "NBTF",
@@ -3217,6 +3289,10 @@ local Window = Rayfield:CreateWindow({
 	},
 	KeySystem = false,
 })
+
+-- Declared here because the old declaration lived in the hand-built GUI that
+-- this replaced; without it the assignment below indexes a nil global.
+local tabFrames = {}
 
 -- Same tab names as before, so every build block below still finds its tab.
 for _, name in ipairs({"Aim", "Combat", "Movement", "Visuals", "Teleport", "Players", "Misc", "Settings"}) do
@@ -5027,7 +5103,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v6.7", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v6.8", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -5058,7 +5134,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("Pebbleford NBTF", "Loaded - Right Shift toggles the menu")
-print("[SX NBTF v6.7] Pebbleford Hub - NBTF Hub v6.7")
-print("[SX NBTF v6.7] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v6.7] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v6.7] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v6.8] Pebbleford Hub - NBTF Hub v6.8")
+print("[SX NBTF v6.8] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v6.8] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v6.8] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
