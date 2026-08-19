@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v6.6
+-- Pebbleford Hub - NBTF Hub v6.7
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -169,6 +169,55 @@ end)
 --   "fire"             - activates the tool but leaves the camera alone.
 --   "aim"              - activates and points the camera at the target, so
 --                        the game's own raycast resolves onto them.
+-- ===================== AIM RAY REDIRECT =====================
+-- This is what actually makes shots land on a chosen player, and it is the
+-- mechanism every previous attempt was missing. The WeaponsSystem module
+-- exposes aimRayCallback, which the kit calls to decide where a shot is
+-- pointed. Overriding it redirects the bullet itself, so the game fires
+-- normally and its own hit detection reports the target -- no forged payload
+-- for the server to reject, and it passes through walls because the ray is
+-- simply pointed at them.
+--
+-- The kit's exact signature is not published, so rather than guess, the
+-- original callback is called first and whatever it returns is reshaped. If
+-- it hands back a Ray, a Ray with the same origin and length is returned
+-- pointing at the target; anything else is passed through untouched.
+local aimRedirectTarget = nil
+local aimRedirectInstalled = false
+
+local function installAimRedirect()
+	if aimRedirectInstalled then return end
+	local ws = getWeaponsSystem()
+	if type(ws) ~= "table" then return end
+	local original = rawget(ws, "aimRayCallback")
+
+	local ok = pcall(function()
+		ws.aimRayCallback = function(...)
+			local result
+			if type(original) == "function" then
+				local callOk, res = pcall(original, ...)
+				if callOk then result = res end
+			end
+			if not aimRedirectTarget then return result end
+
+			local char = aimRedirectTarget.Character
+			local head = char and (char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart"))
+			if not head then return result end
+
+			if typeof(result) == "Ray" then
+				local origin = result.Origin
+				local length = result.Direction.Magnitude
+				if length <= 0 then length = 500 end
+				local dir = head.Position - origin
+				if dir.Magnitude <= 0 then return result end
+				return Ray.new(origin, dir.Unit * length)
+			end
+			return result
+		end
+	end)
+	aimRedirectInstalled = ok
+end
+
 local function fireWeaponHit(targetPlayer, gun, mode)
 	mode = mode or "silent"
 	if not WeaponHitRemote then
@@ -270,6 +319,11 @@ local function fireWeaponHit(targetPlayer, gun, mode)
 		return activated or sent
 	end
 
+	-- Aim every shot at this target for the duration of the burst, then clear
+	-- it so the player's own aiming is handed straight back.
+	installAimRedirect()
+	aimRedirectTarget = targetPlayer
+
 	-- HitDamage is only 6-9 on these weapons, so one hit never kills. Respect
 	-- ShotCooldown: firing faster than the weapon allows is simply ignored.
 	local cooldown = 0.12
@@ -286,6 +340,7 @@ local function fireWeaponHit(targetPlayer, gun, mode)
 		if humanoid.Health <= 0 then break end
 		if shots > 1 then task.wait(cooldown) end
 	end
+	aimRedirectTarget = nil
 	return ok
 end
 
@@ -1212,6 +1267,13 @@ local function disableNoFog()
 	end)
 end
 
+-- Holds the redirect on a target while a passive feature is engaged, so the
+-- player's own shots are the ones being steered.
+local function setAimRedirect(player)
+	installAimRedirect()
+	aimRedirectTarget = player
+end
+
 -- ===================== SILENT AIM =====================
 -- Hooks workspace raycast methods to redirect bullets to target
 -- This is the core "teleport bullets" / "shoot through walls" mechanic
@@ -1235,9 +1297,20 @@ local function enableSilentAim()
 
 	-- Stealth silent aim: only fires ONE extra WeaponHit per cooldown period
 	-- Looks like a normal shot that just happens to hit the head
+	installAimRedirect()
 	aimState.silentAimConnection = RunService.Heartbeat:Connect(function()
 		if not aimState.silentAimActive then return end
 		pcall(function()
+			-- Keep the aim ray locked on the nearest enemy the whole time the
+			-- feature is on, so the player's own shots are what gets steered.
+			local lockTarget = helpers.getClosestPlayerInFOV() or helpers.getClosestPlayer3D()
+			if lockTarget then
+				local lockPlayer = Players:GetPlayerFromCharacter(lockTarget.Parent)
+				if lockPlayer and helpers.isEnemy(lockPlayer) then
+					setAimRedirect(lockPlayer)
+				end
+			end
+
 			if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then return end
 
 			-- Cooldown to avoid spam detection
@@ -1267,6 +1340,7 @@ local function enableSilentAim()
 end
 
 local function disableSilentAim()
+	aimRedirectTarget = nil
 	aimState.silentAimActive = false
 	if aimState.silentAimConnection then aimState.silentAimConnection:Disconnect() aimState.silentAimConnection = nil end
 	helpers.notify("Silent Aim", "Disabled")
@@ -1296,6 +1370,9 @@ local function enableWallbang()
 			local targetPlayer = Players:GetPlayerFromCharacter(target.Parent)
 			if not targetPlayer then return end
 
+			-- Redirect first: the shot the player is already taking is the one
+			-- that should land, which is what makes this work through walls.
+			setAimRedirect(targetPlayer)
 			fireWeaponHit(targetPlayer, equippedGun, "silent")
 			aimState.lastWallbangFire = now
 		end)
@@ -1304,6 +1381,7 @@ local function enableWallbang()
 end
 
 local function disableWallbang()
+	aimRedirectTarget = nil
 	aimState.wallbangActive = false
 	if aimState.wallbangConnection then aimState.wallbangConnection:Disconnect() aimState.wallbangConnection = nil end
 	helpers.notify("Wallbang", "Disabled")
@@ -3124,7 +3202,7 @@ do
 end
 
 local Window = Rayfield:CreateWindow({
-	Name = "Pebbleford Hub - NBTF Hub v6.6",
+	Name = "Pebbleford Hub - NBTF Hub v6.7",
 	LoadingTitle = "Pebbleford Hub",
 	LoadingSubtitle = "NBTF Hub",
 	ShowText = "NBTF",
@@ -4949,7 +5027,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v6.6", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v6.7", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -4980,7 +5058,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("Pebbleford NBTF", "Loaded - Right Shift toggles the menu")
-print("[SX NBTF v6.6] Pebbleford Hub - NBTF Hub v6.6")
-print("[SX NBTF v6.6] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v6.6] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v6.6] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v6.7] Pebbleford Hub - NBTF Hub v6.7")
+print("[SX NBTF v6.7] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v6.7] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v6.7] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
