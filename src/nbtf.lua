@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v5.9
+-- Pebbleford Hub - NBTF Hub v6.0
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -400,6 +400,8 @@ local moveState = {
 	speedBV = nil,
 	speedConnection = nil,
 	godModeConnection = nil,
+	godHealthConnection = nil,
+	godRespawnConnection = nil,
 	bunnyHopConnection = nil,
 	vehicleFlyConnection = nil,
 	vehicleFlyBV = nil,
@@ -1589,26 +1591,64 @@ local function stopHitboxExpand()
 end
 
 -- ===================== GOD MODE =====================
+-- Healing only on Heartbeat leaves a whole frame between the hit landing and
+-- the heal, which is long enough to die outright from a large hit. HealthChanged
+-- fires the moment damage is applied, so the restore happens before the death
+-- can process; the Heartbeat loop stays on as a backstop.
+--
+-- MaxHealth is raised too. Restoring to MaxHealth alone leaves you on whatever
+-- the game set as the cap, so a single shot bigger than that cap still kills.
+local function applyGodMode(hum)
+	if not hum then return end
+	pcall(function()
+		hum.MaxHealth = math.huge
+		hum.Health = math.huge
+		hum:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+		hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+		hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+	end)
+end
+
+local function hookGodMode(hum)
+	if not hum then return end
+	applyGodMode(hum)
+	if moveState.godHealthConnection then
+		moveState.godHealthConnection:Disconnect()
+	end
+	moveState.godHealthConnection = hum.HealthChanged:Connect(function()
+		if moveState.godModeActive then applyGodMode(hum) end
+	end)
+end
+
 local function startGodMode()
+	hookGodMode(helpers.getHumanoid())
+
+	-- The Humanoid is a new instance after every respawn, so the old hook dies
+	-- with the old character and has to be re-established.
+	if moveState.godRespawnConnection then
+		moveState.godRespawnConnection:Disconnect()
+	end
+	moveState.godRespawnConnection = LocalPlayer.CharacterAdded:Connect(function(char)
+		local hum = char:WaitForChild("Humanoid", 5)
+		if hum and moveState.godModeActive then hookGodMode(hum) end
+	end)
+
 	moveState.godModeConnection = RunService.Heartbeat:Connect(function()
-		pcall(function()
-			local hum = helpers.getHumanoid()
-			if hum then
-				hum.Health = hum.MaxHealth
-				hum:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
-				hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-				hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
-			end
-		end)
+		applyGodMode(helpers.getHumanoid())
 	end)
 	helpers.notify("God Mode", "Invincible!")
 end
 
 local function stopGodMode()
 	if moveState.godModeConnection then moveState.godModeConnection:Disconnect() moveState.godModeConnection = nil end
+	if moveState.godHealthConnection then moveState.godHealthConnection:Disconnect() moveState.godHealthConnection = nil end
+	if moveState.godRespawnConnection then moveState.godRespawnConnection:Disconnect() moveState.godRespawnConnection = nil end
 	pcall(function()
 		local hum = helpers.getHumanoid()
 		if hum then
+			-- math.huge MaxHealth would otherwise persist after switching off.
+			hum.MaxHealth = 100
+			hum.Health = 100
 			hum:SetStateEnabled(Enum.HumanoidStateType.Dead, true)
 			hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
 			hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
@@ -3179,7 +3219,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "Pebbleford Hub - NBTF Hub v5.9"
+titleText.Text = "Pebbleford Hub - NBTF Hub v6.0"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 12
@@ -5200,7 +5240,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v5.9", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v6.0", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -5293,7 +5333,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("SX NBTF v4.0", "Loaded! Right Shift to toggle")
-print("[SX NBTF v5.9] Pebbleford Hub - NBTF Hub v5.9")
-print("[SX NBTF v5.9] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v5.9] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v5.9] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v6.0] Pebbleford Hub - NBTF Hub v6.0")
+print("[SX NBTF v6.0] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v6.0] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v6.0] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
