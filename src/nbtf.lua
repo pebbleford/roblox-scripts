@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v7.0
+-- Pebbleford Hub - NBTF Hub v7.1
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -291,7 +291,11 @@ local function fireWeaponHit(targetPlayer, gun, mode)
 		-- Let the game fire for real.
 		local activated = false
 		if mode == "aim" or mode == "fire" then
+			-- Activate is the trigger going down, and it has to be released.
+			-- Without the matching Deactivate an automatic weapon simply holds
+			-- the trigger and never stops firing.
 			activated = pcall(function() gun:Activate() end)
+			pcall(function() gun:Deactivate() end)
 		end
 
 		if WeaponFiredRemote then
@@ -333,13 +337,18 @@ local function fireWeaponHit(targetPlayer, gun, mode)
 		if sc and tonumber(sc.Value) and sc.Value > 0 then cooldown = sc.Value end
 	end)
 
+	-- Passive helpers are called every frame already, so they fire a single
+	-- shot per call; only a deliberate kill fires a burst, and that burst is
+	-- bounded so it cannot turn into endless fire when a target will not die.
+	local shots = (mode == "aim") and 10 or 1
 	local ok = false
-	local shots = (mode == "silent") and 1 or 30
 	for _ = 1, shots do
 		if shoot() then ok = true end
 		if humanoid.Health <= 0 then break end
 		if shots > 1 then task.wait(cooldown) end
 	end
+	-- Release the trigger and hand aiming back to the player.
+	pcall(function() gun:Deactivate() end)
 	aimRedirectTarget = nil
 	return ok
 end
@@ -3268,7 +3277,7 @@ end
 
 local Window = WindUI:CreateWindow({
 	Title = "Pebbleford Hub - NBTF",
-	Author = "NBTF Hub v7.0",
+	Author = "NBTF Hub v7.1",
 	Folder = "PebblefordHub",
 	Size = UDim2.fromOffset(580, 460),
 	HideSearchBar = false,
@@ -5086,7 +5095,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v7.0", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v7.1", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -5117,7 +5126,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("Pebbleford NBTF", "Loaded - Right Shift toggles the menu")
-print("[SX NBTF v7.0] Pebbleford Hub - NBTF Hub v7.0")
-print("[SX NBTF v7.0] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v7.0] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v7.0] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v7.1] Pebbleford Hub - NBTF Hub v7.1")
+print("[SX NBTF v7.1] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v7.1] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v7.1] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
