@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v6.3
+-- Pebbleford Hub - NBTF Hub v6.4
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -423,7 +423,6 @@ local moveState = {
 	backseatBG = nil,
 	backseatDriveSpeed = 80,
 	backseatDriveTurn = 3,
-	carFlingRam = nil,
 	walkFlingActive = false,
 	walkFlingAutoNoclip = false,
 	instantReloadConnection = nil,
@@ -2688,21 +2687,20 @@ local function stopCarSpeed()
 end
 
 -- ===================== CAR FLING =====================
--- SAFE MODE. This must never move the driver, so it never applies force to
--- anything the driver is attached to.
+-- Velocity-spike fling applied to the vehicle, using the same spike-and-
+-- restore cycle as Walk Fling.
 --
--- History, so this is not re-broken: sitting welds the character into the
--- SAME physics assembly as the car, and an assembly has one velocity. Spin,
--- velocity spikes and density therefore all reached the driver. Moving the
--- force onto a separate collidable block was worse still -- it spawned
--- overlapping the car and Roblox resolved the interpenetration by launching
--- the car and driver skyward.
+-- This works here for a reason specific to NBTF: players do not collide with
+-- each other, which is why walk fling can never launch anyone in this game,
+-- but they DO collide with vehicles. The car is therefore the only body that
+-- can actually strike a player, which makes it the right tool rather than the
+-- awkward one.
 --
--- So the ram block is now non-collidable: it cannot push the car under any
--- circumstance. It only reports what it overlaps, and the fling is applied
--- to that target directly. Note this only moves targets whose physics this
--- client owns (loose props, and players whose ownership has been handed
--- over); characters held by the server will not move.
+-- The spike is a multiplier of the velocity the vehicle already has, and it is
+-- restored on the very next frame. The car nets almost no movement, so the
+-- driver is not thrown, but the collision the server resolves during the
+-- spiked frame is against a body travelling absurdly fast. Y is left alone
+-- throughout; touching it is what fired the car and driver skyward before.
 local function startCarFling()
 	local ok, err = pcall(function()
 		local _, vPart = actions.getVehicle()
@@ -2711,66 +2709,51 @@ local function startCarFling()
 			return
 		end
 
-		local ram = Instance.new("Part")
-		ram.Name = "NBTF_CarFlingRam"
-		ram.Size = Vector3.new(12, 6, 6)
-		ram.Transparency = 1
-		-- Non-collidable and massless: physically inert, so it cannot shove
-		-- the car no matter where it ends up.
-		ram.CanCollide = false
-		ram.Massless = true
-		ram.CanQuery = false
-		ram.Anchored = true
-		-- Spawned ahead of the car, never on top of it.
-		ram.CFrame = vPart.CFrame * CFrame.new(0, 0, -12)
-		ram.Parent = workspace
-		moveState.carFlingRam = ram
 		moveState.carFlingLoopActive = true
-
-		ram.Touched:Connect(function(hit)
-			if not moveState.carFlingLoopActive then return end
-			if not hit or not hit:IsA("BasePart") or hit.Anchored then return end
-
-			local char = LocalPlayer.Character
-			if char and hit:IsDescendantOf(char) then return end
-			-- Never touch our own vehicle.
-			local _, myPart = actions.getVehicle()
-			if myPart and hit:IsDescendantOf(myPart.Parent) then return end
-
-			local dir = hit.Position - ram.Position
-			dir = dir.Magnitude > 0.01 and dir.Unit or ram.CFrame.LookVector
-			local power = moveState.carFlingPower / 100
-			pcall(function()
-				hit.AssemblyLinearVelocity =
-					Vector3.new(dir.X * power, power * 0.5, dir.Z * power)
-			end)
-		end)
+		local movel = 0.1
 
 		task.spawn(function()
 			while moveState.carFlingLoopActive do
 				local _, part = actions.getVehicle()
-				if part and part.Parent and ram.Parent then
-					-- Anchored + CFrame each frame: it is carried along without
-					-- ever participating in the physics solver.
-					pcall(function()
-						ram.CFrame = part.CFrame * CFrame.new(0, 0, -12)
-					end)
+				if not part or not part.Parent then
+					RunService.Heartbeat:Wait()
+				else
+					local vel = part.Velocity
+					-- Multiplier, not a fixed push: parked means zero times the
+					-- multiplier, so nothing happens and the driver stays put.
+					-- You have to actually drive into someone.
+					part.Velocity = Vector3.new(vel.X * 10000, vel.Y, vel.Z * 10000)
+
+					RunService.RenderStepped:Wait()
+					if part and part.Parent then
+						part.Velocity = vel
+					end
+
+					RunService.Stepped:Wait()
+					if part and part.Parent then
+						part.Velocity = vel + Vector3.new(0, movel, 0)
+						movel = movel * -1
+					end
 				end
-				RunService.Heartbeat:Wait()
 			end
 		end)
 
-		helpers.notify("Car Fling", "ON - drive into stuff!")
+		helpers.notify("Car Fling", "ON - drive into people!")
 	end)
 	if not ok then helpers.notify("Car Fling", "Error: " .. tostring(err)) end
 end
 
 local function stopCarFling()
 	moveState.carFlingLoopActive = false
-	if moveState.carFlingRam then
-		pcall(function() moveState.carFlingRam:Destroy() end)
-		moveState.carFlingRam = nil
-	end
+	-- Clear any spike left behind if the loop stopped between spiking and
+	-- restoring, or the vehicle coasts away at ten thousand times its speed.
+	pcall(function()
+		local _, part = actions.getVehicle()
+		if part and part.Parent then
+			local v = part.Velocity
+			part.Velocity = Vector3.new(0, v.Y, 0)
+		end
+	end)
 	helpers.notify("Car Fling", "OFF")
 end
 
@@ -3264,7 +3247,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "Pebbleford Hub - NBTF Hub v6.3"
+titleText.Text = "Pebbleford Hub - NBTF Hub v6.4"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 12
@@ -4274,8 +4257,8 @@ do
 		moveState.walkFlingActive = on
 		if on then startWalkFling() else stopWalkFling() end
 	end)
-	uiBuilder.createInfoLabel(tab, "Walk into players to launch them. Enables noclip.", o())
-	uiBuilder.createInfoLabel(tab, "Launches loose objects you drive into. Cannot move your car.", o())
+	uiBuilder.createInfoLabel(tab, "NBTF has no player-to-player collision, so this cannot fling here. Use Car Fling.", o())
+	uiBuilder.createInfoLabel(tab, "Drive into people to launch them. Must be moving.", o())
 
 	uiBuilder.createSpacer(tab, o())
 
@@ -5285,7 +5268,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v6.3", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v6.4", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -5378,7 +5361,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("SX NBTF v4.0", "Loaded! Right Shift to toggle")
-print("[SX NBTF v6.3] Pebbleford Hub - NBTF Hub v6.3")
-print("[SX NBTF v6.3] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v6.3] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v6.3] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v6.4] Pebbleford Hub - NBTF Hub v6.4")
+print("[SX NBTF v6.4] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v6.4] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v6.4] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
