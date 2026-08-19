@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v5.0
+-- Pebbleford Hub - NBTF Hub v5.1
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -61,7 +61,9 @@ local NBTF_GUNS = {
 
 -- NBTF weapon config values
 local NBTF_ZERO_VALUES = {"RecoilDecay", "RecoilMax", "RecoilMin", "ShotCooldown", "TotalRecoilMax", "MaxSpread", "MinSpread"}
-local NBTF_MAX_VALUES = {"AmmoCapacity", "AmmoReserves", "FullMagazineSize", "HitDamage", "MaxDistance"}
+-- AmmoCapacity and FullMagazineSize are deliberately excluded: inflating them
+-- corrupted the ammo readout. The magazine is kept full by writing CurrentAmmo.
+local NBTF_MAX_VALUES = {"AmmoReserves", "HitDamage", "MaxDistance"}
 
 local helpers = {}
 local actions = {}
@@ -270,7 +272,6 @@ combatState = {
 	noRecoilConnection = nil,
 	hitboxConnection = nil,
 	ammoConnection = nil,
-	ammoUseGC = false,
 	killAllDelay = 0.3,
 }
 
@@ -1399,140 +1400,64 @@ function actions.modGuns()
 	end)
 end
 
--- The WeaponsSystem kit keeps the live magazine count inside its client-side
--- weapon objects, not in the Configuration values. Configuration is only read
--- when a weapon initialises, so maxing it afterwards does nothing to the
--- current clip, and client writes to those Value objects never replicate.
--- Reaching the weapon objects themselves is what actually refills ammo.
-local AMMO_FIELDS = {
-	"ammoInWeapon", "ammoInReserve", "currentAmmo", "totalAmmo",
-	"ammo", "clipAmmo", "magazineAmmo",
-}
--- Deliberately modest. A huge value overflowed or was clamped by the kit,
--- which is why the HUD read zero while a reload restored the real count.
-local AMMO_BIG = 999
+-- Ammo in this game lives in two loose IntValues parented directly to the
+-- Tool -- CurrentAmmo (the magazine) and AmmoReserves -- not in Configuration
+-- and not in any Lua weapon table. Confirmed by dumping a live session:
+--   XM1014.CurrentAmmo = 5,  AmmoReserves = 999,  Configuration.AmmoCapacity = 5
+--   MP5.CurrentAmmo    = 30, AmmoReserves = 999,  Configuration.AmmoCapacity = 30
+--
+-- CurrentAmmo is topped back up to the weapon's real AmmoCapacity rather than
+-- to a huge number: AmmoCapacity is only 5 on the shotgun, and inflating it is
+-- what made the HUD read zero while a reload restored the true count.
+local function refillToolAmmo(tool)
+	if not tool or not tool:IsA("Tool") then return 0 end
+	local wrote = 0
+	local current = tool:FindFirstChild("CurrentAmmo")
+	local reserves = tool:FindFirstChild("AmmoReserves")
+	local config = tool:FindFirstChild("Configuration")
+	local capacity = config and config:FindFirstChild("AmmoCapacity")
 
-local cachedWeaponsSystem = nil
-local function getWeaponsSystem()
-	if cachedWeaponsSystem then return cachedWeaponsSystem end
-	pcall(function()
-		local ws = game:GetService("ReplicatedStorage"):FindFirstChild("WeaponsSystem")
-		if not ws then return end
-		local mod = ws:FindFirstChild("WeaponsSystem")
-		if mod and mod:IsA("ModuleScript") then
-			-- ModuleScripts are cached per environment, so this returns the same
-			-- live table the game's own client scripts are using.
-			cachedWeaponsSystem = require(mod)
-		end
-	end)
-	return cachedWeaponsSystem
-end
-
--- Refill every weapon object the kit is tracking. Returns how many fields
--- were written, so a failure can be told apart from "found nothing".
-local function refillWeaponObjects()
-	local written = 0
-	local ws = getWeaponsSystem()
-	if type(ws) ~= "table" then return 0 end
-	local weapons = rawget(ws, "weapons")
-	if type(weapons) ~= "table" then return 0 end
-
-	for _, weapon in pairs(weapons) do
-		if type(weapon) == "table" then
-			for _, field in ipairs(AMMO_FIELDS) do
-				if type(rawget(weapon, field)) == "number" then
-					pcall(function() weapon[field] = AMMO_BIG end)
-					written = written + 1
-				end
-			end
-			pcall(function()
-				if type(weapon.setAmmoInWeapon) == "function" then
-					weapon:setAmmoInWeapon(AMMO_BIG)
-					written = written + 1
-				end
-			end)
-		end
+	if current and capacity and current.Value < capacity.Value then
+		pcall(function() current.Value = capacity.Value end)
+		wrote = wrote + 1
 	end
-	return written
+	if reserves and reserves.Value < 900 then
+		pcall(function() reserves.Value = 999 end)
+		wrote = wrote + 1
+	end
+	return wrote
 end
 
--- Fallback for when the module cannot be required (renamed, or the kit was
--- rebuilt): sweep the garbage collector for the weapon tables directly.
--- getgc is expensive, so this only runs when the module route finds nothing.
-local function refillViaGC()
-	if type(getgc) ~= "function" then return 0 end
-	local written = 0
+local function refillAllAmmo()
+	local wrote = 0
 	pcall(function()
-		for _, obj in pairs(getgc(true)) do
-			if type(obj) == "table" and type(rawget(obj, "ammoInWeapon")) == "number" then
-				pcall(function() obj.ammoInWeapon = AMMO_BIG end)
-				written = written + 1
+		local char = LocalPlayer.Character
+		if char then
+			for _, tool in ipairs(char:GetChildren()) do wrote = wrote + refillToolAmmo(tool) end
+		end
+		if LocalPlayer:FindFirstChild("Backpack") then
+			for _, tool in ipairs(LocalPlayer.Backpack:GetChildren()) do
+				wrote = wrote + refillToolAmmo(tool)
 			end
 		end
 	end)
-	return written
+	return wrote
 end
 
 local function startInfAmmo()
-	-- Configuration maxing still runs: it is what raises damage/range, and it
-	-- does set the clip size for weapons equipped after this point.
+	-- Damage and range still come from Configuration, which is read per shot.
 	actions.modGuns()
-
-	local written = refillWeaponObjects()
-	if written == 0 then
-		written = refillViaGC()
-		if written > 0 then
-			combatState.ammoUseGC = true
-		end
-	end
+	refillAllAmmo()
 
 	combatState.ammoConnection = RunService.Heartbeat:Connect(function()
-		pcall(function()
-			-- Refill the live weapon objects every frame; the kit decrements
-			-- them on each shot, so a one-shot write runs out immediately.
-			refillWeaponObjects()
-
-			local char = LocalPlayer.Character
-			if not char then return end
-			for _, tool in ipairs(char:GetChildren()) do
-				if tool:IsA("Tool") then
-					local config = tool:FindFirstChild("Configuration")
-					if config then
-						for _, val in ipairs(config:GetChildren()) do
-							for _, maxName in ipairs(NBTF_MAX_VALUES) do
-								if val.Name == maxName and val.Value < 9999 then val.Value = AMMO_BIG end
-							end
-						end
-					end
-				end
-			end
-		end)
+		refillAllAmmo()
 	end)
 
-	-- The GC sweep is too slow for a per-frame loop, so when that is the only
-	-- route that works it runs on a slower timer instead.
-	if combatState.ammoUseGC then
-		task.spawn(function()
-			while combatState.ammoConnection do
-				refillViaGC()
-				task.wait(1)
-			end
-		end)
-	end
-
-	if written > 0 then
-		helpers.notify("Ammo", "Unlimited ammo active (" .. written .. " fields)")
-	else
-		-- Be explicit rather than silently claiming success: the config values
-		-- are maxed but no live weapon object was reachable.
-		helpers.notify("Ammo", "Config maxed, but no live weapon found - equip a gun and retoggle")
-	end
+	helpers.notify("Ammo", "Unlimited ammo active")
 end
 
 local function stopInfAmmo()
 	if combatState.ammoConnection then combatState.ammoConnection:Disconnect() combatState.ammoConnection = nil end
-	-- Clears the flag and stops the slow GC loop, which watches ammoConnection.
-	combatState.ammoUseGC = false
 end
 
 -- ===================== HITBOX EXPANDER =====================
@@ -1805,10 +1730,11 @@ end
 -- Zeroes the reload timing the kit reads from each weapon's Configuration.
 -- These are read per reload rather than once at init, so unlike the ammo
 -- counts this does take effect on already-equipped weapons.
-local RELOAD_ZERO_VALUES = {
-	"ReloadTime", "ReloadTimeMultiplier", "TacticalReloadTime",
-	"ShotCooldown", "EquipSpeed", "DequipSpeed",
-}
+-- A live dump showed these weapons carry no ReloadTime value at all, so the
+-- earlier list of reload timings was zeroing fields that do not exist.
+-- ShotCooldown is the only timing present, and the reload itself is made
+-- instant by refilling CurrentAmmo the moment it drops.
+local RELOAD_ZERO_VALUES = {"ShotCooldown"}
 
 local function applyInstantReload()
 	local function zeroTool(tool)
@@ -1836,6 +1762,9 @@ local function startInstantReload()
 	applyInstantReload()
 	moveState.instantReloadConnection = RunService.Heartbeat:Connect(function()
 		applyInstantReload()
+		-- Refilling the magazine as it empties is what actually removes the
+		-- reload, since there is no reload duration to zero out.
+		refillAllAmmo()
 	end)
 	helpers.notify("Instant Reload", "ON")
 end
@@ -2910,7 +2839,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "Pebbleford Hub - NBTF Hub v5.0"
+titleText.Text = "Pebbleford Hub - NBTF Hub v5.1"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 12
@@ -4887,7 +4816,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v5.0", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v5.1", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -4980,7 +4909,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("SX NBTF v4.0", "Loaded! Right Shift to toggle")
-print("[SX NBTF v5.0] Pebbleford Hub - NBTF Hub v5.0")
-print("[SX NBTF v5.0] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v5.0] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v5.0] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v5.1] Pebbleford Hub - NBTF Hub v5.1")
+print("[SX NBTF v5.1] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v5.1] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v5.1] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")

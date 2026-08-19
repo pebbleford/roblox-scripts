@@ -101,37 +101,59 @@ end
 
 local found = 0
 if type(wsModule) == "table" then
-	local weapons = rawget(wsModule, "weapons")
-	if type(weapons) == "table" then
-		for key, weapon in pairs(weapons) do
+	-- This build exposes knownWeapons (not "weapons") plus a lookup function,
+	-- so try both routes to reach a live weapon object.
+	local known = rawget(wsModule, "knownWeapons")
+	out("  knownWeapons type: %s", type(known))
+	if type(known) == "table" then
+		for key, weapon in pairs(known) do
 			found = found + 1
-			dumpWeaponTable("weapons[" .. tostring(key) .. "]", weapon)
+			dumpWeaponTable("knownWeapons[" .. tostring(key) .. "]", weapon)
 		end
-	else
-		out("  wsModule.weapons is %s, not a table", type(weapons))
 	end
-end
-if found == 0 then
-	out("  none via the module; trying getgc")
-	if type(getgc) == "function" then
-		local hits = 0
-		pcall(function()
-			for _, obj in pairs(getgc(true)) do
-				if type(obj) == "table" and hits < 4 then
-					-- Anything carrying an ammo-ish key is likely a weapon object.
-					for _, probe in ipairs({"ammoInWeapon", "ammoInReserve", "currentAmmo", "ammo"}) do
-						if rawget(obj, probe) ~= nil then
-							hits = hits + 1
-							dumpWeaponTable("gc table #" .. hits, obj)
-							break
+
+	-- Remote/function registries, to confirm exact names and signatures.
+	for _, regName in ipairs({"remoteEvents", "remoteFunctions"}) do
+		local reg = rawget(wsModule, regName)
+		if type(reg) == "table" then
+			out("  %s:", regName)
+			for k, v in pairs(reg) do
+				out("      %s = %s", tostring(k), tostring(v))
+			end
+		end
+	end
+
+	-- Resolve the weapon object for each carried tool.
+	local getFor = rawget(wsModule, "getWeaponForInstance")
+	if type(getFor) == "function" then
+		local function tryTool(tool)
+			if not tool:IsA("Tool") then return end
+			local ok, weapon = pcall(getFor, tool)
+			if not ok then
+				ok, weapon = pcall(getFor, wsModule, tool)
+			end
+			if ok and weapon then
+				found = found + 1
+				dumpWeaponTable("getWeaponForInstance(" .. tool.Name .. ")", weapon)
+				-- One level into nested tables, where ammo state often sits.
+				if type(weapon) == "table" then
+					for k, v in pairs(weapon) do
+						if type(v) == "table" then
+							dumpWeaponTable("    " .. tool.Name .. "." .. tostring(k), v)
 						end
 					end
 				end
+			else
+				out("  getWeaponForInstance(%s) -> %s", tool.Name, tostring(weapon))
 			end
-		end)
-		out("  getgc matches: %d", hits)
-	else
-		out("  getgc unavailable in this executor")
+		end
+		local ch0 = LocalPlayer.Character
+		if ch0 then
+			for _, t in ipairs(ch0:GetChildren()) do tryTool(t) end
+		end
+		if LocalPlayer:FindFirstChild("Backpack") then
+			for _, t in ipairs(LocalPlayer.Backpack:GetChildren()) do tryTool(t) end
+		end
 	end
 end
 
