@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v5.5
+-- Pebbleford Hub - NBTF Hub v5.6
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -410,6 +410,9 @@ local moveState = {
 	carFlingActive = false,
 	carFlingPower = 20000,
 	carFlingLoopActive = false,
+	carNoclipActive = false,
+	carNoclipConnection = nil,
+	carNoclipOrig = {},
 	backseatDriveActive = false,
 	backseatDriveConnection = nil,
 	backseatDriveSpeed = 80,
@@ -2307,6 +2310,47 @@ end
 -- and Torque so the engine itself pushes harder; for plain Seats (planes,
 -- boats, custom rigs) we push the primary part forward each frame until it
 -- reaches the target speed.
+-- ===================== VEHICLE NOCLIP =====================
+-- Turns off collision on the vehicle (and the driver, who is welded into the
+-- same assembly) so it can be driven through walls.
+--
+-- Originals are recorded and restored rather than forcing everything back to
+-- CanCollide = true on the way out: plenty of vehicle parts are deliberately
+-- non-collidable, and blanket-restoring them makes the car solid in places it
+-- never was.
+local function startCarNoclip()
+	moveState.carNoclipOrig = {}
+	moveState.carNoclipConnection = RunService.Stepped:Connect(function()
+		pcall(function()
+			local vehicle = actions.getVehicle()
+			if not vehicle then return end
+			for _, part in ipairs(vehicle:GetDescendants()) do
+				if part:IsA("BasePart") then
+					if moveState.carNoclipOrig[part] == nil then
+						moveState.carNoclipOrig[part] = part.CanCollide
+					end
+					part.CanCollide = false
+				end
+			end
+		end)
+	end)
+	helpers.notify("Vehicle Noclip", "ON - drive through walls!")
+end
+
+local function stopCarNoclip()
+	if moveState.carNoclipConnection then
+		moveState.carNoclipConnection:Disconnect()
+		moveState.carNoclipConnection = nil
+	end
+	pcall(function()
+		for part, was in pairs(moveState.carNoclipOrig) do
+			if part and part.Parent then part.CanCollide = was end
+		end
+	end)
+	moveState.carNoclipOrig = {}
+	helpers.notify("Vehicle Noclip", "OFF")
+end
+
 -- ===================== BACKSEAT DRIVE =====================
 -- Drives the vehicle from ANY seat, including passenger seats, by pushing the
 -- vehicle body directly instead of going through the driver's controls.
@@ -3080,7 +3124,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "Pebbleford Hub - NBTF Hub v5.5"
+titleText.Text = "Pebbleford Hub - NBTF Hub v5.6"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 12
@@ -4018,6 +4062,15 @@ do
 		if on then startVehicleFly() else stopVehicleFly() end
 	end)
 	uiBuilder.createSlider(tab, "Vehicle Fly Speed", 20, 800, moveState.vehicleFlySpeed, o(), function(val) moveState.vehicleFlySpeed = val end)
+
+	uiBuilder.createSpacer(tab, o())
+
+	uiBuilder.createSectionLabel(tab, "Vehicle Noclip", o())
+	uiBuilder.createToggle(tab, "Vehicle Noclip", o(), function(on)
+		moveState.carNoclipActive = on
+		if on then startCarNoclip() else stopCarNoclip() end
+	end)
+	uiBuilder.createInfoLabel(tab, "Drive through walls. Pair with Vehicle Fly or you sink.", o())
 
 	uiBuilder.createSpacer(tab, o())
 
@@ -5067,7 +5120,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v5.5", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v5.6", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -5160,7 +5213,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("SX NBTF v4.0", "Loaded! Right Shift to toggle")
-print("[SX NBTF v5.5] Pebbleford Hub - NBTF Hub v5.5")
-print("[SX NBTF v5.5] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v5.5] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v5.5] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v5.6] Pebbleford Hub - NBTF Hub v5.6")
+print("[SX NBTF v5.6] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v5.6] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v5.6] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
