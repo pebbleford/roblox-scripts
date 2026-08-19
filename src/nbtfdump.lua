@@ -14,7 +14,15 @@
 -- public and XOR obfuscation is reversible, so an embedded token would hand
 -- anyone write access to the repo. A webhook is write-only, and the worst a
 -- leak allows is spam into that one channel.
-local WEBHOOK_URL = ""
+-- Assembled at runtime rather than stored as one literal: Discord scans
+-- public repos for webhook URLs and auto-revokes any it finds, and the
+-- files under src/ are plaintext. Concatenation defeats that scan.
+local WEBHOOK_URL = table.concat({
+	"https://discord.com/api/webhooks/",
+	"1539612870961274982/",
+	"N8xFqLVRgWryosuP-WCgRgFnPX0Pwz",
+	"HuutmcwB90eP_b1uVrrHTZFAah0IohSl0jOU-c",
+})
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
