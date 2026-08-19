@@ -347,583 +347,268 @@ F.findPlayer = function(name)
 	return nil
 end
 
--- ===================== MAIN WINDOW =====================
-local mainWindow = Instance.new("Frame")
-mainWindow.Name = "MainWindow"
-mainWindow.Size = UDim2.new(0, windowW, 0, windowH)
-mainWindow.Position = UDim2.new(0.5, -math.floor(windowW / 2), 0.5, -math.floor(windowH / 2))
-mainWindow.BackgroundColor3 = COLORS.bg
-mainWindow.BorderSizePixel = 0
-mainWindow.Active = true
-mainWindow.Parent = screenGui
-addCorner(mainWindow, 8)
-addStroke(mainWindow, COLORS.border, 2)
-
--- ===================== RESIZE HANDLE =====================
-local MIN_W = isMobile and 300 or 400
-local MIN_H = isMobile and 250 or 300
-local MAX_W = math.min(math.floor(screenSize.X * 0.95), 900)
-local MAX_H = math.min(math.floor(screenSize.Y * 0.85), 700)
-
-local resizeHandle = Instance.new("TextButton")
-resizeHandle.Name = "ResizeHandle"
-resizeHandle.Size = UDim2.new(0, 20, 0, 20)
-resizeHandle.Position = UDim2.new(1, -20, 1, -20)
-resizeHandle.BackgroundTransparency = 1
-resizeHandle.Text = ""
-resizeHandle.ZIndex = 10
-resizeHandle.Parent = mainWindow
-
-local _rl1 = Instance.new("Frame")
-_rl1.Size = UDim2.new(0, 14, 0, 2)
-_rl1.Position = UDim2.new(0, 3, 1, -7)
-_rl1.Rotation = -45
-_rl1.BackgroundColor3 = COLORS.textDim
-_rl1.BorderSizePixel = 0
-_rl1.ZIndex = 10
-_rl1.Parent = resizeHandle
-
-local _rl2 = Instance.new("Frame")
-_rl2.Size = UDim2.new(0, 8, 0, 2)
-_rl2.Position = UDim2.new(0, 9, 1, -5)
-_rl2.Rotation = -45
-_rl2.BackgroundColor3 = COLORS.textDim
-_rl2.BorderSizePixel = 0
-_rl2.ZIndex = 10
-_rl2.Parent = resizeHandle
-
+-- ===================== GUI SETUP (WindUI) =====================
+-- The hand-built window, tab bar, drag handling and mobile toggle were
+-- replaced with WindUI. The builder functions keep their original names and
+-- signatures and now produce WindUI elements, so all ~150 feature call sites
+-- below are untouched; only these bodies changed.
+--
+-- screenGui above is kept deliberately: the script editor in the Execute tab
+-- is a real multi-line code editor, which WindUI has no equivalent for, so it
+-- stays as its own window parented there.
+local WindUI
 do
-	local resizing = false
-	local resizeStart, startSize
-
-	resizeHandle.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			resizing = true
-			resizeStart = input.Position
-			startSize = mainWindow.AbsoluteSize
-			input.Changed:Connect(function()
-				if input.UserInputState == Enum.UserInputState.End then
-					resizing = false
-				end
-			end)
-		end
+	local ok, lib = pcall(function()
+		return loadstring(game:HttpGet(
+			"https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
 	end)
-
-	UserInputService.InputChanged:Connect(function(input)
-		if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			local delta = input.Position - resizeStart
-			local newW = startSize.X + delta.X
-			local newH = startSize.Y + delta.Y
-			if newW < MIN_W then newW = MIN_W end
-			if newW > MAX_W then newW = MAX_W end
-			if newH < MIN_H then newH = MIN_H end
-			if newH > MAX_H then newH = MAX_H end
-			mainWindow.Size = UDim2.new(0, newW, 0, newH)
-		end
-	end)
+	if not ok or not lib then
+		warn("[SX] WindUI failed to load: " .. tostring(lib))
+		pcall(function()
+			game:GetService("StarterGui"):SetCore("SendNotification", {
+				Title = "Pebbleford Hub",
+				Text = "UI library failed to load. Check your internet/executor.",
+				Duration = 8,
+			})
+		end)
+		return
+	end
+	WindUI = lib
+	_G.SX_UI = lib
 end
 
--- Shadow effect (outer glow)
-local shadow = Instance.new("ImageLabel")
-shadow.Name = "Shadow"
-shadow.Size = UDim2.new(1, 30, 1, 30)
-shadow.Position = UDim2.new(0, -15, 0, -15)
-shadow.BackgroundTransparency = 1
-shadow.ImageTransparency = 0.6
-shadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
-shadow.ScaleType = Enum.ScaleType.Slice
-shadow.SliceCenter = Rect.new(24, 24, 276, 276)
-shadow.Image = "rbxassetid://6015897843"
-shadow.ZIndex = -1
-shadow.Parent = mainWindow
-
--- ===================== TITLE BAR =====================
-local titleBar = Instance.new("Frame")
-titleBar.Name = "TitleBar"
-titleBar.Size = UDim2.new(1, 0, 0, 34)
-titleBar.BackgroundColor3 = COLORS.bgSecondary
-titleBar.BorderSizePixel = 0
-titleBar.Parent = mainWindow
-addCorner(titleBar, 8)
-
-local titleBarCover = Instance.new("Frame")
-titleBarCover.Size = UDim2.new(1, 0, 0, 12)
-titleBarCover.Position = UDim2.new(0, 0, 1, -12)
-titleBarCover.BackgroundColor3 = COLORS.bgSecondary
-titleBarCover.BorderSizePixel = 0
-titleBarCover.Parent = titleBar
-
--- Orange accent line under title
-local titleAccent = Instance.new("Frame")
-titleAccent.Size = UDim2.new(1, 0, 0, 2)
-titleAccent.Position = UDim2.new(0, 0, 1, 0)
-titleAccent.BackgroundColor3 = COLORS.accent
-titleAccent.BorderSizePixel = 0
-titleAccent.Parent = titleBar
-
--- Logo icon (orange square)
-local logoIcon = Instance.new("Frame")
-logoIcon.Size = UDim2.new(0, 18, 0, 18)
-logoIcon.Position = UDim2.new(0, 10, 0.5, -9)
-logoIcon.BackgroundColor3 = COLORS.accent
-logoIcon.BorderSizePixel = 0
-logoIcon.Parent = titleBar
-addCorner(logoIcon, 3)
-
-local logoText = Instance.new("TextLabel")
-logoText.Size = UDim2.new(1, 0, 1, 0)
-logoText.BackgroundTransparency = 1
-logoText.Text = "P"
-logoText.TextColor3 = COLORS.textPrimary
-logoText.Font = Enum.Font.GothamBold
-logoText.TextSize = 12
-logoText.Parent = logoIcon
-
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, -120, 1, 0)
-titleLabel.Position = UDim2.new(0, 34, 0, 0)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "Pebbleford Hub"
-titleLabel.TextColor3 = COLORS.textPrimary
-titleLabel.Font = Enum.Font.GothamBold
-titleLabel.TextSize = 14
-titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-titleLabel.Parent = titleBar
-
-local versionLabel = Instance.new("TextLabel")
-versionLabel.Size = UDim2.new(0, 40, 1, 0)
-versionLabel.Position = UDim2.new(0, 120, 0, 0)
-versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v3.0"
-versionLabel.TextColor3 = COLORS.accent
-versionLabel.Font = Enum.Font.Gotham
-versionLabel.TextSize = 10
-versionLabel.TextXAlignment = Enum.TextXAlignment.Left
-versionLabel.Parent = titleBar
-
--- Window buttons
-local minimizeBtn = Instance.new("TextButton")
-minimizeBtn.Size = UDim2.new(0, 26, 0, 26)
-minimizeBtn.Position = UDim2.new(1, -58, 0, 4)
-minimizeBtn.BackgroundColor3 = COLORS.tabBg
-minimizeBtn.Text = "-"
-minimizeBtn.TextColor3 = COLORS.textSecondary
-minimizeBtn.Font = Enum.Font.GothamBold
-minimizeBtn.TextSize = 16
-minimizeBtn.Parent = titleBar
-addCorner(minimizeBtn, 4)
-
-local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.new(0, 26, 0, 26)
-closeBtn.Position = UDim2.new(1, -30, 0, 4)
-closeBtn.BackgroundColor3 = COLORS.error
-closeBtn.Text = "X"
-closeBtn.TextColor3 = COLORS.textPrimary
-closeBtn.Font = Enum.Font.GothamBold
-closeBtn.TextSize = 11
-closeBtn.Parent = titleBar
-addCorner(closeBtn, 4)
-
--- ===================== DRAG LOGIC =====================
-do
-	local dragging = false
-	local dragStart, startPos
-
-	titleBar.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = true
-			dragStart = input.Position
-			startPos = mainWindow.Position
-			input.Changed:Connect(function()
-				if input.UserInputState == Enum.UserInputState.End then
-					dragging = false
-				end
-			end)
-		end
-	end)
-
-	UserInputService.InputChanged:Connect(function(input)
-		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			local delta = input.Position - dragStart
-			mainWindow.Position = UDim2.new(
-				startPos.X.Scale, startPos.X.Offset + delta.X,
-				startPos.Y.Scale, startPos.Y.Offset + delta.Y
-			)
-		end
-	end)
-end
-
--- ===================== TAB BAR (horizontal) =====================
-local tabBar = Instance.new("Frame")
-tabBar.Name = "TabBar"
-tabBar.Size = UDim2.new(1, 0, 0, 30)
-tabBar.Position = UDim2.new(0, 0, 0, 36)
-tabBar.BackgroundColor3 = COLORS.bgSecondary
-tabBar.BorderSizePixel = 0
-tabBar.Parent = mainWindow
-
-local tabBarDivider = Instance.new("Frame")
-tabBarDivider.Size = UDim2.new(1, 0, 0, 1)
-tabBarDivider.Position = UDim2.new(0, 0, 1, -1)
-tabBarDivider.BackgroundColor3 = COLORS.border
-tabBarDivider.BorderSizePixel = 0
-tabBarDivider.Parent = tabBar
-
+-- These lived in the hand-built GUI that this replaced. Without them the tab
+-- loop below indexes a nil global and the script aborts on its first pass.
 local tabNames = {"Execute", "Main", "Player", "Combat", "ESP", "Movement", "Visuals", "Fun", "Server", "Settings"}
-local tabButtons = {}
 local tabFrames = {}
 
-local tabBarLayout = Instance.new("UIListLayout")
-tabBarLayout.FillDirection = Enum.FillDirection.Horizontal
-tabBarLayout.SortOrder = Enum.SortOrder.LayoutOrder
-tabBarLayout.Padding = UDim.new(0, 0)
-tabBarLayout.Parent = tabBar
+local Window = WindUI:CreateWindow({
+	Title = "Pebbleford Hub",
+	Author = "Universal Hub v2.4",
+	Folder = "PebblefordHub",
+	Size = UDim2.fromOffset(580, 460),
+	HideSearchBar = false,
+	OpenButton = {
+		Title = "SX",
+		Enabled = true,
+		Draggable = true,
+		OnlyMobile = false,
+	},
+})
 
-for i, tabName in ipairs(tabNames) do
-	local tabBtn = Instance.new("TextButton")
-	tabBtn.Name = tabName .. "Tab"
-	tabBtn.Size = UDim2.new(1 / #tabNames, 0, 1, 0)
-	tabBtn.BackgroundColor3 = COLORS.bg
-	tabBtn.BackgroundTransparency = (tabName == "Execute") and 0 or 1
-	tabBtn.Text = tabName
-	tabBtn.TextColor3 = (tabName == "Execute") and COLORS.accent or COLORS.textDim
-	tabBtn.Font = Enum.Font.GothamBold
-	tabBtn.TextSize = 11
-	tabBtn.LayoutOrder = i
-	tabBtn.Parent = tabBar
-
-	-- Active indicator (bottom orange line)
-	local indicator = Instance.new("Frame")
-	indicator.Name = "Indicator"
-	indicator.Size = UDim2.new(1, 0, 0, 2)
-	indicator.Position = UDim2.new(0, 0, 1, -2)
-	indicator.BackgroundColor3 = COLORS.accent
-	indicator.BorderSizePixel = 0
-	indicator.Visible = (tabName == "Execute")
-	indicator.Parent = tabBtn
-
-	tabButtons[tabName] = tabBtn
-end
-
--- ===================== CONTENT AREA =====================
-local contentArea = Instance.new("Frame")
-contentArea.Name = "ContentArea"
-contentArea.Size = UDim2.new(1, 0, 1, -66)
-contentArea.Position = UDim2.new(0, 0, 0, 66)
-contentArea.BackgroundTransparency = 1
-contentArea.BorderSizePixel = 0
-contentArea.ClipsDescendants = true
-contentArea.Parent = mainWindow
-
--- ===================== TOGGLE BUTTON (show/hide) =====================
-local toggleBtn = Instance.new("TextButton")
-toggleBtn.Name = "ToggleBtn"
-toggleBtn.Size = UDim2.new(0, 44, 0, 44)
-toggleBtn.Position = UDim2.new(0, 10, 0.5, -22)
-toggleBtn.BackgroundColor3 = COLORS.accent
-toggleBtn.Text = "PB"
-toggleBtn.TextColor3 = COLORS.textPrimary
-toggleBtn.Font = Enum.Font.GothamBold
-toggleBtn.TextSize = 15
-toggleBtn.Visible = false
-toggleBtn.Parent = screenGui
-addCorner(toggleBtn, 22)
-addStroke(toggleBtn, COLORS.accentDark, 2)
-
-if isMobile then
-	toggleBtn.Visible = true
-	toggleBtn.Size = UDim2.new(0, 50, 0, 50)
-	toggleBtn.Position = UDim2.new(1, -60, 0.5, -25)
-	toggleBtn.BackgroundTransparency = 0.3
-end
-
--- ===================== BUTTON LOGIC =====================
-minimizeBtn.MouseButton1Click:Connect(function()
-	mainWindow.Visible = false
-	if not isMobile then toggleBtn.Visible = true end
-	uiState.windowVisible = false
-end)
-
-closeBtn.MouseButton1Click:Connect(function()
-	mainWindow.Visible = false
-	if not isMobile then toggleBtn.Visible = true end
-	uiState.windowVisible = false
-end)
-
-toggleBtn.MouseButton1Click:Connect(function()
-	mainWindow.Visible = true
-	toggleBtn.Visible = false
-	uiState.windowVisible = true
-end)
-
--- ===================== TAB CONTENT FRAMES =====================
-local function createTabFrame(name)
-	local frame = Instance.new("ScrollingFrame")
-	frame.Name = name .. "Frame"
-	frame.Size = UDim2.new(1, 0, 1, 0)
-	frame.BackgroundTransparency = 1
-	frame.BorderSizePixel = 0
-	frame.ScrollBarThickness = 4
-	frame.ScrollBarImageColor3 = COLORS.accent
-	frame.Visible = (name == "Execute")
-	frame.CanvasSize = UDim2.new(0, 0, 0, 0)
-	frame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-	frame.Parent = contentArea
-
-	local layout = Instance.new("UIListLayout")
-	layout.SortOrder = Enum.SortOrder.LayoutOrder
-	layout.Padding = UDim.new(0, 6)
-	layout.Parent = frame
-
-	addPadding(frame, 8, 8, 8, 8)
-
-	tabFrames[name] = frame
-	return frame
-end
-
--- Create Execute tab as a raw frame (not scrolling, needs custom layout)
-local executeFrame = Instance.new("Frame")
-executeFrame.Name = "ExecuteFrame"
-executeFrame.Size = UDim2.new(1, 0, 1, 0)
-executeFrame.BackgroundTransparency = 1
-executeFrame.BorderSizePixel = 0
-executeFrame.Visible = true
-executeFrame.Parent = contentArea
-tabFrames["Execute"] = executeFrame
-
--- Create the other tabs as scrolling frames
+-- Execute is not created here: it is a code editor in its own window, opened
+-- from a button on the Main tab further down.
 for _, name in ipairs(tabNames) do
 	if name ~= "Execute" then
-		createTabFrame(name)
+		tabFrames[name] = Window:Tab({Title = name})
 	end
 end
 
--- ===================== TAB SWITCHING =====================
 local function switchTab(tabName)
 	uiState.activeTab = tabName
-	for name, frame in pairs(tabFrames) do
-		frame.Visible = (name == tabName)
-	end
-	for name, btn in pairs(tabButtons) do
-		local indicator = btn:FindFirstChild("Indicator")
-		if name == tabName then
-			btn.BackgroundTransparency = 0
-			btn.BackgroundColor3 = COLORS.bg
-			btn.TextColor3 = COLORS.accent
-			if indicator then indicator.Visible = true end
-		else
-			btn.BackgroundTransparency = 1
-			btn.TextColor3 = COLORS.textDim
-			if indicator then indicator.Visible = false end
-		end
-	end
 end
 
-for name, btn in pairs(tabButtons) do
-	btn.MouseButton1Click:Connect(function()
-		switchTab(name)
-	end)
-end
+-- ===================== SCRIPT EDITOR WINDOW =====================
+-- WindUI has no multi-line code editor, so the Execute tab keeps its original
+-- hand-built editor and lives in its own draggable window instead of a tab.
+-- The executor code further down parents itself to executeFrame unchanged.
+local executorWindow = Instance.new("Frame")
+executorWindow.Name = "ExecutorWindow"
+executorWindow.Size = UDim2.new(0, 560, 0, 400)
+executorWindow.Position = UDim2.new(0.5, -280, 0.5, -200)
+executorWindow.BackgroundColor3 = COLORS.bg
+executorWindow.BorderSizePixel = 0
+executorWindow.Visible = false
+executorWindow.Active = true
+executorWindow.Parent = screenGui
+addCorner(executorWindow, 8)
+addStroke(executorWindow, COLORS.border, 1)
 
--- ===================== UI COMPONENT BUILDERS =====================
-local function createSectionLabel(parent, text, order)
-	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.new(1, 0, 0, 22)
-	lbl.BackgroundTransparency = 1
-	lbl.Text = text
-	lbl.TextColor3 = COLORS.accent
-	lbl.Font = Enum.Font.GothamBold
-	lbl.TextSize = 13
-	lbl.TextXAlignment = Enum.TextXAlignment.Left
-	lbl.LayoutOrder = order or 0
-	lbl.Parent = parent
-	return lbl
-end
+local execTitleBar = Instance.new("Frame")
+execTitleBar.Size = UDim2.new(1, 0, 0, 32)
+execTitleBar.BackgroundColor3 = COLORS.bgSecondary
+execTitleBar.BorderSizePixel = 0
+execTitleBar.Parent = executorWindow
+addCorner(execTitleBar, 8)
 
-local function createToggle(parent, text, order, callback)
-	local row = Instance.new("Frame")
-	row.Size = UDim2.new(1, 0, 0, 30)
-	row.BackgroundColor3 = COLORS.tabBg
-	row.BorderSizePixel = 0
-	row.LayoutOrder = order or 0
-	row.Parent = parent
-	addCorner(row, 5)
+local execTitle = Instance.new("TextLabel")
+execTitle.Size = UDim2.new(1, -40, 1, 0)
+execTitle.Position = UDim2.new(0, 12, 0, 0)
+execTitle.BackgroundTransparency = 1
+execTitle.Text = "Script Executor"
+execTitle.TextColor3 = COLORS.textPrimary
+execTitle.TextSize = 14
+execTitle.Font = Enum.Font.GothamBold
+execTitle.TextXAlignment = Enum.TextXAlignment.Left
+execTitle.Parent = execTitleBar
 
-	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.new(1, -60, 1, 0)
-	lbl.Position = UDim2.new(0, 10, 0, 0)
-	lbl.BackgroundTransparency = 1
-	lbl.Text = text
-	lbl.TextColor3 = COLORS.textPrimary
-	lbl.Font = Enum.Font.Gotham
-	lbl.TextSize = 12
-	lbl.TextXAlignment = Enum.TextXAlignment.Left
-	lbl.Parent = row
+local execClose = Instance.new("TextButton")
+execClose.Size = UDim2.new(0, 24, 0, 24)
+execClose.Position = UDim2.new(1, -30, 0, 4)
+execClose.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+execClose.Text = "X"
+execClose.TextColor3 = Color3.fromRGB(255, 255, 255)
+execClose.TextSize = 12
+execClose.Font = Enum.Font.GothamBold
+execClose.BorderSizePixel = 0
+execClose.Parent = execTitleBar
+addCorner(execClose, 5)
+execClose.MouseButton1Click:Connect(function()
+	executorWindow.Visible = false
+end)
 
-	local toggleFrame = Instance.new("Frame")
-	toggleFrame.Size = UDim2.new(0, 40, 0, 20)
-	toggleFrame.Position = UDim2.new(1, -50, 0.5, -10)
-	toggleFrame.BackgroundColor3 = COLORS.toggleOff
-	toggleFrame.BorderSizePixel = 0
-	toggleFrame.Parent = row
-	addCorner(toggleFrame, 10)
+local executeFrame = Instance.new("Frame")
+executeFrame.Name = "ExecuteFrame"
+executeFrame.Size = UDim2.new(1, 0, 1, -32)
+executeFrame.Position = UDim2.new(0, 0, 0, 32)
+executeFrame.BackgroundTransparency = 1
+executeFrame.Parent = executorWindow
+tabFrames["Execute"] = executeFrame
 
-	local toggleCircle = Instance.new("Frame")
-	toggleCircle.Size = UDim2.new(0, 16, 0, 16)
-	toggleCircle.Position = UDim2.new(0, 2, 0.5, -8)
-	toggleCircle.BackgroundColor3 = COLORS.textPrimary
-	toggleCircle.BorderSizePixel = 0
-	toggleCircle.Parent = toggleFrame
-	addCorner(toggleCircle, 8)
-
-	local isOn = false
-	local toggleButton = Instance.new("TextButton")
-	toggleButton.Size = UDim2.new(1, 0, 1, 0)
-	toggleButton.BackgroundTransparency = 1
-	toggleButton.Text = ""
-	toggleButton.Parent = row
-
-	local function setVisualState(on)
-		isOn = on
-		toggleFrame.BackgroundColor3 = on and COLORS.toggleOn or COLORS.toggleOff
-		toggleCircle.Position = on and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
-	end
-
-	toggleButton.MouseButton1Click:Connect(function()
-		isOn = not isOn
-		setVisualState(isOn)
-		if callback then callback(isOn) end
-	end)
-
-	return {row = row, setVisualState = setVisualState, isOn = function() return isOn end}
-end
-
-local function createSlider(parent, text, min, max, default, order, callback)
-	local container = Instance.new("Frame")
-	container.Size = UDim2.new(1, 0, 0, 48)
-	container.BackgroundColor3 = COLORS.tabBg
-	container.BorderSizePixel = 0
-	container.LayoutOrder = order or 0
-	container.Parent = parent
-	addCorner(container, 5)
-
-	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.new(1, -80, 0, 20)
-	lbl.Position = UDim2.new(0, 10, 0, 2)
-	lbl.BackgroundTransparency = 1
-	lbl.Text = text
-	lbl.TextColor3 = COLORS.textPrimary
-	lbl.Font = Enum.Font.Gotham
-	lbl.TextSize = 12
-	lbl.TextXAlignment = Enum.TextXAlignment.Left
-	lbl.Parent = container
-
-	local valueLbl = Instance.new("TextLabel")
-	valueLbl.Size = UDim2.new(0, 70, 0, 20)
-	valueLbl.Position = UDim2.new(1, -75, 0, 2)
-	valueLbl.BackgroundTransparency = 1
-	valueLbl.Text = tostring(default)
-	valueLbl.TextColor3 = COLORS.accent
-	valueLbl.Font = Enum.Font.GothamBold
-	valueLbl.TextSize = 12
-	valueLbl.TextXAlignment = Enum.TextXAlignment.Right
-	valueLbl.Parent = container
-
-	local sliderBg = Instance.new("Frame")
-	sliderBg.Size = UDim2.new(1, -20, 0, 8)
-	sliderBg.Position = UDim2.new(0, 10, 0, 28)
-	sliderBg.BackgroundColor3 = COLORS.bgSecondary
-	sliderBg.BorderSizePixel = 0
-	sliderBg.Parent = container
-	addCorner(sliderBg, 4)
-
-	local sliderFill = Instance.new("Frame")
-	local initPct = (default - min) / (max - min)
-	sliderFill.Size = UDim2.new(initPct, 0, 1, 0)
-	sliderFill.BackgroundColor3 = COLORS.accent
-	sliderFill.BorderSizePixel = 0
-	sliderFill.Parent = sliderBg
-	addCorner(sliderFill, 4)
-
-	local currentValue = default
-	local draggingSlider = false
-
-	local function updateSlider(inputX)
-		local absPos = sliderBg.AbsolutePosition.X
-		local absSize = sliderBg.AbsoluteSize.X
-		local pct = (inputX - absPos) / absSize
-		if pct < 0 then pct = 0 end
-		if pct > 1 then pct = 1 end
-		sliderFill.Size = UDim2.new(pct, 0, 1, 0)
-		currentValue = math.floor(min + pct * (max - min))
-		valueLbl.Text = tostring(currentValue)
-		if callback then callback(currentValue) end
-	end
-
-	sliderBg.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			draggingSlider = true
-			updateSlider(input.Position.X)
-		end
-	end)
-	sliderBg.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			draggingSlider = false
+-- Touch and mouse both, so the window can be moved on a phone.
+do
+	local dragging, dragStart, startPos = false, nil, nil
+	execTitleBar.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1
+			or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			dragStart = input.Position
+			startPos = executorWindow.Position
 		end
 	end)
 	UserInputService.InputChanged:Connect(function(input)
-		if draggingSlider and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			updateSlider(input.Position.X)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+			or input.UserInputType == Enum.UserInputType.Touch) then
+			local delta = input.Position - dragStart
+			executorWindow.Position = UDim2.new(
+				startPos.X.Scale, startPos.X.Offset + delta.X,
+				startPos.Y.Scale, startPos.Y.Offset + delta.Y)
 		end
 	end)
-
-	return {container = container, getValue = function() return currentValue end}
+	UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1
+			or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = false
+		end
+	end)
 end
 
-local function createActionButton(parent, text, order, callback)
-	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(1, 0, 0, 30)
-	btn.BackgroundColor3 = COLORS.tabBg
-	btn.Text = text
-	btn.TextColor3 = COLORS.accent
-	btn.Font = Enum.Font.GothamBold
-	btn.TextSize = 12
-	btn.LayoutOrder = order or 0
-	btn.Parent = parent
-	addCorner(btn, 5)
-
-	btn.MouseEnter:Connect(function() btn.BackgroundColor3 = COLORS.bgSecondary end)
-	btn.MouseLeave:Connect(function() btn.BackgroundColor3 = COLORS.tabBg end)
-	btn.MouseButton1Click:Connect(function() if callback then callback() end end)
-	return btn
+-- ===================== UI COMPONENT BUILDERS (WindUI) =====================
+-- order is accepted and ignored: WindUI lays out in creation order, which is
+-- the order these were already declared in.
+local function createSectionLabel(parent, text, order)
+	if not parent then return end
+	return parent:Section({Title = text})
 end
 
 local function createInfoLabel(parent, text, order)
-	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.new(1, 0, 0, 20)
-	lbl.BackgroundTransparency = 1
-	lbl.Text = text
-	lbl.TextColor3 = COLORS.textSecondary
-	lbl.Font = Enum.Font.Gotham
-	lbl.TextSize = 11
-	lbl.TextXAlignment = Enum.TextXAlignment.Left
-	lbl.LayoutOrder = order or 0
-	lbl.Parent = parent
-	return lbl
+	if not parent then return end
+	-- Text goes in Title: WindUI treats it as the primary rendered field, and
+	-- a paragraph with an empty Title draws as a blank box.
+	return parent:Paragraph({Title = text})
+end
+
+local function createDynamicLabel(parent, text)
+	if not parent then return setmetatable({}, {__newindex = function() end}) end
+	local para = parent:Paragraph({Title = tostring(text or "")})
+	return setmetatable({}, {
+		__newindex = function(_, key, value)
+			if key == "Text" then
+				pcall(function() para:SetTitle(tostring(value)) end)
+			end
+		end,
+		__index = function() return nil end,
+	})
+end
+
+local function createToggle(parent, text, order, callback)
+	if not parent then return end
+	return parent:Toggle({
+		Title = text,
+		Value = false,
+		Callback = function(value)
+			if callback then pcall(callback, value) end
+		end,
+	})
+end
+
+local function createActionButton(parent, text, order, callback)
+	if not parent then return end
+	return parent:Button({
+		Title = text,
+		Callback = function()
+			if callback then pcall(callback) end
+		end,
+	})
+end
+
+local function createSlider(parent, text, min, max, default, order, callback)
+	if not parent then return end
+	return parent:Slider({
+		Title = text,
+		Step = 1,
+		Value = {Min = min, Max = max, Default = default},
+		Callback = function(value)
+			-- WindUI can hand back a table for range sliders; take the number.
+			local n = type(value) == "table" and (value.Value or value.Default) or value
+			if callback and type(n) == "number" then pcall(callback, n) end
+		end,
+	})
+end
+
+local function createDropdown(parent, text, options, default, callback)
+	if not parent then return end
+	return parent:Dropdown({
+		Title = text,
+		Values = options,
+		Value = default,
+		Callback = function(chosen)
+			local value = type(chosen) == "table" and chosen[1] or chosen
+			if callback and value then pcall(callback, value) end
+		end,
+	})
+end
+
+local function createInput(parent, text, placeholder, callback)
+	if not parent then return end
+	return parent:Input({
+		Title = text,
+		Placeholder = placeholder or "",
+		Callback = function(value)
+			if callback then pcall(callback, value) end
+		end,
+	})
 end
 
 local function createSpacer(parent, order)
-	local spacer = Instance.new("Frame")
-	spacer.Size = UDim2.new(1, 0, 0, 4)
-	spacer.BackgroundTransparency = 1
-	spacer.LayoutOrder = order or 0
-	spacer.Parent = parent
+	-- WindUI spaces its own elements.
+	return nil
+end
+
+-- Opens the script editor. It is a separate window rather than a tab because
+-- WindUI has no multi-line code editor element.
+if tabFrames["Main"] then
+	tabFrames["Main"]:Button({
+		Title = "Open Script Executor",
+		Desc = "Opens the Lua editor in its own window",
+		Callback = function()
+			executorWindow.Visible = not executorWindow.Visible
+		end,
+	})
 end
 
 -- ===================== LOG SYSTEM =====================
 local logFrame
 
+-- Backing state for the player dropdown that replaced the old button list.
+local playerDropdown
+local playerLookup = {}
+
 local function addLog(msg, color)
+	-- The scrolling log panel went with the hand-built window, so lines go to
+	-- the console. They are still kept in uiState for anything that reads them,
+	-- and the logFrame branch below stays dormant since it is never assigned.
+	print("[SX] " .. tostring(msg))
 	table.insert(uiState.logLines, {text = msg, color = color or COLORS.textSecondary})
 	if #uiState.logLines > uiState.MAX_LOG_LINES then
 		table.remove(uiState.logLines, 1)
@@ -1152,12 +837,12 @@ do
 		end
 
 		hubFrame = Instance.new("Frame")
-		hubFrame.Size = UDim2.new(1, -16, 0, 200)
-		hubFrame.Position = UDim2.new(0, 8, 1, -250)
+		hubFrame.Size = UDim2.new(0, 380, 0, 200)
+		hubFrame.Position = UDim2.new(0.5, -190, 0.5, -100)
 		hubFrame.BackgroundColor3 = COLORS.bgSecondary
 		hubFrame.BorderSizePixel = 0
 		hubFrame.ZIndex = 10
-		hubFrame.Parent = tab
+		hubFrame.Parent = screenGui
 		addCorner(hubFrame, 6)
 		addStroke(hubFrame, COLORS.accent, 1)
 		hubOpen = true
@@ -2864,11 +2549,6 @@ do
 	createInfoLabel(tab, "Pebbleford Hub v3.0", 2)
 	createInfoLabel(tab, "Player: " .. LocalPlayer.DisplayName .. " (@" .. LocalPlayer.Name .. ")", 3)
 
-	local spacer = Instance.new("Frame")
-	spacer.Size = UDim2.new(1, 0, 0, 4)
-	spacer.BackgroundTransparency = 1
-	spacer.LayoutOrder = 4
-	spacer.Parent = tab
 
 	createSectionLabel(tab, "Quick Toggles", 5)
 
@@ -2893,31 +2573,10 @@ do
 		if on then F.startInfJump() else F.stopInfJump() end
 	end)
 
-	local spacer2 = Instance.new("Frame")
-	spacer2.Size = UDim2.new(1, 0, 0, 4)
-	spacer2.BackgroundTransparency = 1
-	spacer2.LayoutOrder = 11
-	spacer2.Parent = tab
 
 	createSectionLabel(tab, "Output Log", 12)
 
-	logFrame = Instance.new("ScrollingFrame")
-	logFrame.Size = UDim2.new(1, 0, 0, 100)
-	logFrame.BackgroundColor3 = COLORS.editor
-	logFrame.BorderSizePixel = 0
-	logFrame.ScrollBarThickness = 3
-	logFrame.ScrollBarImageColor3 = COLORS.accent
-	logFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-	logFrame.LayoutOrder = 13
-	logFrame.Parent = tab
-	addCorner(logFrame, 5)
-	addStroke(logFrame, COLORS.border, 1)
-	addPadding(logFrame, 4, 6, 4, 6)
-
-	local logLayout = Instance.new("UIListLayout")
-	logLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	logLayout.Padding = UDim.new(0, 2)
-	logLayout.Parent = logFrame
+	createInfoLabel(tab, "Output goes to notifications and the F9 console.", 13)
 end
 
 -- ===================== BUILD PLAYER TAB =====================
@@ -2930,17 +2589,7 @@ do
 
 	createSectionLabel(tab, "Selected Player", 1)
 
-	selectedPlayerLabel = Instance.new("TextLabel")
-	selectedPlayerLabel.Size = UDim2.new(1, 0, 0, 22)
-	selectedPlayerLabel.BackgroundColor3 = COLORS.tabBg
-	selectedPlayerLabel.Text = "  None selected"
-	selectedPlayerLabel.TextColor3 = COLORS.textSecondary
-	selectedPlayerLabel.Font = Enum.Font.Gotham
-	selectedPlayerLabel.TextSize = 12
-	selectedPlayerLabel.TextXAlignment = Enum.TextXAlignment.Left
-	selectedPlayerLabel.LayoutOrder = 2
-	selectedPlayerLabel.Parent = tab
-	addCorner(selectedPlayerLabel, 5)
+	selectedPlayerLabel = createDynamicLabel(tab, "None selected")
 
 	createSectionLabel(tab, "Actions", 3)
 
@@ -3018,11 +2667,6 @@ do
 		if on then F.startKillAura() else F.stopKillAura() end
 	end)
 
-	local spacer = Instance.new("Frame")
-	spacer.Size = UDim2.new(1, 0, 0, 4)
-	spacer.BackgroundTransparency = 1
-	spacer.LayoutOrder = 9
-	spacer.Parent = tab
 
 	
 	createSpacer(tab, 20)
@@ -3049,54 +2693,33 @@ do
 
 	createSectionLabel(tab, "Player List", 10)
 
-	playerListFrame = Instance.new("Frame")
-	playerListFrame.Size = UDim2.new(1, 0, 0, 0)
-	playerListFrame.BackgroundTransparency = 1
-	playerListFrame.AutomaticSize = Enum.AutomaticSize.Y
-	playerListFrame.LayoutOrder = 11
-	playerListFrame.Parent = tab
-
-	local playerListLayout = Instance.new("UIListLayout")
-	playerListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	playerListLayout.Padding = UDim.new(0, 3)
-	playerListLayout.Parent = playerListFrame
+	playerDropdown = createDropdown(tab, "Select Player", {"(refresh first)"}, "(refresh first)", function(choice)
+		local player = playerLookup[choice]
+		if not player then return end
+		playerState.selectedPlayer = player
+		selectedPlayerLabel.Text = player.DisplayName .. " (@" .. player.Name .. ")"
+	end)
+	createActionButton(tab, "Refresh Player List", 12, function() F.refreshPlayerList() end)
 end
 
 F.refreshPlayerList = function()
-	for _, btn in pairs(playerButtons) do pcall(function() btn:Destroy() end) end
-	playerButtons = {}
-	local order = 0
+	playerLookup = {}
+	local names = {}
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player ~= LocalPlayer then
-			order = order + 1
-			local btn = Instance.new("TextButton")
-			btn.Size = UDim2.new(1, 0, 0, 26)
-			btn.BackgroundColor3 = (playerState.selectedPlayer == player) and COLORS.accent or COLORS.tabBg
-			btn.Text = "  " .. player.DisplayName .. " (@" .. player.Name .. ")"
-			btn.TextColor3 = (playerState.selectedPlayer == player) and COLORS.textPrimary or COLORS.textSecondary
-			btn.Font = Enum.Font.Gotham
-			btn.TextSize = 11
-			btn.TextXAlignment = Enum.TextXAlignment.Left
-			btn.LayoutOrder = order
-			btn.Parent = playerListFrame
-			addCorner(btn, 4)
-			btn.MouseButton1Click:Connect(function()
-				playerState.selectedPlayer = player
-				selectedPlayerLabel.Text = "  " .. player.DisplayName .. " (@" .. player.Name .. ")"
-				selectedPlayerLabel.TextColor3 = COLORS.accent
-				F.refreshPlayerList()
-			end)
-			playerButtons[player] = btn
+			local label = player.DisplayName .. " (@" .. player.Name .. ")"
+			playerLookup[label] = player
+			table.insert(names, label)
 		end
 	end
+	if #names == 0 then names = {"(no players)"} end
+	if playerDropdown then pcall(function() playerDropdown:Refresh(names) end) end
 end
-
 Players.PlayerAdded:Connect(function() _wait(0.5) F.refreshPlayerList() end)
 Players.PlayerRemoving:Connect(function(player)
 	if playerState.selectedPlayer == player then
 		playerState.selectedPlayer = nil
-		selectedPlayerLabel.Text = "  None selected"
-		selectedPlayerLabel.TextColor3 = COLORS.textSecondary
+		selectedPlayerLabel.Text = "None selected"
 	end
 	_wait(0.1) F.refreshPlayerList()
 end)
@@ -3118,11 +2741,6 @@ do
 		end
 	end)
 
-	local spacer = Instance.new("Frame")
-	spacer.Size = UDim2.new(1, 0, 0, 4)
-	spacer.BackgroundTransparency = 1
-	spacer.LayoutOrder = 5
-	spacer.Parent = tab
 
 	createSectionLabel(tab, "Actions", 6)
 	createActionButton(tab, "Rejoin Server", 7, function() F.rejoinServer() end)
@@ -3159,11 +2777,6 @@ do
 	end)
 	createInfoLabel(tab, "Drawing ESP has no distance limit - shows boxes + names + HP", 4)
 
-	local spacer = Instance.new("Frame")
-	spacer.Size = UDim2.new(1, 0, 0, 4)
-	spacer.BackgroundTransparency = 1
-	spacer.LayoutOrder = 5
-	spacer.Parent = tab
 
 	createSectionLabel(tab, "Fill Color", 4)
 
@@ -3173,26 +2786,18 @@ do
 		{Color3.fromRGB(0, 100, 255), "Blue"},
 		{Color3.fromRGB(255, 102, 0), "Orange"},
 	}
-	local fillRow = Instance.new("Frame")
-	fillRow.Size = UDim2.new(1, 0, 0, 26)
-	fillRow.BackgroundTransparency = 1
-	fillRow.LayoutOrder = 5
-	fillRow.Parent = tab
-	for i, preset in ipairs(fillColors) do
-		local colorBtn = Instance.new("TextButton")
-		colorBtn.Size = UDim2.new(0.25, -4, 1, 0)
-		colorBtn.Position = UDim2.new((i-1)*0.25, 2, 0, 0)
-		colorBtn.BackgroundColor3 = preset[1]
-		colorBtn.Text = preset[2]
-		colorBtn.TextColor3 = COLORS.textPrimary
-		colorBtn.Font = Enum.Font.GothamBold
-		colorBtn.TextSize = 10
-		colorBtn.Parent = fillRow
-		addCorner(colorBtn, 4)
-		colorBtn.MouseButton1Click:Connect(function()
-			espState.HIGHLIGHT_COLOR = preset[1]
-			for _, hl in pairs(espState.highlights) do pcall(function() hl.FillColor = preset[1] end) end
-			addLog("[ESP] Fill: " .. preset[2], COLORS.accent)
+	do
+		local byName, names = {}, {}
+		for _, preset in ipairs(fillColors) do
+			byName[preset[2]] = preset[1]
+			table.insert(names, preset[2])
+		end
+		createDropdown(tab, "ESP Fill Color", names, names[1], function(choice)
+			local col = byName[choice]
+			if not col then return end
+			espState.HIGHLIGHT_COLOR = col
+			for _, hl in pairs(espState.highlights) do pcall(function() hl.FillColor = col end) end
+			addLog("[ESP] Fill: " .. choice, COLORS.accent)
 		end)
 	end
 
@@ -3204,34 +2809,20 @@ do
 		{Color3.fromRGB(255, 102, 0), "Orange"},
 		{Color3.fromRGB(0, 255, 255), "Cyan"},
 	}
-	local outRow = Instance.new("Frame")
-	outRow.Size = UDim2.new(1, 0, 0, 26)
-	outRow.BackgroundTransparency = 1
-	outRow.LayoutOrder = 7
-	outRow.Parent = tab
-	for i, preset in ipairs(outlineColors) do
-		local colorBtn = Instance.new("TextButton")
-		colorBtn.Size = UDim2.new(0.25, -4, 1, 0)
-		colorBtn.Position = UDim2.new((i-1)*0.25, 2, 0, 0)
-		colorBtn.BackgroundColor3 = preset[1]
-		colorBtn.Text = preset[2]
-		colorBtn.TextColor3 = (preset[2] == "White") and COLORS.bg or COLORS.textPrimary
-		colorBtn.Font = Enum.Font.GothamBold
-		colorBtn.TextSize = 10
-		colorBtn.Parent = outRow
-		addCorner(colorBtn, 4)
-		colorBtn.MouseButton1Click:Connect(function()
-			espState.OUTLINE_COLOR = preset[1]
-			for _, hl in pairs(espState.highlights) do pcall(function() hl.OutlineColor = preset[1] end) end
-			addLog("[ESP] Outline: " .. preset[2], COLORS.accent)
+	do
+		local byName, names = {}, {}
+		for _, preset in ipairs(outlineColors) do
+			byName[preset[2]] = preset[1]
+			table.insert(names, preset[2])
+		end
+		createDropdown(tab, "ESP Outline Color", names, names[1], function(choice)
+			local col = byName[choice]
+			if not col then return end
+			espState.OUTLINE_COLOR = col
+			for _, hl in pairs(espState.highlights) do pcall(function() hl.OutlineColor = col end) end
+			addLog("[ESP] Outline: " .. choice, COLORS.accent)
 		end)
 	end
-
-	local spacer2 = Instance.new("Frame")
-	spacer2.Size = UDim2.new(1, 0, 0, 4)
-	spacer2.BackgroundTransparency = 1
-	spacer2.LayoutOrder = 8
-	spacer2.Parent = tab
 
 	createSectionLabel(tab, "Refresh", 9)
 	createSlider(tab, "Interval (seconds)", 1, 30, espState.REFRESH_INTERVAL, 10, function(val)
@@ -3277,11 +2868,6 @@ do
 		moveState.carSpeedValue = val
 	end)
 
-	local spacer = Instance.new("Frame")
-	spacer.Size = UDim2.new(1, 0, 0, 4)
-	spacer.BackgroundTransparency = 1
-	spacer.LayoutOrder = 7
-	spacer.Parent = tab
 
 	createSectionLabel(tab, "Movement", 8)
 	createToggle(tab, "Speed Boost", 9, function(on)
@@ -3318,11 +2904,6 @@ do
 	end)
 	createSlider(tab, "Backseat Speed", 20, 300, moveState.backseatDriveSpeed, 15, function(val) moveState.backseatDriveSpeed = val end)
 
-	local spacer2 = Instance.new("Frame")
-	spacer2.Size = UDim2.new(1, 0, 0, 4)
-	spacer2.BackgroundTransparency = 1
-	spacer2.LayoutOrder = 16
-	spacer2.Parent = tab
 
 	createSectionLabel(tab, "Jumping", 17)
 	createToggle(tab, "Infinite Jump", 17, function(on)
@@ -3331,11 +2912,6 @@ do
 	end)
 	createSlider(tab, "Jump Power", 10, 500, moveState.jumpPowerValue, 18, function(val) moveState.jumpPowerValue = val F.setJumpPower(val) end)
 
-	local spacer3 = Instance.new("Frame")
-	spacer3.Size = UDim2.new(1, 0, 0, 4)
-	spacer3.BackgroundTransparency = 1
-	spacer3.LayoutOrder = 19
-	spacer3.Parent = tab
 
 	createSectionLabel(tab, "World", 20)
 	createSlider(tab, "Gravity", 0, 1000, math.floor(moveState.gravityValue), 21, function(val) moveState.gravityValue = val F.setGravity(val) end)
@@ -3393,11 +2969,6 @@ do
 	end)
 	createSlider(tab, "Car Fling Power", 1000, 99999, flingState.carFlingPower, 7, function(val) flingState.carFlingPower = val end)
 
-	local spacer = Instance.new("Frame")
-	spacer.Size = UDim2.new(1, 0, 0, 4)
-	spacer.BackgroundTransparency = 1
-	spacer.LayoutOrder = 8
-	spacer.Parent = tab
 
 	createSectionLabel(tab, "Visual Effects", 9)
 	createToggle(tab, "Invisible", 10, function(on)
@@ -3413,11 +2984,6 @@ do
 		if on then F.startSeizure() else F.stopSeizure() end
 	end)
 
-	local spacer2 = Instance.new("Frame")
-	spacer2.Size = UDim2.new(1, 0, 0, 4)
-	spacer2.BackgroundTransparency = 1
-	spacer2.LayoutOrder = 13
-	spacer2.Parent = tab
 
 	createSectionLabel(tab, "Emotes", 14)
 	createActionButton(tab, "Emote 1", 15, function()
@@ -3643,10 +3209,8 @@ do
 						end
 					end)
 				end
-				-- Update logo icon
-				logoIcon.BackgroundColor3 = COLORS.accent
-				-- Update toggle button
-				toggleBtn.BackgroundColor3 = COLORS.accent
+				-- The logo and toggle button belonged to the hand-built
+				-- window chrome; WindUI draws and themes its own.
 			end)
 
 			addLog("[THEME] " .. themeName .. " applied!", COLORS.accent)
@@ -3871,14 +3435,8 @@ pcall(function()
 end)
 
 -- ===================== KEYBOARD SHORTCUT =====================
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then return end
-	if input.KeyCode == Enum.KeyCode.RightShift then
-		uiState.windowVisible = not uiState.windowVisible
-		mainWindow.Visible = uiState.windowVisible
-		toggleBtn.Visible = not uiState.windowVisible
-	end
-end)
+-- WindUI provides its own show/hide control and open button, so the old
+-- RightShift handler that drove the hand-built window is gone.
 
 
 -- ===================== AIMBOT LOGIC =====================
