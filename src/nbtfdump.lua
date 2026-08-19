@@ -7,6 +7,15 @@
 -- v1.0
 -- ================================================================
 
+-- Paste a Discord webhook URL here to have dumps auto-posted instead of
+-- copied by hand. Left blank the script just prints/copies as before.
+--
+-- A webhook is used rather than a GitHub token on purpose: this repo is
+-- public and XOR obfuscation is reversible, so an embedded token would hand
+-- anyone write access to the repo. A webhook is write-only, and the worst a
+-- leak allows is spam into that one channel.
+local WEBHOOK_URL = ""
+
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
@@ -163,6 +172,49 @@ local text = table.concat(lines, "\n")
 print(text)
 pcall(function() setclipboard(text) end)
 
+-- ---------- Auto-post to Discord ----------
+-- Dumps run well past Discord's 2000-character message limit, so the text is
+-- split on line boundaries and sent as a sequence of code blocks.
+local function postToWebhook(body)
+	if WEBHOOK_URL == "" then return false, "no webhook configured" end
+	local httpRequest = (syn and syn.request) or (http and http.request) or request or http_request
+	if not httpRequest then return false, "executor has no HTTP request function" end
+
+	local HttpService = game:GetService("HttpService")
+	local chunks, current = {}, ""
+	for line in (body .. "\n"):gmatch("([^\n]*)\n") do
+		-- 1900 leaves room for the code fences and a safety margin.
+		if #current + #line + 1 > 1900 then
+			table.insert(chunks, current)
+			current = ""
+		end
+		current = current .. line .. "\n"
+	end
+	if current ~= "" then table.insert(chunks, current) end
+
+	local sent = 0
+	for i, chunk in ipairs(chunks) do
+		local payload = HttpService:JSONEncode({
+			content = string.format("**NBTF dump %d/%d** (%s)\n```\n%s\n```",
+				i, #chunks, LocalPlayer.Name, chunk),
+		})
+		local ok = pcall(function()
+			httpRequest({
+				Url = WEBHOOK_URL,
+				Method = "POST",
+				Headers = {["Content-Type"] = "application/json"},
+				Body = payload,
+			})
+		end)
+		if ok then sent = sent + 1 end
+		-- Discord rate-limits bursts; a short gap keeps chunks in order.
+		task.wait(0.4)
+	end
+	return sent > 0, string.format("%d/%d chunks sent", sent, #chunks)
+end
+
+local webhookOk, webhookMsg = postToWebhook(text)
+
 -- ---------- On-screen copy ----------
 pcall(function()
 	local old = game:GetService("CoreGui"):FindFirstChild("NBTFDump")
@@ -189,7 +241,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -70, 0, 34)
 title.Position = UDim2.new(0, 12, 0, 0)
 title.BackgroundTransparency = 1
-title.Text = "NBTF Recon Dump (copied to clipboard)"
+title.Text = "NBTF Recon Dump - clipboard | webhook: " .. tostring(webhookMsg)
 title.TextColor3 = Color3.fromRGB(255, 255, 255)
 title.TextSize = 14
 title.Font = Enum.Font.GothamBold
