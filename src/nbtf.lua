@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v5.8
+-- Pebbleford Hub - NBTF Hub v5.9
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -417,6 +417,8 @@ local moveState = {
 	carNoclipOrig = {},
 	backseatDriveActive = false,
 	backseatDriveConnection = nil,
+	backseatBV = nil,
+	backseatBG = nil,
 	backseatDriveSpeed = 80,
 	backseatDriveTurn = 3,
 	carFlingRam = nil,
@@ -2445,22 +2447,42 @@ local function createBackseatPad()
 end
 
 local function startBackseatDrive()
-	local vehicle, drivePart = actions.getVehicle()
+	local _, drivePart = actions.getVehicle()
 	if not drivePart then
 		helpers.notify("Backseat Drive", "Sit in a vehicle first!")
 		return
 	end
 	createBackseatPad()
 
+	-- Built on BodyVelocity/BodyGyro rather than AssemblyLinearVelocity,
+	-- because that is the mechanism Vehicle Fly uses and Vehicle Fly is
+	-- confirmed working in this game. Writing assembly velocity directly is a
+	-- different path and evidently does not take here.
+	--
+	-- The important difference from flying: MaxForce leaves Y at zero, so
+	-- gravity still acts and the vehicle stays on the ground instead of
+	-- floating. The gyro likewise only has torque on Y, so the vehicle turns
+	-- to face where you are steering without being held level.
+	local bv = Instance.new("BodyVelocity")
+	bv.Name = "NBTF_Backseat_BV"
+	bv.MaxForce = Vector3.new(math.huge, 0, math.huge)
+	bv.Velocity = Vector3.zero
+	bv.P = 9000
+	bv.Parent = drivePart
+	moveState.backseatBV = bv
+
+	local bg = Instance.new("BodyGyro")
+	bg.Name = "NBTF_Backseat_BG"
+	bg.MaxTorque = Vector3.new(0, math.huge, 0)
+	bg.P = 6000
+	bg.D = 500
+	bg.CFrame = drivePart.CFrame
+	bg.Parent = drivePart
+	moveState.backseatBG = bg
+
 	moveState.backseatDriveConnection = RunService.Heartbeat:Connect(function()
 		pcall(function()
-			local c = LocalPlayer.Character
-			local h = c and c:FindFirstChildOfClass("Humanoid")
-			if not h or not h.SeatPart then return end
-
-			-- Re-resolved every frame so it survives changing seats or vehicles.
-			local _, part = actions.getVehicle()
-			if not part or not part.Parent then return end
+			if not moveState.backseatBV or not moveState.backseatBV.Parent then return end
 
 			local throttle = 0
 			if UserInputService:IsKeyDown(Enum.KeyCode.W) then throttle = throttle + 1 end
@@ -2468,27 +2490,18 @@ local function startBackseatDrive()
 			if bsFwd then throttle = throttle + 1 end
 			if bsBack then throttle = throttle - 1 end
 
-			local steer = 0
-			if UserInputService:IsKeyDown(Enum.KeyCode.A) then steer = steer - 1 end
-			if UserInputService:IsKeyDown(Enum.KeyCode.D) then steer = steer + 1 end
+			-- Flattened so looking down does not drive into the ground.
+			local look = camera.CFrame.LookVector
+			local dir = Vector3.new(look.X, 0, look.Z)
+			if dir.Magnitude < 0.01 then return end
+			dir = dir.Unit
 
-			local vel = part.AssemblyLinearVelocity
 			if throttle ~= 0 then
-				-- Flattened so pointing the camera down does not drive into the map.
-				local look = camera.CFrame.LookVector
-				local dir = Vector3.new(look.X, 0, look.Z)
-				dir = dir.Magnitude > 0 and dir.Unit or part.CFrame.LookVector
-				local target = dir * throttle * moveState.backseatDriveSpeed
-				-- Y is preserved so the vehicle still falls normally.
-				part.AssemblyLinearVelocity = Vector3.new(target.X, vel.Y, target.Z)
-			end
-
-			if steer ~= 0 then
-				part.AssemblyAngularVelocity =
-					Vector3.new(0, -steer * moveState.backseatDriveTurn, 0)
+				moveState.backseatBV.Velocity = dir * throttle * moveState.backseatDriveSpeed
+				-- Face the way we are travelling; reversing keeps facing forward.
+				moveState.backseatBG.CFrame = CFrame.new(Vector3.zero, dir)
 			else
-				local av = part.AssemblyAngularVelocity
-				part.AssemblyAngularVelocity = Vector3.new(av.X, av.Y * 0.8, av.Z)
+				moveState.backseatBV.Velocity = Vector3.zero
 			end
 		end)
 	end)
@@ -2496,7 +2509,7 @@ local function startBackseatDrive()
 	if UserInputService.TouchEnabled then
 		helpers.notify("Backseat Drive", "ON - GO/REV buttons, aim with camera")
 	else
-		helpers.notify("Backseat Drive", "ON - WASD from any seat")
+		helpers.notify("Backseat Drive", "ON - W/S from any seat, aim with camera")
 	end
 end
 
@@ -2505,6 +2518,8 @@ local function stopBackseatDrive()
 		moveState.backseatDriveConnection:Disconnect()
 		moveState.backseatDriveConnection = nil
 	end
+	if moveState.backseatBV then pcall(function() moveState.backseatBV:Destroy() end) moveState.backseatBV = nil end
+	if moveState.backseatBG then pcall(function() moveState.backseatBG:Destroy() end) moveState.backseatBG = nil end
 	destroyBackseatPad()
 	helpers.notify("Backseat Drive", "OFF")
 end
@@ -3164,7 +3179,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "Pebbleford Hub - NBTF Hub v5.8"
+titleText.Text = "Pebbleford Hub - NBTF Hub v5.9"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 12
@@ -5185,7 +5200,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v5.8", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v5.9", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -5278,7 +5293,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("SX NBTF v4.0", "Loaded! Right Shift to toggle")
-print("[SX NBTF v5.8] Pebbleford Hub - NBTF Hub v5.8")
-print("[SX NBTF v5.8] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v5.8] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v5.8] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v5.9] Pebbleford Hub - NBTF Hub v5.9")
+print("[SX NBTF v5.9] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v5.9] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v5.9] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
