@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v5.4
+-- Pebbleford Hub - NBTF Hub v5.5
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -410,6 +410,10 @@ local moveState = {
 	carFlingActive = false,
 	carFlingPower = 20000,
 	carFlingLoopActive = false,
+	backseatDriveActive = false,
+	backseatDriveConnection = nil,
+	backseatDriveSpeed = 80,
+	backseatDriveTurn = 3,
 	carFlingRam = nil,
 	walkFlingActive = false,
 	walkFlingAutoNoclip = false,
@@ -2190,11 +2194,24 @@ function actions.getVehicle()
 	local hum = char:FindFirstChildOfClass("Humanoid")
 	if not hum or not hum.SeatPart then return nil, nil end
 	local seat = hum.SeatPart
-	-- Find the vehicle model (parent of seat, or parent of parent)
+
+	-- Walk up rather than checking seat.Parent alone. Passenger seats are
+	-- often nested (Model > Seats > Seat), so the old single-level check
+	-- returned nil for every seat except the driver's, which is why the
+	-- vehicle features only worked from the driving seat.
 	local vehicle = seat.Parent
-	if vehicle and vehicle:IsA("Model") then
-		local primaryPart = vehicle.PrimaryPart or seat
-		return vehicle, primaryPart
+	while vehicle and vehicle ~= workspace and not vehicle:IsA("Model") do
+		vehicle = vehicle.Parent
+	end
+	if vehicle and vehicle ~= workspace and vehicle:IsA("Model") then
+		-- Prefer the VehicleSeat: it is the body the game itself drives.
+		local drivePart = vehicle.PrimaryPart
+		if not drivePart then
+			for _, part in ipairs(vehicle:GetDescendants()) do
+				if part:IsA("VehicleSeat") then drivePart = part break end
+			end
+		end
+		return vehicle, drivePart or seat
 	end
 	return nil, seat
 end
@@ -2290,6 +2307,124 @@ end
 -- and Torque so the engine itself pushes harder; for plain Seats (planes,
 -- boats, custom rigs) we push the primary part forward each frame until it
 -- reaches the target speed.
+-- ===================== BACKSEAT DRIVE =====================
+-- Drives the vehicle from ANY seat, including passenger seats, by pushing the
+-- vehicle body directly instead of going through the driver's controls.
+--
+-- Steering is camera-relative rather than the vehicle's own look direction:
+-- a passenger has no steering wheel to turn, and camera-relative movement is
+-- also the only scheme that works on touch, where there is no A/D to read.
+local bsPadGui, bsFwd, bsBack = nil, false, false
+
+local function destroyBackseatPad()
+	if bsPadGui then pcall(function() bsPadGui:Destroy() end) end
+	bsPadGui = nil
+	bsFwd, bsBack = false, false
+end
+
+local function createBackseatPad()
+	destroyBackseatPad()
+	if not UserInputService.TouchEnabled then return end
+
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "NBTF_BackseatPad"
+	gui.ResetOnSpawn = false
+	gui.IgnoreGuiInset = true
+	gui.DisplayOrder = 1000
+	pcall(function() gui.Parent = game:GetService("CoreGui") end)
+	if not gui.Parent then gui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+	bsPadGui = gui
+
+	local function makeBtn(label, yOffset, onDown, onUp)
+		local b = Instance.new("TextButton")
+		b.Size = UDim2.new(0, 64, 0, 64)
+		-- Left side, so it does not sit under the fly pad on the right.
+		b.Position = UDim2.new(0, 16, 1, yOffset)
+		b.BackgroundColor3 = Color3.fromRGB(30, 30, 38)
+		b.BackgroundTransparency = 0.25
+		b.Text = label
+		b.TextColor3 = Color3.fromRGB(255, 255, 255)
+		b.TextSize = 24
+		b.Font = Enum.Font.GothamBold
+		b.BorderSizePixel = 0
+		b.Parent = gui
+		local c = Instance.new("UICorner")
+		c.CornerRadius = UDim.new(0, 12)
+		c.Parent = b
+		b.MouseButton1Down:Connect(onDown)
+		b.MouseButton1Up:Connect(onUp)
+		b.MouseLeave:Connect(onUp)
+	end
+
+	makeBtn("GO", -150, function() bsFwd = true end, function() bsFwd = false end)
+	makeBtn("REV", -78, function() bsBack = true end, function() bsBack = false end)
+end
+
+local function startBackseatDrive()
+	local vehicle, drivePart = actions.getVehicle()
+	if not drivePart then
+		helpers.notify("Backseat Drive", "Sit in a vehicle first!")
+		return
+	end
+	createBackseatPad()
+
+	moveState.backseatDriveConnection = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			local c = LocalPlayer.Character
+			local h = c and c:FindFirstChildOfClass("Humanoid")
+			if not h or not h.SeatPart then return end
+
+			-- Re-resolved every frame so it survives changing seats or vehicles.
+			local _, part = actions.getVehicle()
+			if not part or not part.Parent then return end
+
+			local throttle = 0
+			if UserInputService:IsKeyDown(Enum.KeyCode.W) then throttle = throttle + 1 end
+			if UserInputService:IsKeyDown(Enum.KeyCode.S) then throttle = throttle - 1 end
+			if bsFwd then throttle = throttle + 1 end
+			if bsBack then throttle = throttle - 1 end
+
+			local steer = 0
+			if UserInputService:IsKeyDown(Enum.KeyCode.A) then steer = steer - 1 end
+			if UserInputService:IsKeyDown(Enum.KeyCode.D) then steer = steer + 1 end
+
+			local vel = part.AssemblyLinearVelocity
+			if throttle ~= 0 then
+				-- Flattened so pointing the camera down does not drive into the map.
+				local look = camera.CFrame.LookVector
+				local dir = Vector3.new(look.X, 0, look.Z)
+				dir = dir.Magnitude > 0 and dir.Unit or part.CFrame.LookVector
+				local target = dir * throttle * moveState.backseatDriveSpeed
+				-- Y is preserved so the vehicle still falls normally.
+				part.AssemblyLinearVelocity = Vector3.new(target.X, vel.Y, target.Z)
+			end
+
+			if steer ~= 0 then
+				part.AssemblyAngularVelocity =
+					Vector3.new(0, -steer * moveState.backseatDriveTurn, 0)
+			else
+				local av = part.AssemblyAngularVelocity
+				part.AssemblyAngularVelocity = Vector3.new(av.X, av.Y * 0.8, av.Z)
+			end
+		end)
+	end)
+
+	if UserInputService.TouchEnabled then
+		helpers.notify("Backseat Drive", "ON - GO/REV buttons, aim with camera")
+	else
+		helpers.notify("Backseat Drive", "ON - WASD from any seat")
+	end
+end
+
+local function stopBackseatDrive()
+	if moveState.backseatDriveConnection then
+		moveState.backseatDriveConnection:Disconnect()
+		moveState.backseatDriveConnection = nil
+	end
+	destroyBackseatPad()
+	helpers.notify("Backseat Drive", "OFF")
+end
+
 local function startCarSpeed()
 	local char = LocalPlayer.Character
 	if not char then helpers.notify("Car Speed", "No character!") return end
@@ -2945,7 +3080,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "Pebbleford Hub - NBTF Hub v5.4"
+titleText.Text = "Pebbleford Hub - NBTF Hub v5.5"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 12
@@ -3883,7 +4018,17 @@ do
 		if on then startVehicleFly() else stopVehicleFly() end
 	end)
 	uiBuilder.createSlider(tab, "Vehicle Fly Speed", 20, 800, moveState.vehicleFlySpeed, o(), function(val) moveState.vehicleFlySpeed = val end)
-	uiBuilder.createInfoLabel(tab, "Sit in any vehicle/car, then toggle to fly it", o())
+
+	uiBuilder.createSpacer(tab, o())
+
+	uiBuilder.createSectionLabel(tab, "Backseat Drive", o())
+	uiBuilder.createToggle(tab, "Backseat Drive (Any Seat)", o(), function(on)
+		moveState.backseatDriveActive = on
+		if on then startBackseatDrive() else stopBackseatDrive() end
+	end)
+	uiBuilder.createSlider(tab, "Backseat Drive Speed", 20, 400, moveState.backseatDriveSpeed, o(), function(val) moveState.backseatDriveSpeed = val end)
+	uiBuilder.createInfoLabel(tab, "Drive from a passenger seat. Steers with the camera.", o())
+	uiBuilder.createInfoLabel(tab, "Fly the vehicle from any seat, including passenger seats", o())
 
 	uiBuilder.createSpacer(tab, o())
 
@@ -4922,7 +5067,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v5.4", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v5.5", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -5015,7 +5160,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("SX NBTF v4.0", "Loaded! Right Shift to toggle")
-print("[SX NBTF v5.4] Pebbleford Hub - NBTF Hub v5.4")
-print("[SX NBTF v5.4] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v5.4] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v5.4] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v5.5] Pebbleford Hub - NBTF Hub v5.5")
+print("[SX NBTF v5.5] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v5.5] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v5.5] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
