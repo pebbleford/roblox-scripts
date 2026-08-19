@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v5.3
+-- Pebbleford Hub - NBTF Hub v5.4
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -161,7 +161,16 @@ pcall(function()
 	WeaponFiredRemote = game:GetService("ReplicatedStorage").WeaponsSystem.Network.WeaponFired
 end)
 
-local function fireWeaponHit(targetPlayer, gun)
+-- mode controls how loud this is, because activating the tool is a real
+-- trigger pull and snapping the camera is visible to the player:
+--   "silent" (default) - remotes only. Never fires the gun or moves the
+--                        camera. Used by passive helpers that run while the
+--                        player is already shooting.
+--   "fire"             - activates the tool but leaves the camera alone.
+--   "aim"              - activates and points the camera at the target, so
+--                        the game's own raycast resolves onto them.
+local function fireWeaponHit(targetPlayer, gun, mode)
+	mode = mode or "silent"
 	if not WeaponHitRemote then
 		pcall(function()
 			WeaponHitRemote = game:GetService("ReplicatedStorage").WeaponsSystem.Network.WeaponHit
@@ -222,14 +231,19 @@ local function fireWeaponHit(targetPlayer, gun)
 		dir = dir.Magnitude > 0 and dir.Unit or Vector3.new(0, 0, -1)
 
 		-- Point at the target so the game's own raycast resolves onto them.
-		pcall(function()
-			if camera then
-				camera.CFrame = CFrame.new(camera.CFrame.Position, head.Position)
-			end
-		end)
+		if mode == "aim" then
+			pcall(function()
+				if camera then
+					camera.CFrame = CFrame.new(camera.CFrame.Position, head.Position)
+				end
+			end)
+		end
 
 		-- Let the game fire for real.
-		local activated = pcall(function() gun:Activate() end)
+		local activated = false
+		if mode == "aim" or mode == "fire" then
+			activated = pcall(function() gun:Activate() end)
+		end
 
 		if WeaponFiredRemote then
 			pcall(function()
@@ -266,10 +280,11 @@ local function fireWeaponHit(targetPlayer, gun)
 	end)
 
 	local ok = false
-	for _ = 1, 30 do
+	local shots = (mode == "silent") and 1 or 30
+	for _ = 1, shots do
 		if shoot() then ok = true end
 		if humanoid.Health <= 0 then break end
-		task.wait(cooldown)
+		if shots > 1 then task.wait(cooldown) end
 	end
 	return ok
 end
@@ -638,7 +653,7 @@ local function startKillAura()
 				if helpers.isEnemy(player) and helpers.isAlive(player) then
 					local head = player.Character and player.Character:FindFirstChild("Head")
 					if head and (head.Position - hrp.Position).Magnitude <= combatState.killAuraRange then
-						fireWeaponHit(player, gun)
+						fireWeaponHit(player, gun, "fire")
 					end
 				end
 			end
@@ -669,7 +684,7 @@ local function startTriggerBot()
 			local gun = helpers.findGunInBackpack()
 			if gun then
 				helpers.equipGun(gun)
-				fireWeaponHit(targetPlayer, gun)
+				fireWeaponHit(targetPlayer, gun, "fire")
 			end
 		end)
 		task.wait(combatState.triggerBotDelay)
@@ -1213,7 +1228,7 @@ local function enableSilentAim()
 			if not targetPlayer then return end
 			if not helpers.calculateChance(aimState.hitChance) then return end
 
-			fireWeaponHit(targetPlayer, equippedGun)
+			fireWeaponHit(targetPlayer, equippedGun, "silent")
 			aimState.lastSilentAimFire = now
 		end)
 	end)
@@ -1251,7 +1266,7 @@ local function enableWallbang()
 			local targetPlayer = Players:GetPlayerFromCharacter(target.Parent)
 			if not targetPlayer then return end
 
-			fireWeaponHit(targetPlayer, equippedGun)
+			fireWeaponHit(targetPlayer, equippedGun, "silent")
 			aimState.lastWallbangFire = now
 		end)
 	end)
@@ -2618,7 +2633,7 @@ function actions.killAllPlayers()
 				if not killAllRunning then break end
 				if helpers.isAlive(player) then
 					pcall(function()
-						fireWeaponHit(player, gun)
+						fireWeaponHit(player, gun, "aim")
 					end)
 					if round == 1 then killed = killed + 1 end
 					task.wait(combatState.killAllDelay)
@@ -2930,7 +2945,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "Pebbleford Hub - NBTF Hub v5.3"
+titleText.Text = "Pebbleford Hub - NBTF Hub v5.4"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 12
@@ -4376,7 +4391,7 @@ do
 						print("[SX NBTF] Target head: " .. tostring(player.Character and player.Character:FindFirstChild("Head")))
 						task.spawn(function()
 							for i = 1, 3 do
-								local ok = fireWeaponHit(player, gun)
+								local ok = fireWeaponHit(player, gun, "aim")
 								print("[SX NBTF] Round " .. i .. " fired: " .. tostring(ok))
 								task.wait(combatState.killAllDelay)
 							end
@@ -4907,7 +4922,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v5.3", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v5.4", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -5000,7 +5015,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("SX NBTF v4.0", "Loaded! Right Shift to toggle")
-print("[SX NBTF v5.3] Pebbleford Hub - NBTF Hub v5.3")
-print("[SX NBTF v5.3] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v5.3] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v5.3] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v5.4] Pebbleford Hub - NBTF Hub v5.4")
+print("[SX NBTF v5.4] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v5.4] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v5.4] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
