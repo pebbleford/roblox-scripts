@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v6.1
+-- Pebbleford Hub - NBTF Hub v6.2
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -1518,11 +1518,38 @@ local function refillToolAmmo(tool)
 		pcall(function() current.Value = capacity.Value end)
 		wrote = wrote + 1
 	end
-	if reserves and reserves.Value < 900 then
+	if reserves and reserves.Value < 999 then
 		pcall(function() reserves.Value = 999 end)
 		wrote = wrote + 1
 	end
 	return wrote
+end
+
+-- Refilling the magazine mid-reload can leave the kit's reload half finished,
+-- so "reloading" never clears and the weapon quietly refuses to fire. That is
+-- the intermittent stall: the ammo count is fine, the weapon is just wedged.
+-- These flags are cleared on our own weapons every pass so it cannot stick.
+--
+-- knownWeapons holds every player's weapons, so it MUST be filtered by owner;
+-- without that this would be writing into other people's weapon state.
+local function unstickMyWeapons()
+	local ws = getWeaponsSystem()
+	if type(ws) ~= "table" then return end
+	local known = rawget(ws, "knownWeapons")
+	if type(known) ~= "table" then return end
+	for _, weapon in pairs(known) do
+		if type(weapon) == "table" and rawget(weapon, "player") == LocalPlayer then
+			pcall(function()
+				if weapon.reloading then weapon.reloading = false end
+				-- A fire time left in the future locks the weapon out entirely.
+				if type(weapon.nextFireTime) == "number" and weapon.nextFireTime > tick() then
+					weapon.nextFireTime = 0
+				end
+				if weapon.triggerDisconnected then weapon.triggerDisconnected = false end
+				if weapon.burstFiring then weapon.burstFiring = false end
+			end)
+		end
+	end
 end
 
 local function refillAllAmmo()
@@ -1548,6 +1575,7 @@ local function startInfAmmo()
 
 	combatState.ammoConnection = RunService.Heartbeat:Connect(function()
 		refillAllAmmo()
+		unstickMyWeapons()
 	end)
 
 	helpers.notify("Ammo", "Unlimited ammo active")
@@ -3237,7 +3265,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "Pebbleford Hub - NBTF Hub v6.1"
+titleText.Text = "Pebbleford Hub - NBTF Hub v6.2"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 12
@@ -5258,7 +5286,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v6.1", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v6.2", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -5351,7 +5379,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("SX NBTF v4.0", "Loaded! Right Shift to toggle")
-print("[SX NBTF v6.1] Pebbleford Hub - NBTF Hub v6.1")
-print("[SX NBTF v6.1] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v6.1] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v6.1] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v6.2] Pebbleford Hub - NBTF Hub v6.2")
+print("[SX NBTF v6.2] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v6.2] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v6.2] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
