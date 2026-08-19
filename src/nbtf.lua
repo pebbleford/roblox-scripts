@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v7.1
+-- Pebbleford Hub - NBTF Hub v7.2
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -3277,7 +3277,7 @@ end
 
 local Window = WindUI:CreateWindow({
 	Title = "Pebbleford Hub - NBTF",
-	Author = "NBTF Hub v7.1",
+	Author = "NBTF Hub v7.2",
 	Folder = "PebblefordHub",
 	Size = UDim2.fromOffset(580, 460),
 	HideSearchBar = false,
@@ -3331,11 +3331,18 @@ end
 function uiBuilder.createDynamicLabel(parent, text)
 	if not parent then return setmetatable({}, {__newindex = function() end}) end
 	local para = parent:Paragraph({Title = tostring(text or "")})
+	local lastText = tostring(text or "")
 	return setmetatable({}, {
 		__newindex = function(_, key, value)
 			if key == "Text" then
-				-- SetTitle, for the same reason: Title is what actually shows.
-				pcall(function() para:SetTitle(tostring(value)) end)
+				local str = tostring(value)
+				-- Only touch WindUI when the text actually changed; SetTitle
+				-- relays out the whole scroll frame, so an unchanged write was
+				-- pure churn every update tick and the main source of the lag.
+				if str ~= lastText then
+					lastText = str
+					pcall(function() para:SetTitle(str) end)
+				end
 			end
 		end,
 		__index = function() return nil end,
@@ -4719,7 +4726,7 @@ do
 
 	-- Update target info periodically
 	task.spawn(function()
-		while task.wait(0.5) do
+		while task.wait(1) do
 			pcall(function()
 				if not aimState.silentAimActive and not aimState.aimbotActive then
 					targetInfoLabel.Text = "No target - enable Silent Aim or Aimbot"
@@ -4871,9 +4878,9 @@ do
 	local fpsLabel = uiBuilder.createDynamicLabel(tab, "FPS: --")
 
 	task.spawn(function()
-		while task.wait(0.5) do
+		while task.wait(1) do
 			pcall(function()
-				local fps = math.floor(1 / RunService.RenderStepped:Wait())
+				local fps = math.floor(1 / math.max(RunService.RenderStepped:Wait(), 1/240))
 				fpsLabel.Text = "FPS: " .. fps
 				if fps >= 50 then
 					fpsLabel.TextColor3 = COLORS.success
@@ -5095,7 +5102,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v7.1", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v7.2", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -5126,7 +5133,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("Pebbleford NBTF", "Loaded - Right Shift toggles the menu")
-print("[SX NBTF v7.1] Pebbleford Hub - NBTF Hub v7.1")
-print("[SX NBTF v7.1] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v7.1] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v7.1] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v7.2] Pebbleford Hub - NBTF Hub v7.2")
+print("[SX NBTF v7.2] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v7.2] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v7.2] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
