@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v4.9
+-- Pebbleford Hub - NBTF Hub v5.0
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -327,6 +327,9 @@ local moveState = {
 	carFlingPower = 20000,
 	carFlingLoopActive = false,
 	carFlingRam = nil,
+	walkFlingActive = false,
+	walkFlingAutoNoclip = false,
+	instantReloadConnection = nil,
 }
 
 local playerState = {
@@ -1405,7 +1408,9 @@ local AMMO_FIELDS = {
 	"ammoInWeapon", "ammoInReserve", "currentAmmo", "totalAmmo",
 	"ammo", "clipAmmo", "magazineAmmo",
 }
-local AMMO_BIG = 9999999
+-- Deliberately modest. A huge value overflowed or was clamped by the kit,
+-- which is why the HUD read zero while a reload restored the real count.
+local AMMO_BIG = 999
 
 local cachedWeaponsSystem = nil
 local function getWeaponsSystem()
@@ -1730,6 +1735,117 @@ end
 
 local function stopNoclip()
 	if moveState.noclipConnection then moveState.noclipConnection:Disconnect() moveState.noclipConnection = nil end
+end
+
+-- ===================== WALK FLING =====================
+-- Ported from the Synapse hub, where it is proven. Unlike the car case this
+-- works because your own character is the one thing you both own and can
+-- safely spike: the velocity is multiplied for a single frame and restored
+-- on the next, so you barely move but anything you touch during the spiked
+-- frame is resolved by the server against a body travelling absurdly fast.
+-- Only the horizontal components are spiked; touching Y would launch you.
+local function startWalkFling()
+	local ok, err = pcall(function()
+		local character = LocalPlayer.Character
+		if not character then return end
+		local root = character:FindFirstChild("HumanoidRootPart")
+		if not root then return end
+
+		-- Noclip lets you walk into targets instead of bumping off them.
+		if not moveState.noclipActive then
+			moveState.noclipActive = true
+			startNoclip()
+			moveState.walkFlingAutoNoclip = true
+		end
+
+		moveState.walkFlingActive = true
+		local movel = 0.1
+
+		task.spawn(function()
+			while moveState.walkFlingActive do
+				local char = LocalPlayer.Character
+				local rt = char and char:FindFirstChild("HumanoidRootPart")
+				if not (char and char.Parent and rt and rt.Parent) then
+					RunService.Heartbeat:Wait()
+				else
+					local vel = rt.Velocity
+					rt.Velocity = Vector3.new(vel.X * 10000, vel.Y, vel.Z * 10000)
+
+					RunService.RenderStepped:Wait()
+					if char and char.Parent and rt and rt.Parent then
+						rt.Velocity = vel
+					end
+
+					RunService.Stepped:Wait()
+					-- Tiny Y oscillation keeps ground contact so you keep moving.
+					if char and char.Parent and rt and rt.Parent then
+						rt.Velocity = vel + Vector3.new(0, movel, 0)
+						movel = movel * -1
+					end
+				end
+			end
+		end)
+
+		helpers.notify("Walk Fling", "ON - walk into players!")
+	end)
+	if not ok then helpers.notify("Walk Fling", "Error: " .. tostring(err)) end
+end
+
+local function stopWalkFling()
+	moveState.walkFlingActive = false
+	if moveState.walkFlingAutoNoclip then
+		moveState.noclipActive = false
+		stopNoclip()
+		moveState.walkFlingAutoNoclip = false
+	end
+	helpers.notify("Walk Fling", "OFF")
+end
+
+-- ===================== INSTANT RELOAD =====================
+-- Zeroes the reload timing the kit reads from each weapon's Configuration.
+-- These are read per reload rather than once at init, so unlike the ammo
+-- counts this does take effect on already-equipped weapons.
+local RELOAD_ZERO_VALUES = {
+	"ReloadTime", "ReloadTimeMultiplier", "TacticalReloadTime",
+	"ShotCooldown", "EquipSpeed", "DequipSpeed",
+}
+
+local function applyInstantReload()
+	local function zeroTool(tool)
+		if not tool:IsA("Tool") then return end
+		local config = tool:FindFirstChild("Configuration")
+		if not config then return end
+		for _, val in ipairs(config:GetChildren()) do
+			for _, name in ipairs(RELOAD_ZERO_VALUES) do
+				if val.Name == name then
+					pcall(function() val.Value = 0 end)
+				end
+			end
+		end
+	end
+	pcall(function()
+		for _, tool in ipairs(LocalPlayer.Backpack:GetChildren()) do zeroTool(tool) end
+		local char = LocalPlayer.Character
+		if char then
+			for _, tool in ipairs(char:GetChildren()) do zeroTool(tool) end
+		end
+	end)
+end
+
+local function startInstantReload()
+	applyInstantReload()
+	moveState.instantReloadConnection = RunService.Heartbeat:Connect(function()
+		applyInstantReload()
+	end)
+	helpers.notify("Instant Reload", "ON")
+end
+
+local function stopInstantReload()
+	if moveState.instantReloadConnection then
+		moveState.instantReloadConnection:Disconnect()
+		moveState.instantReloadConnection = nil
+	end
+	helpers.notify("Instant Reload", "OFF")
 end
 
 -- ===================== SPEED BOOST =====================
@@ -2794,7 +2910,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "Pebbleford Hub - NBTF Hub v4.9"
+titleText.Text = "Pebbleford Hub - NBTF Hub v5.0"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 12
@@ -3225,6 +3341,9 @@ do
 		if on then startInfAmmo() else stopInfAmmo() end
 	end)
 	uiBuilder.createInfoLabel(tab, "Refills the live weapon each frame + maxes damage/range", o())
+	uiBuilder.createToggle(tab, "Instant Reload", o(), function(on)
+		if on then startInstantReload() else stopInstantReload() end
+	end)
 	uiBuilder.createButton(tab, "Mod All Guns (Ammo + Damage + No Recoil)", o(), function()
 		actions.modGuns()
 		helpers.notify("Mod Guns", "All guns modded! Max ammo, damage, zero recoil/spread")
@@ -3749,6 +3868,15 @@ do
 		if on then startCarFling() else stopCarFling() end
 	end)
 	uiBuilder.createSlider(tab, "Car Fling Power", 1000, 100000, moveState.carFlingPower, o(), function(val) moveState.carFlingPower = val end)
+
+	uiBuilder.createSpacer(tab, o())
+
+	uiBuilder.createSectionLabel(tab, "Walk Fling", o())
+	uiBuilder.createToggle(tab, "Walk Fling", o(), function(on)
+		moveState.walkFlingActive = on
+		if on then startWalkFling() else stopWalkFling() end
+	end)
+	uiBuilder.createInfoLabel(tab, "Walk into players to launch them. Enables noclip.", o())
 	uiBuilder.createInfoLabel(tab, "Launches loose objects you drive into. Cannot move your car.", o())
 
 	uiBuilder.createSpacer(tab, o())
@@ -4759,7 +4887,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v4.9", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v5.0", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -4852,7 +4980,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("SX NBTF v4.0", "Loaded! Right Shift to toggle")
-print("[SX NBTF v4.9] Pebbleford Hub - NBTF Hub v4.9")
-print("[SX NBTF v4.9] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v4.9] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v4.9] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v5.0] Pebbleford Hub - NBTF Hub v5.0")
+print("[SX NBTF v5.0] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v5.0] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v5.0] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")

@@ -33,6 +33,7 @@ SCRIPTS = [
     "industrialist.lua",
     "psteleport.lua",
     "translator.lua",
+    "nbtfdump.lua",
 ]
 
 def random_var(length=8):
