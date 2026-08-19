@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v6.9
+-- Pebbleford Hub - NBTF Hub v7.0
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -3268,7 +3268,7 @@ end
 
 local Window = WindUI:CreateWindow({
 	Title = "Pebbleford Hub - NBTF",
-	Author = "NBTF Hub v6.9",
+	Author = "NBTF Hub v7.0",
 	Folder = "PebblefordHub",
 	Size = UDim2.fromOffset(580, 460),
 	HideSearchBar = false,
@@ -3310,7 +3310,10 @@ end
 
 function uiBuilder.createInfoLabel(parent, text, order)
 	if not parent then return end
-	return parent:Paragraph({Title = "", Desc = text})
+	-- The text goes in Title, not Desc. WindUI treats Title as the primary
+	-- rendered field, so a paragraph with an empty Title draws as a blank box
+	-- regardless of what Desc contains.
+	return parent:Paragraph({Title = text})
 end
 
 -- Returns a proxy, not a WindUI object. The feature code updates these labels
@@ -3318,11 +3321,12 @@ end
 -- and quietly absorbs the cosmetic properties the library manages itself.
 function uiBuilder.createDynamicLabel(parent, text)
 	if not parent then return setmetatable({}, {__newindex = function() end}) end
-	local para = parent:Paragraph({Title = "", Desc = tostring(text or "")})
+	local para = parent:Paragraph({Title = tostring(text or "")})
 	return setmetatable({}, {
 		__newindex = function(_, key, value)
 			if key == "Text" then
-				pcall(function() para:SetDesc(tostring(value)) end)
+				-- SetTitle, for the same reason: Title is what actually shows.
+				pcall(function() para:SetTitle(tostring(value)) end)
 			end
 		end,
 		__index = function() return nil end,
@@ -5082,7 +5086,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v6.9", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v7.0", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -5113,7 +5117,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("Pebbleford NBTF", "Loaded - Right Shift toggles the menu")
-print("[SX NBTF v6.9] Pebbleford Hub - NBTF Hub v6.9")
-print("[SX NBTF v6.9] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v6.9] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v6.9] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v7.0] Pebbleford Hub - NBTF Hub v7.0")
+print("[SX NBTF v7.0] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v7.0] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v7.0] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
