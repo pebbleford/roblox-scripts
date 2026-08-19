@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v4.5
+-- Pebbleford Hub - NBTF Hub v4.6
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -289,11 +289,7 @@ local moveState = {
 	carSpeedOrigTorque = nil,
 	carFlingActive = false,
 	carFlingPower = 20000,
-	carFlingConnection = nil,
-	carFlingOrigProps = {},
-	carFlingTouchConns = {},
-	carFlingRoot = nil,
-	carFlingPart = nil,
+	carFlingLoopActive = false,
 }
 
 local playerState = {
@@ -2105,66 +2101,61 @@ local function stopCarSpeed()
 end
 
 -- ===================== CAR FLING =====================
--- Launches whatever the vehicle touches, on contact.
+-- Velocity-spike fling, the same technique as Walk Fling.
 --
--- Spinning the vehicle does not work here: sitting down welds the character
--- into the SAME physics assembly as the car, so any spin applies to the
--- driver too, and once Roblox breaks the seat weld under that force the
--- driver flies off carrying all of the tangential velocity. Making the
--- character massless does not help, and zeroing the character's assembly
--- velocity also zeroes the car (one assembly, one velocity).
+-- Two earlier approaches failed. Spinning the vehicle also spun the driver,
+-- because sitting welds the character into the same physics assembly as the
+-- car. Setting the touched part's velocity directly did nothing, because
+-- other players and most props are owned by the server, so a velocity written
+-- from this client never replicates.
 --
--- So there is no spin at all. Vehicle parts get a Touched handler that
--- launches the touched part directly, which only ever affects the target.
-local function flingTouchedPart(hit)
-	if not hit or not hit:IsA("BasePart") or hit.Anchored then return end
-
-	local char = LocalPlayer.Character
-	if char and hit:IsDescendantOf(char) then return end
-	if moveState.carFlingRoot and hit:IsDescendantOf(moveState.carFlingRoot) then return end
-
-	local source = moveState.carFlingPart
-	if not source or not source.Parent then return end
-
-	-- Push away from the vehicle, with some lift so things actually launch
-	-- rather than skid along the ground.
-	local dir = hit.Position - source.Position
-	dir = dir.Magnitude > 0.01 and dir.Unit or source.CFrame.LookVector
-	local power = moveState.carFlingPower / 100
-
-	pcall(function()
-		hit.AssemblyLinearVelocity = Vector3.new(dir.X * power, power * 0.6, dir.Z * power)
-	end)
-end
-
+-- What does replicate is the vehicle's own velocity: the driver holds network
+-- ownership of the car. So each frame the car's horizontal velocity is spiked
+-- to an enormous value and restored on the very next frame. The car barely
+-- moves, but any collision resolved during the spiked frame is computed by
+-- the server against a part travelling absurdly fast, which launches it.
+--
+-- Y velocity is deliberately preserved: spiking it would fire the car (and
+-- the driver) straight up. Nothing here changes density, because setting
+-- density on wheels collapses the suspension constraints and breaks the car.
 local function startCarFling()
 	local ok, err = pcall(function()
-		local vehicle, vPart = actions.getVehicle()
+		local _, vPart = actions.getVehicle()
 		if not vPart then
 			helpers.notify("Car Fling", "Sit in a vehicle first!")
 			return
 		end
-		-- getVehicle returns nil for the model when the seat's parent isn't a
-		-- Model; fall back to whatever the seat is parented to.
-		local vehicleRoot = vehicle or vPart.Parent
-		if not vehicleRoot then
-			helpers.notify("Car Fling", "Could not find the vehicle!")
-			return
-		end
-		moveState.carFlingRoot = vehicleRoot
-		moveState.carFlingPart = vPart
 
-		-- Density still helps: a heavy car shoves things on contact even
-		-- before the Touched handler adds its own launch.
-		moveState.carFlingOrigProps = {}
-		moveState.carFlingTouchConns = {}
-		for _, part in ipairs(vehicleRoot:GetDescendants()) do
-			if part:IsA("BasePart") then
-				moveState.carFlingOrigProps[part] = part.CustomPhysicalProperties
-				part.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
-				table.insert(moveState.carFlingTouchConns, part.Touched:Connect(flingTouchedPart))
+		moveState.carFlingLoopActive = true
+
+		task.spawn(function()
+			while moveState.carFlingLoopActive do
+				local _, part = actions.getVehicle()
+				if not part or not part.Parent then
+					RunService.Heartbeat:Wait()
+				else
+					local vel = part.AssemblyLinearVelocity
+					local mult = moveState.carFlingPower / 10
+					local spiked
+					if Vector3.new(vel.X, 0, vel.Z).Magnitude < 1 then
+						-- Sitting still there is nothing to multiply, so push along
+						-- the car's facing instead. Lets it fling while parked.
+						local look = part.CFrame.LookVector
+						spiked = Vector3.new(look.X * mult, vel.Y, look.Z * mult)
+					else
+						spiked = Vector3.new(vel.X * mult, vel.Y, vel.Z * mult)
+					end
+
+					pcall(function() part.AssemblyLinearVelocity = spiked end)
+					RunService.RenderStepped:Wait()
+					-- Restore immediately so the car itself does not fly away.
+					if part and part.Parent then
+						pcall(function() part.AssemblyLinearVelocity = vel end)
+					end
+					RunService.Stepped:Wait()
+				end
 			end
-		end
+		end)
 
 		helpers.notify("Car Fling", "ON - drive into stuff!")
 	end)
@@ -2172,25 +2163,16 @@ local function startCarFling()
 end
 
 local function stopCarFling()
-	if moveState.carFlingConnection then moveState.carFlingConnection:Disconnect() moveState.carFlingConnection = nil end
-	for _, conn in ipairs(moveState.carFlingTouchConns) do
-		pcall(function() conn:Disconnect() end)
-	end
-	moveState.carFlingTouchConns = {}
+	moveState.carFlingLoopActive = false
+	-- Zero out any leftover spike so the car does not coast off after the
+	-- loop stops between the spike and its restore.
 	pcall(function()
-		for part, props in pairs(moveState.carFlingOrigProps) do
-			if part and part.Parent then
-				if props then
-					part.CustomPhysicalProperties = props
-				else
-					part.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
-				end
-			end
+		local _, part = actions.getVehicle()
+		if part and part.Parent then
+			local v = part.AssemblyLinearVelocity
+			part.AssemblyLinearVelocity = Vector3.new(0, v.Y, 0)
 		end
 	end)
-	moveState.carFlingOrigProps = {}
-	moveState.carFlingRoot = nil
-	moveState.carFlingPart = nil
 	helpers.notify("Car Fling", "OFF")
 end
 
@@ -2659,7 +2641,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "Pebbleford Hub - NBTF Hub v4.5"
+titleText.Text = "Pebbleford Hub - NBTF Hub v4.6"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 12
@@ -3614,7 +3596,7 @@ do
 		if on then startCarFling() else stopCarFling() end
 	end)
 	uiBuilder.createSlider(tab, "Car Fling Power", 1000, 100000, moveState.carFlingPower, o(), function(val) moveState.carFlingPower = val end)
-	uiBuilder.createInfoLabel(tab, "Drive into things to launch them. No spin, so you stay in the seat.", o())
+	uiBuilder.createInfoLabel(tab, "Drive into things to launch them. Works best while moving.", o())
 
 	uiBuilder.createSpacer(tab, o())
 
@@ -4624,7 +4606,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v4.5", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v4.6", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -4717,7 +4699,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("SX NBTF v4.0", "Loaded! Right Shift to toggle")
-print("[SX NBTF v4.5] Pebbleford Hub - NBTF Hub v4.5")
-print("[SX NBTF v4.5] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v4.5] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v4.5] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v4.6] Pebbleford Hub - NBTF Hub v4.6")
+print("[SX NBTF v4.6] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v4.6] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v4.6] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
