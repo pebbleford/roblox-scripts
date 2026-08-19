@@ -4,7 +4,7 @@ local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyUR
 if not keyOk or not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v6.2
+-- Pebbleford Hub - NBTF Hub v6.3
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -1843,8 +1843,11 @@ local function startNoclip()
 				end
 			end
 			if moveState.noclipAntiSink then
-				-- Flying already controls height, so leave it alone.
-				if not (moveState.flyActive or moveState.vehicleFlyActive) then
+				-- Flying already controls height, and walk fling drives Y
+				-- itself through its spike and restore cycle, so anti-sink
+				-- must stay out of the way of both or they fight.
+				if not (moveState.flyActive or moveState.vehicleFlyActive
+					or moveState.walkFlingActive) then
 					holdAltitude(char:FindFirstChild("HumanoidRootPart"), "character")
 				end
 			end
@@ -1894,18 +1897,14 @@ local function startWalkFling()
 					RunService.Heartbeat:Wait()
 				else
 					local vel = rt.Velocity
-					-- The spike is a multiplier, so standing still multiplies
-					-- zero and flings nothing. When barely moving, push along
-					-- the way the character faces instead so it still works.
-					local horiz = Vector3.new(vel.X, 0, vel.Z)
-					local spiked
-					if horiz.Magnitude < 1 then
-						local look = rt.CFrame.LookVector
-						spiked = Vector3.new(look.X * 9000, vel.Y, look.Z * 9000)
-					else
-						spiked = Vector3.new(vel.X * 10000, vel.Y, vel.Z * 10000)
-					end
-					rt.Velocity = spiked
+					-- Strictly a multiplier of the velocity you already have.
+					-- An earlier version added a fixed push along the facing
+					-- direction so it would work while standing still; that is
+					-- a large absolute velocity applied to your own character,
+					-- and it simply launched the player. Multiplying means a
+					-- stationary player scales zero and goes nowhere, which is
+					-- the point: you have to walk into someone.
+					rt.Velocity = Vector3.new(vel.X * 10000, vel.Y, vel.Z * 10000)
 
 					RunService.RenderStepped:Wait()
 					if char and char.Parent and rt and rt.Parent then
@@ -3265,7 +3264,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -80, 1, 0)
 titleText.Position = UDim2.new(0, 10, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "Pebbleford Hub - NBTF Hub v6.2"
+titleText.Text = "Pebbleford Hub - NBTF Hub v6.3"
 titleText.TextColor3 = COLORS.accent
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 12
@@ -5286,7 +5285,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v6.2", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v6.3", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -5379,7 +5378,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("SX NBTF v4.0", "Loaded! Right Shift to toggle")
-print("[SX NBTF v6.2] Pebbleford Hub - NBTF Hub v6.2")
-print("[SX NBTF v6.2] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v6.2] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v6.2] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v6.3] Pebbleford Hub - NBTF Hub v6.3")
+print("[SX NBTF v6.3] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v6.3] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v6.3] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
