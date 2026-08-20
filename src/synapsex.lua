@@ -384,7 +384,7 @@ local tabFrames = {}
 
 local Window = WindUI:CreateWindow({
 	Title = "Pebbleford Hub",
-	Author = "Universal Hub v2.4",
+	Author = "Universal Hub v3.1",
 	Folder = "PebblefordHub",
 	Size = UDim2.fromOffset(580, 460),
 	HideSearchBar = true,
@@ -2550,6 +2550,22 @@ F.rejoinServer = function()
 	addLog("[SERVER] Rejoining...", COLORS.accent)
 end
 
+F.respawnCharacter = function()
+	-- Kills the character so the server respawns it. Works wherever
+	-- CharacterAutoLoads is left on, which is the default. Breaking the root's
+	-- joints is more reliable than Health=0 alone against god-mode style loops
+	-- that pin health, so both are done.
+	pcall(function()
+		local char = LocalPlayer.Character
+		if not char then return end
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		if hum then hum.Health = 0 end
+		local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+		if root then root:BreakJoints() end
+	end)
+	addLog("[RESPAWN] Respawning character...", COLORS.accent)
+end
+
 F.serverHop = function()
 	pcall(function()
 		local servers = HttpService:JSONDecode(
@@ -2575,7 +2591,7 @@ do
 	local tab = tabFrames["Main"]
 
 	createSectionLabel(tab, "Welcome", 1)
-	createInfoLabel(tab, "Pebbleford Hub v3.0", 2)
+	createInfoLabel(tab, "Pebbleford Hub v3.1", 2)
 	createInfoLabel(tab, "Player: " .. LocalPlayer.DisplayName .. " (@" .. LocalPlayer.Name .. ")", 3)
 
 
@@ -2772,6 +2788,7 @@ do
 
 
 	createSectionLabel(tab, "Actions", 6)
+	createActionButton(tab, "Respawn Character", 6, function() F.respawnCharacter() end)
 	createActionButton(tab, "Rejoin Server", 7, function() F.rejoinServer() end)
 	createActionButton(tab, "Server Hop", 8, function() F.serverHop() end)
 
@@ -3190,7 +3207,7 @@ do
 	themeOrder = themeOrder + 1
 	createSectionLabel(tab, "About", themeOrder)
 	themeOrder = themeOrder + 1
-	createInfoLabel(tab, "Pebbleford Hub v3.0", themeOrder)
+	createInfoLabel(tab, "Pebbleford Hub v3.1", themeOrder)
 	themeOrder = themeOrder + 1
 	createInfoLabel(tab, "50+ features | 10 tabs", themeOrder)
 	themeOrder = themeOrder + 1
@@ -3327,6 +3344,7 @@ commands["chatspy"] = function() serverState.chatSpyEnabled = true F.startChatSp
 commands["unchatspy"] = function() serverState.chatSpyEnabled = false F.stopChatSpy() end
 commands["joinnotify"] = function() serverState.joinNotifyEnabled = true F.startJoinNotify() end
 commands["unjoinnotify"] = function() serverState.joinNotifyEnabled = false F.stopJoinNotify() end
+commands["respawn"] = function() F.respawnCharacter() end
 commands["autorespawn"] = function() serverState.autoRespawnEnabled = true F.startAutoRespawn() end
 commands["unautorespawn"] = function() serverState.autoRespawnEnabled = false F.stopAutoRespawn() end
 commands["orbit"] = function() playerState.orbitEnabled = true F.startOrbit() end
@@ -3342,7 +3360,7 @@ commands["panic"] = function() pcall(function() screenGui:Destroy() end) end
 commands["unload"] = function() F.unloadScript() end
 
 commands["cmds"] = function()
-	addLog("--- v3.0 Commands (90+) ---", COLORS.accent)
+	addLog("--- v3.1 Commands (90+) ---", COLORS.accent)
 	addLog("== Combat ==", COLORS.textSecondary)
 	addLog(";aimbot ;triggerbot ;hitbox [sz] ;antifling ;antivoid", COLORS.textSecondary)
 	addLog(";killaura / un- versions to disable", COLORS.textSecondary)
@@ -3364,7 +3382,7 @@ commands["cmds"] = function()
 	addLog(";playerinfo", COLORS.textSecondary)
 	addLog("== Server ==", COLORS.textSecondary)
 	addLog(";rejoin ;serverhop ;antiafk ;chatspy ;joinnotify", COLORS.textSecondary)
-	addLog(";autorespawn ;panic ;unload ;cmds", COLORS.textSecondary)
+	addLog(";respawn ;autorespawn ;panic ;unload ;cmds", COLORS.textSecondary)
 	addLog("Prefix un- to disable any toggle (e.g. ;unfly)", COLORS.textSecondary)
 end
 
@@ -4304,8 +4322,8 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ===================== STARTUP =====================
-addLog("Pebbleford Hub v3.0", COLORS.accent)
+addLog("Pebbleford Hub v3.1", COLORS.accent)
 addLog("50+ features loaded across 10 tabs", COLORS.success)
 addLog("Type ;cmds in chat for commands", COLORS.textSecondary)
 addLog("Press Right Shift to toggle window", COLORS.textSecondary)
-print("[Pebbleford Hub] v3.0 loaded")
+print("[Pebbleford Hub] v3.1 loaded")
