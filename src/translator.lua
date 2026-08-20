@@ -2,7 +2,7 @@
 -- Pebbleford Hub - Chat Translator
 -- Reads incoming chat, auto-translates to English, and lets you
 -- send outgoing messages translated into any target language.
--- v1.0
+-- v1.1
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -535,16 +535,29 @@ end
 -- ===================== SEND TRANSLATED =====================
 local function sendChat(text)
 	local sent = false
-	if usingNewChat then
-		pcall(function()
-			local ch = TextChatService:WaitForChild("TextChannels", 2)
-			local general = ch and ch:FindFirstChild("RBXGeneral")
-			if general then
-				general:SendAsync(text)
-				sent = true
+
+	-- Try TextChatService regardless of usingNewChat: the earlier guess could
+	-- be wrong, and trying both paths is cheaper than being wrong. Any text
+	-- channel is acceptable, since games rename RBXGeneral (RBXSystem, custom
+	-- names), so the first channel that has SendAsync is used rather than
+	-- assuming one fixed name.
+	pcall(function()
+		local channels = TextChatService:FindFirstChild("TextChannels")
+		if not channels then return end
+		local general = channels:FindFirstChild("RBXGeneral")
+		local target = general
+		if not target then
+			for _, ch in ipairs(channels:GetChildren()) do
+				if ch:IsA("TextChannel") then target = ch break end
 			end
-		end)
-	end
+		end
+		if target then
+			target:SendAsync(text)
+			sent = true
+		end
+	end)
+
+	-- Legacy SayMessageRequest, for games still on the old chat.
 	if not sent then
 		pcall(function()
 			local events = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
@@ -554,6 +567,7 @@ local function sendChat(text)
 			end
 		end)
 	end
+
 	return sent
 end
 
@@ -584,7 +598,12 @@ local function doSend()
 			addLog(("me [%s→%s]: %s"):format(detected or "??", outgoingTarget, translated), COLORS.success)
 			msgBox.Text = ""
 		else
-			addLog("[!] failed to send to chat (game may block chat sending)", COLORS.error)
+			-- The translation succeeded; only sending was blocked. Show it and
+			-- copy it so the message can be pasted into chat by hand instead of
+			-- being lost.
+			addLog(("translated (send blocked): %s"):format(translated), COLORS.warn)
+			addLog("[!] copied to clipboard - paste it into chat manually", COLORS.warn)
+			pcall(function() if setclipboard then setclipboard(translated) end end)
 		end
 		sending = false
 		sendBtn.Text = "Send Translated"
