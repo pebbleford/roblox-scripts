@@ -36,6 +36,7 @@ SCRIPTS = [
     "nbtfdump.lua",
     "uidemo_fluent.lua",
     "uidemo_windui.lua",
+    "synapsexlegacy.lua",
 ]
 
 def random_var(length=8):
