@@ -387,7 +387,7 @@ local Window = WindUI:CreateWindow({
 	Author = "Universal Hub v2.4",
 	Folder = "PebblefordHub",
 	Size = UDim2.fromOffset(580, 460),
-	HideSearchBar = false,
+	HideSearchBar = true,
 	OpenButton = {
 		Title = "SX",
 		Enabled = true,
@@ -538,10 +538,12 @@ end
 local function createDynamicLabel(parent, text)
 	if not parent then return setmetatable({}, {__newindex = function() end}) end
 	local para = parent:Paragraph({Title = tostring(text or "")})
+	local last = tostring(text or "")
 	return setmetatable({}, {
 		__newindex = function(_, key, value)
 			if key == "Text" then
-				pcall(function() para:SetTitle(tostring(value)) end)
+				local str = tostring(value)
+				if str ~= last then last = str; pcall(function() para:SetTitle(str) end) end
 			end
 		end,
 		__index = function() return nil end,
