@@ -477,7 +477,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 50, 1, 0)
 versionLabel.Position = UDim2.new(0, 168, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v3.1"
+versionLabel.Text = "v4.0"
 versionLabel.TextColor3 = COLORS.textDim
 versionLabel.Font = Enum.Font.Code
 versionLabel.TextSize = 11
@@ -555,7 +555,7 @@ tabBar.Size = UDim2.new(1, 0, 0, 34)
 tabBar.Position = UDim2.new(0, 0, 0, 42)
 tabBar.BackgroundColor3 = COLORS.bgSecondary
 tabBar.BorderSizePixel = 0
-tabBar.ClipsDescendants = true
+tabBar.ClipsDescendants = false
 tabBar.Parent = mainWindow
 
 local tabBarDivider = Instance.new("Frame")
@@ -570,36 +570,24 @@ local tabNames = {"Execute", "Main", "Player", "Combat", "ESP", "Movement", "Vis
 local tabButtons = {}
 local tabFrames = {}
 
-local tabBarLayout = Instance.new("UIListLayout")
-tabBarLayout.FillDirection = Enum.FillDirection.Horizontal
-tabBarLayout.SortOrder = Enum.SortOrder.LayoutOrder
-tabBarLayout.Padding = UDim.new(0, 0)
-tabBarLayout.Parent = tabBar
-
+-- Manual positioning instead of a UIListLayout: no layout dependency, so the
+-- buttons cannot end up at zero size. Each tab is 1/N of the bar width.
+local _tabCount = #tabNames
 for i, tabName in ipairs(tabNames) do
 	local tabBtn = Instance.new("TextButton")
 	tabBtn.Name = tabName .. "Tab"
-	-- Equal width across the bar; Scale sizing works because tabBar is a plain
-	-- Frame (a ScrollingFrame sized by its zero-height canvas hid these).
-	tabBtn.Size = UDim2.new(1 / #tabNames, 0, 1, 0)
+	tabBtn.Position = UDim2.new((i - 1) / _tabCount, 0, 0, 0)
+	tabBtn.Size = UDim2.new(1 / _tabCount, 0, 1, -1)
 	tabBtn.BackgroundColor3 = COLORS.accentDark
 	tabBtn.BackgroundTransparency = (tabName == "Execute") and 0 or 1
 	tabBtn.Text = string.upper(tabName)
-	tabBtn.TextColor3 = (tabName == "Execute") and COLORS.accent or COLORS.textDim
+	tabBtn.TextColor3 = (tabName == "Execute") and COLORS.accent or COLORS.textSecondary
 	tabBtn.Font = Enum.Font.Code
 	tabBtn.TextSize = 10
+	tabBtn.TextScaled = false
 	tabBtn.AutoButtonColor = false
-	tabBtn.LayoutOrder = i
+	tabBtn.ZIndex = 3
 	tabBtn.Parent = tabBar
-
-	-- 1px black separator on the right edge.
-	local sep = Instance.new("Frame")
-	sep.Size = UDim2.new(0, 1, 1, 0)
-	sep.Position = UDim2.new(1, -1, 0, 0)
-	sep.BackgroundColor3 = COLORS.bg
-	sep.BorderSizePixel = 0
-	sep.ZIndex = 2
-	sep.Parent = tabBtn
 
 	tabButtons[tabName] = tabBtn
 end
@@ -710,7 +698,7 @@ local function switchTab(tabName)
 			btn.TextColor3 = COLORS.accent
 		else
 			btn.BackgroundTransparency = 1
-			btn.TextColor3 = COLORS.textDim
+			btn.TextColor3 = COLORS.textSecondary
 		end
 	end
 end
