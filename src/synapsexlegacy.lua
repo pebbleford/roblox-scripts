@@ -448,89 +448,76 @@ shadow.Parent = mainWindow
 -- ===================== TITLE BAR =====================
 local titleBar = Instance.new("Frame")
 titleBar.Name = "TitleBar"
-titleBar.Size = UDim2.new(1, 0, 0, 34)
+titleBar.Size = UDim2.new(1, 0, 0, 40)
 titleBar.BackgroundColor3 = COLORS.bgSecondary
 titleBar.BorderSizePixel = 0
 titleBar.Parent = mainWindow
-addCorner(titleBar, 8)
 
-local titleBarCover = Instance.new("Frame")
-titleBarCover.Size = UDim2.new(1, 0, 0, 12)
-titleBarCover.Position = UDim2.new(0, 0, 1, -12)
-titleBarCover.BackgroundColor3 = COLORS.bgSecondary
-titleBarCover.BorderSizePixel = 0
-titleBarCover.Parent = titleBar
-
--- Orange accent line under title
+-- Bright green 2px accent line under the title, as in the mockup.
 local titleAccent = Instance.new("Frame")
 titleAccent.Size = UDim2.new(1, 0, 0, 2)
 titleAccent.Position = UDim2.new(0, 0, 1, 0)
 titleAccent.BackgroundColor3 = COLORS.accent
 titleAccent.BorderSizePixel = 0
+titleAccent.ZIndex = 3
 titleAccent.Parent = titleBar
 
--- Logo icon (orange square)
-local logoIcon = Instance.new("Frame")
-logoIcon.Size = UDim2.new(0, 18, 0, 18)
-logoIcon.Position = UDim2.new(0, 10, 0.5, -9)
-logoIcon.BackgroundColor3 = COLORS.accent
-logoIcon.BorderSizePixel = 0
-logoIcon.Parent = titleBar
-addCorner(logoIcon, 3)
-
-local logoText = Instance.new("TextLabel")
-logoText.Size = UDim2.new(1, 0, 1, 0)
-logoText.BackgroundTransparency = 1
-logoText.Text = "P"
-logoText.TextColor3 = COLORS.textPrimary
-logoText.Font = Enum.Font.Code
-logoText.TextSize = 12
-logoText.Parent = logoIcon
-
 local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, -120, 1, 0)
-titleLabel.Position = UDim2.new(0, 34, 0, 0)
+titleLabel.Size = UDim2.new(0, 220, 1, 0)
+titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "Pebbleford Hub"
+titleLabel.Text = "PEBBLEFORD HUB"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
-titleLabel.TextSize = 14
+titleLabel.TextSize = 15
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 titleLabel.Parent = titleBar
 
 local versionLabel = Instance.new("TextLabel")
-versionLabel.Size = UDim2.new(0, 40, 1, 0)
-versionLabel.Position = UDim2.new(0, 120, 0, 0)
+versionLabel.Size = UDim2.new(0, 50, 1, 0)
+versionLabel.Position = UDim2.new(0, 168, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v3.0"
-versionLabel.TextColor3 = COLORS.accent
+versionLabel.Text = "v3.1"
+versionLabel.TextColor3 = COLORS.textDim
 versionLabel.Font = Enum.Font.Code
-versionLabel.TextSize = 10
+versionLabel.TextSize = 11
 versionLabel.TextXAlignment = Enum.TextXAlignment.Left
 versionLabel.Parent = titleBar
 
--- Window buttons
+-- KEY OK badge, right side.
+local keyBadge = Instance.new("TextLabel")
+keyBadge.Size = UDim2.new(0, 60, 0, 22)
+keyBadge.Position = UDim2.new(1, -132, 0.5, -11)
+keyBadge.BackgroundTransparency = 1
+keyBadge.Text = "KEY OK"
+keyBadge.TextColor3 = COLORS.textDim
+keyBadge.Font = Enum.Font.Code
+keyBadge.TextSize = 11
+keyBadge.TextXAlignment = Enum.TextXAlignment.Right
+keyBadge.Parent = titleBar
+
+-- Collapse (dark) + close (green) buttons, 28x28, sharp.
 local minimizeBtn = Instance.new("TextButton")
-minimizeBtn.Size = UDim2.new(0, 26, 0, 26)
-minimizeBtn.Position = UDim2.new(1, -58, 0, 4)
-minimizeBtn.BackgroundColor3 = COLORS.tabBg
+minimizeBtn.Size = UDim2.new(0, 28, 0, 28)
+minimizeBtn.Position = UDim2.new(1, -64, 0.5, -14)
+minimizeBtn.BackgroundColor3 = COLORS.accentDark
 minimizeBtn.Text = "-"
-minimizeBtn.TextColor3 = COLORS.textSecondary
+minimizeBtn.TextColor3 = COLORS.textPrimary
 minimizeBtn.Font = Enum.Font.Code
 minimizeBtn.TextSize = 16
+minimizeBtn.BorderSizePixel = 0
 minimizeBtn.Parent = titleBar
-addCorner(minimizeBtn, 4)
 
 local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.new(0, 26, 0, 26)
-closeBtn.Position = UDim2.new(1, -30, 0, 4)
-closeBtn.BackgroundColor3 = COLORS.error
+closeBtn.Size = UDim2.new(0, 28, 0, 28)
+closeBtn.Position = UDim2.new(1, -32, 0.5, -14)
+closeBtn.BackgroundColor3 = COLORS.accent
 closeBtn.Text = "X"
-closeBtn.TextColor3 = COLORS.textPrimary
+closeBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
 closeBtn.Font = Enum.Font.Code
-closeBtn.TextSize = 11
+closeBtn.TextSize = 13
+closeBtn.BorderSizePixel = 0
 closeBtn.Parent = titleBar
-addCorner(closeBtn, 4)
 
 -- ===================== DRAG LOGIC =====================
 do
@@ -562,12 +549,17 @@ do
 end
 
 -- ===================== TAB BAR (horizontal) =====================
-local tabBar = Instance.new("Frame")
+local tabBar = Instance.new("ScrollingFrame")
 tabBar.Name = "TabBar"
-tabBar.Size = UDim2.new(1, 0, 0, 30)
-tabBar.Position = UDim2.new(0, 0, 0, 36)
+tabBar.Size = UDim2.new(1, 0, 0, 34)
+tabBar.Position = UDim2.new(0, 0, 0, 42)
 tabBar.BackgroundColor3 = COLORS.bgSecondary
 tabBar.BorderSizePixel = 0
+tabBar.ScrollBarThickness = 2
+tabBar.ScrollBarImageColor3 = COLORS.accent
+tabBar.ScrollingDirection = Enum.ScrollingDirection.X
+tabBar.CanvasSize = UDim2.new(0, 0, 0, 0)
+tabBar.AutomaticCanvasSize = Enum.AutomaticSize.X
 tabBar.Parent = mainWindow
 
 local tabBarDivider = Instance.new("Frame")
@@ -575,6 +567,7 @@ tabBarDivider.Size = UDim2.new(1, 0, 0, 1)
 tabBarDivider.Position = UDim2.new(0, 0, 1, -1)
 tabBarDivider.BackgroundColor3 = COLORS.border
 tabBarDivider.BorderSizePixel = 0
+tabBarDivider.ZIndex = 2
 tabBarDivider.Parent = tabBar
 
 local tabNames = {"Execute", "Main", "Player", "Combat", "ESP", "Movement", "Visuals", "Fun", "Server", "Settings"}
@@ -590,25 +583,32 @@ tabBarLayout.Parent = tabBar
 for i, tabName in ipairs(tabNames) do
 	local tabBtn = Instance.new("TextButton")
 	tabBtn.Name = tabName .. "Tab"
-	tabBtn.Size = UDim2.new(1 / #tabNames, 0, 1, 0)
-	tabBtn.BackgroundColor3 = COLORS.bg
+	-- Auto-width to the label + padding, so long names are not squished and
+	-- the row scrolls horizontally, matching the mockup.
+	tabBtn.AutomaticSize = Enum.AutomaticSize.X
+	tabBtn.Size = UDim2.new(0, 0, 1, 0)
+	tabBtn.BackgroundColor3 = COLORS.accentDark
 	tabBtn.BackgroundTransparency = (tabName == "Execute") and 0 or 1
-	tabBtn.Text = tabName
+	tabBtn.Text = string.upper(tabName)
 	tabBtn.TextColor3 = (tabName == "Execute") and COLORS.accent or COLORS.textDim
 	tabBtn.Font = Enum.Font.Code
 	tabBtn.TextSize = 11
+	tabBtn.AutoButtonColor = false
 	tabBtn.LayoutOrder = i
 	tabBtn.Parent = tabBar
 
-	-- Active indicator (bottom orange line)
-	local indicator = Instance.new("Frame")
-	indicator.Name = "Indicator"
-	indicator.Size = UDim2.new(1, 0, 0, 2)
-	indicator.Position = UDim2.new(0, 0, 1, -2)
-	indicator.BackgroundColor3 = COLORS.accent
-	indicator.BorderSizePixel = 0
-	indicator.Visible = (tabName == "Execute")
-	indicator.Parent = tabBtn
+	local pad = Instance.new("UIPadding")
+	pad.PaddingLeft = UDim.new(0, 14)
+	pad.PaddingRight = UDim.new(0, 14)
+	pad.Parent = tabBtn
+
+	-- 1px black separator on the right edge of each tab.
+	local sep = Instance.new("Frame")
+	sep.Size = UDim2.new(0, 1, 1, 0)
+	sep.Position = UDim2.new(1, 0, 0, 0)
+	sep.BackgroundColor3 = COLORS.bg
+	sep.BorderSizePixel = 0
+	sep.Parent = tabBtn
 
 	tabButtons[tabName] = tabBtn
 end
@@ -616,8 +616,8 @@ end
 -- ===================== CONTENT AREA =====================
 local contentArea = Instance.new("Frame")
 contentArea.Name = "ContentArea"
-contentArea.Size = UDim2.new(1, 0, 1, -66)
-contentArea.Position = UDim2.new(0, 0, 0, 66)
+contentArea.Size = UDim2.new(1, 0, 1, -78)
+contentArea.Position = UDim2.new(0, 0, 0, 78)
 contentArea.BackgroundTransparency = 1
 contentArea.BorderSizePixel = 0
 contentArea.ClipsDescendants = true
@@ -713,16 +713,13 @@ local function switchTab(tabName)
 		frame.Visible = (name == tabName)
 	end
 	for name, btn in pairs(tabButtons) do
-		local indicator = btn:FindFirstChild("Indicator")
 		if name == tabName then
 			btn.BackgroundTransparency = 0
-			btn.BackgroundColor3 = COLORS.bg
+			btn.BackgroundColor3 = COLORS.accentDark
 			btn.TextColor3 = COLORS.accent
-			if indicator then indicator.Visible = true end
 		else
 			btn.BackgroundTransparency = 1
 			btn.TextColor3 = COLORS.textDim
-			if indicator then indicator.Visible = false end
 		end
 	end
 end
