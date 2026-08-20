@@ -587,7 +587,7 @@ for i, tabName in ipairs(tabNames) do
 	local tabW = math.max(70, #tabName * 9 + 20)
 	local tabBtn = Instance.new("TextButton")
 	tabBtn.Name = tabName .. "Tab"
-	tabBtn.Size = UDim2.new(0, tabW, 1, 0)
+	tabBtn.Size = UDim2.new(0, tabW, 0, 33)
 	tabBtn.BackgroundColor3 = COLORS.accentDark
 	tabBtn.BackgroundTransparency = (tabName == "Execute") and 0 or 1
 	tabBtn.Text = string.upper(tabName)
@@ -600,7 +600,7 @@ for i, tabName in ipairs(tabNames) do
 
 	-- 1px black separator on the right edge of each tab.
 	local sep = Instance.new("Frame")
-	sep.Size = UDim2.new(0, 1, 1, 0)
+	sep.Size = UDim2.new(0, 1, 0, 33)
 	sep.Position = UDim2.new(1, -1, 0, 0)
 	sep.BackgroundColor3 = COLORS.bg
 	sep.BorderSizePixel = 0
