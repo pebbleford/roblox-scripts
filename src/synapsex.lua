@@ -389,6 +389,12 @@ local Window = Fluent:CreateWindow({
 	MinimizeKey = Enum.KeyCode.RightShift,
 })
 
+-- Re-declared here: the Fluent port replaced the block that originally held
+-- these, so without them the loop below indexes a nil global and the script
+-- halts with an empty window.
+local tabNames = {"Execute", "Main", "Player", "Combat", "ESP", "Movement", "Visuals", "Fun", "Server", "Settings"}
+local tabFrames = {}
+
 for _, name in ipairs(tabNames) do
 	if name ~= "Execute" then
 		tabFrames[name] = Window:AddTab({Title = name})
