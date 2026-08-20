@@ -24,14 +24,15 @@ local F = {} -- shared function table (avoids Luau 200 local limit)
 -- ===================== THEME SYSTEM =====================
 local THEMES = {
 	default = {
-		name = "Default",
-		bg = Color3.fromRGB(20, 20, 20), bgSecondary = Color3.fromRGB(30, 30, 30), tabBg = Color3.fromRGB(45, 45, 45),
-		accent = Color3.fromRGB(255, 102, 0), accentHover = Color3.fromRGB(255, 133, 51), accentDark = Color3.fromRGB(180, 72, 0),
-		textPrimary = Color3.fromRGB(255, 255, 255), textSecondary = Color3.fromRGB(176, 176, 176), textDim = Color3.fromRGB(120, 120, 120),
-		border = Color3.fromRGB(50, 50, 50), toggleOn = Color3.fromRGB(255, 102, 0), toggleOff = Color3.fromRGB(85, 85, 85),
-		error = Color3.fromRGB(255, 68, 68), success = Color3.fromRGB(68, 255, 68),
-		editor = Color3.fromRGB(15, 15, 15), editorLine = Color3.fromRGB(35, 35, 35),
-		btnExecute = Color3.fromRGB(255, 102, 0), btnClear = Color3.fromRGB(60, 60, 60),
+		name = "Terminal",
+		-- Terminal / hacker green-on-black theme (from the Blender/HTML mockup).
+		bg = Color3.fromRGB(0, 0, 0), bgSecondary = Color3.fromRGB(5, 12, 6), tabBg = Color3.fromRGB(5, 12, 6),
+		accent = Color3.fromRGB(0, 255, 65), accentHover = Color3.fromRGB(93, 255, 143), accentDark = Color3.fromRGB(15, 61, 28),
+		textPrimary = Color3.fromRGB(191, 255, 205), textSecondary = Color3.fromRGB(63, 191, 95), textDim = Color3.fromRGB(31, 122, 52),
+		border = Color3.fromRGB(15, 61, 28), toggleOn = Color3.fromRGB(20, 81, 42), toggleOff = Color3.fromRGB(11, 42, 18),
+		error = Color3.fromRGB(255, 85, 85), success = Color3.fromRGB(0, 255, 65),
+		editor = Color3.fromRGB(1, 4, 1), editorLine = Color3.fromRGB(5, 12, 6),
+		btnExecute = Color3.fromRGB(0, 255, 65), btnClear = Color3.fromRGB(11, 42, 18),
 	},
 	galaxy = {
 		name = "Galaxy",
@@ -313,10 +314,17 @@ end
 
 -- ===================== UTILITY FUNCTIONS =====================
 local function addCorner(parent, radius)
-	local c = Instance.new("UICorner")
-	c.CornerRadius = UDim.new(0, radius or 6)
-	c.Parent = parent
-	return c
+	-- Terminal theme uses sharp corners, so this is intentionally a no-op.
+	-- A 1px border is added instead to match the mockup's outlined panels.
+	pcall(function()
+		if parent:IsA("GuiObject") and parent.BorderSizePixel == 0 then
+			local st = Instance.new("UIStroke")
+			st.Color = COLORS.border
+			st.Thickness = 1
+			st.Parent = parent
+		end
+	end)
+	return nil
 end
 
 local function addStroke(parent, color, thickness)
@@ -475,7 +483,7 @@ logoText.Size = UDim2.new(1, 0, 1, 0)
 logoText.BackgroundTransparency = 1
 logoText.Text = "P"
 logoText.TextColor3 = COLORS.textPrimary
-logoText.Font = Enum.Font.GothamBold
+logoText.Font = Enum.Font.Code
 logoText.TextSize = 12
 logoText.Parent = logoIcon
 
@@ -485,7 +493,7 @@ titleLabel.Position = UDim2.new(0, 34, 0, 0)
 titleLabel.BackgroundTransparency = 1
 titleLabel.Text = "Pebbleford Hub"
 titleLabel.TextColor3 = COLORS.textPrimary
-titleLabel.Font = Enum.Font.GothamBold
+titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 14
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 titleLabel.Parent = titleBar
@@ -496,7 +504,7 @@ versionLabel.Position = UDim2.new(0, 120, 0, 0)
 versionLabel.BackgroundTransparency = 1
 versionLabel.Text = "v3.0"
 versionLabel.TextColor3 = COLORS.accent
-versionLabel.Font = Enum.Font.Gotham
+versionLabel.Font = Enum.Font.Code
 versionLabel.TextSize = 10
 versionLabel.TextXAlignment = Enum.TextXAlignment.Left
 versionLabel.Parent = titleBar
@@ -508,7 +516,7 @@ minimizeBtn.Position = UDim2.new(1, -58, 0, 4)
 minimizeBtn.BackgroundColor3 = COLORS.tabBg
 minimizeBtn.Text = "-"
 minimizeBtn.TextColor3 = COLORS.textSecondary
-minimizeBtn.Font = Enum.Font.GothamBold
+minimizeBtn.Font = Enum.Font.Code
 minimizeBtn.TextSize = 16
 minimizeBtn.Parent = titleBar
 addCorner(minimizeBtn, 4)
@@ -519,7 +527,7 @@ closeBtn.Position = UDim2.new(1, -30, 0, 4)
 closeBtn.BackgroundColor3 = COLORS.error
 closeBtn.Text = "X"
 closeBtn.TextColor3 = COLORS.textPrimary
-closeBtn.Font = Enum.Font.GothamBold
+closeBtn.Font = Enum.Font.Code
 closeBtn.TextSize = 11
 closeBtn.Parent = titleBar
 addCorner(closeBtn, 4)
@@ -587,7 +595,7 @@ for i, tabName in ipairs(tabNames) do
 	tabBtn.BackgroundTransparency = (tabName == "Execute") and 0 or 1
 	tabBtn.Text = tabName
 	tabBtn.TextColor3 = (tabName == "Execute") and COLORS.accent or COLORS.textDim
-	tabBtn.Font = Enum.Font.GothamBold
+	tabBtn.Font = Enum.Font.Code
 	tabBtn.TextSize = 11
 	tabBtn.LayoutOrder = i
 	tabBtn.Parent = tabBar
@@ -623,7 +631,7 @@ toggleBtn.Position = UDim2.new(0, 10, 0.5, -22)
 toggleBtn.BackgroundColor3 = COLORS.accent
 toggleBtn.Text = "PB"
 toggleBtn.TextColor3 = COLORS.textPrimary
-toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.Font = Enum.Font.Code
 toggleBtn.TextSize = 15
 toggleBtn.Visible = false
 toggleBtn.Parent = screenGui
@@ -730,10 +738,10 @@ local function createSectionLabel(parent, text, order)
 	local lbl = Instance.new("TextLabel")
 	lbl.Size = UDim2.new(1, 0, 0, 22)
 	lbl.BackgroundTransparency = 1
-	lbl.Text = text
-	lbl.TextColor3 = COLORS.accent
-	lbl.Font = Enum.Font.GothamBold
-	lbl.TextSize = 13
+	lbl.Text = string.upper(text)
+	lbl.TextColor3 = COLORS.accentHover
+	lbl.Font = Enum.Font.Code
+	lbl.TextSize = 12
 	lbl.TextXAlignment = Enum.TextXAlignment.Left
 	lbl.LayoutOrder = order or 0
 	lbl.Parent = parent
@@ -742,39 +750,35 @@ end
 
 local function createToggle(parent, text, order, callback)
 	local row = Instance.new("Frame")
-	row.Size = UDim2.new(1, 0, 0, 30)
+	row.Size = UDim2.new(1, 0, 0, 36)
 	row.BackgroundColor3 = COLORS.tabBg
 	row.BorderSizePixel = 0
 	row.LayoutOrder = order or 0
 	row.Parent = parent
-	addCorner(row, 5)
+	addCorner(row, 0)
 
 	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.new(1, -60, 1, 0)
+	lbl.Size = UDim2.new(1, -66, 1, 0)
 	lbl.Position = UDim2.new(0, 10, 0, 0)
 	lbl.BackgroundTransparency = 1
 	lbl.Text = text
 	lbl.TextColor3 = COLORS.textPrimary
-	lbl.Font = Enum.Font.Gotham
-	lbl.TextSize = 12
+	lbl.Font = Enum.Font.Code
+	lbl.TextSize = 13
 	lbl.TextXAlignment = Enum.TextXAlignment.Left
 	lbl.Parent = row
 
-	local toggleFrame = Instance.new("Frame")
-	toggleFrame.Size = UDim2.new(0, 40, 0, 20)
-	toggleFrame.Position = UDim2.new(1, -50, 0.5, -10)
-	toggleFrame.BackgroundColor3 = COLORS.toggleOff
-	toggleFrame.BorderSizePixel = 0
-	toggleFrame.Parent = row
-	addCorner(toggleFrame, 10)
-
-	local toggleCircle = Instance.new("Frame")
-	toggleCircle.Size = UDim2.new(0, 16, 0, 16)
-	toggleCircle.Position = UDim2.new(0, 2, 0.5, -8)
-	toggleCircle.BackgroundColor3 = COLORS.textPrimary
-	toggleCircle.BorderSizePixel = 0
-	toggleCircle.Parent = toggleFrame
-	addCorner(toggleCircle, 8)
+	-- ON/OFF pill on the right, matching the mockup.
+	local pill = Instance.new("TextLabel")
+	pill.Size = UDim2.new(0, 50, 0, 22)
+	pill.Position = UDim2.new(1, -56, 0.5, -11)
+	pill.BackgroundColor3 = COLORS.toggleOff
+	pill.BorderSizePixel = 0
+	pill.Text = "OFF"
+	pill.TextColor3 = COLORS.accent
+	pill.Font = Enum.Font.Code
+	pill.TextSize = 12
+	pill.Parent = row
 
 	local isOn = false
 	local toggleButton = Instance.new("TextButton")
@@ -785,8 +789,8 @@ local function createToggle(parent, text, order, callback)
 
 	local function setVisualState(on)
 		isOn = on
-		toggleFrame.BackgroundColor3 = on and COLORS.toggleOn or COLORS.toggleOff
-		toggleCircle.Position = on and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
+		pill.Text = on and "ON" or "OFF"
+		pill.BackgroundColor3 = on and COLORS.toggleOn or COLORS.toggleOff
 	end
 
 	toggleButton.MouseButton1Click:Connect(function()
@@ -812,8 +816,8 @@ local function createSlider(parent, text, min, max, default, order, callback)
 	lbl.Position = UDim2.new(0, 10, 0, 2)
 	lbl.BackgroundTransparency = 1
 	lbl.Text = text
-	lbl.TextColor3 = COLORS.textPrimary
-	lbl.Font = Enum.Font.Gotham
+	lbl.TextColor3 = COLORS.textSecondary
+	lbl.Font = Enum.Font.Code
 	lbl.TextSize = 12
 	lbl.TextXAlignment = Enum.TextXAlignment.Left
 	lbl.Parent = container
@@ -823,8 +827,8 @@ local function createSlider(parent, text, min, max, default, order, callback)
 	valueLbl.Position = UDim2.new(1, -75, 0, 2)
 	valueLbl.BackgroundTransparency = 1
 	valueLbl.Text = tostring(default)
-	valueLbl.TextColor3 = COLORS.accent
-	valueLbl.Font = Enum.Font.GothamBold
+	valueLbl.TextColor3 = COLORS.accentHover
+	valueLbl.Font = Enum.Font.Code
 	valueLbl.TextSize = 12
 	valueLbl.TextXAlignment = Enum.TextXAlignment.Right
 	valueLbl.Parent = container
@@ -884,9 +888,9 @@ local function createActionButton(parent, text, order, callback)
 	local btn = Instance.new("TextButton")
 	btn.Size = UDim2.new(1, 0, 0, 30)
 	btn.BackgroundColor3 = COLORS.tabBg
-	btn.Text = text
+	btn.Text = string.upper(text)
 	btn.TextColor3 = COLORS.accent
-	btn.Font = Enum.Font.GothamBold
+	btn.Font = Enum.Font.Code
 	btn.TextSize = 12
 	btn.LayoutOrder = order or 0
 	btn.Parent = parent
@@ -903,8 +907,8 @@ local function createInfoLabel(parent, text, order)
 	lbl.Size = UDim2.new(1, 0, 0, 20)
 	lbl.BackgroundTransparency = 1
 	lbl.Text = text
-	lbl.TextColor3 = COLORS.textSecondary
-	lbl.Font = Enum.Font.Gotham
+	lbl.TextColor3 = COLORS.textDim
+	lbl.Font = Enum.Font.Code
 	lbl.TextSize = 11
 	lbl.TextXAlignment = Enum.TextXAlignment.Left
 	lbl.LayoutOrder = order or 0
@@ -1050,7 +1054,7 @@ do
 	executeBtn.BackgroundColor3 = COLORS.btnExecute
 	executeBtn.Text = "Execute"
 	executeBtn.TextColor3 = COLORS.textPrimary
-	executeBtn.Font = Enum.Font.GothamBold
+	executeBtn.Font = Enum.Font.Code
 	executeBtn.TextSize = 14
 	executeBtn.LayoutOrder = 1
 	executeBtn.Parent = btnBar
@@ -1062,7 +1066,7 @@ do
 	clearBtn.BackgroundColor3 = COLORS.btnClear
 	clearBtn.Text = "Clear"
 	clearBtn.TextColor3 = COLORS.textSecondary
-	clearBtn.Font = Enum.Font.GothamBold
+	clearBtn.Font = Enum.Font.Code
 	clearBtn.TextSize = 13
 	clearBtn.LayoutOrder = 2
 	clearBtn.Parent = btnBar
@@ -1074,7 +1078,7 @@ do
 	pasteBtn.BackgroundColor3 = COLORS.btnClear
 	pasteBtn.Text = "Paste Clipboard"
 	pasteBtn.TextColor3 = COLORS.textSecondary
-	pasteBtn.Font = Enum.Font.GothamBold
+	pasteBtn.Font = Enum.Font.Code
 	pasteBtn.TextSize = 13
 	pasteBtn.LayoutOrder = 3
 	pasteBtn.Parent = btnBar
@@ -1086,7 +1090,7 @@ do
 	hubBtn.BackgroundColor3 = COLORS.accentDark
 	hubBtn.Text = "Script Hub"
 	hubBtn.TextColor3 = COLORS.textPrimary
-	hubBtn.Font = Enum.Font.GothamBold
+	hubBtn.Font = Enum.Font.Code
 	hubBtn.TextSize = 13
 	hubBtn.LayoutOrder = 4
 	hubBtn.Parent = btnBar
@@ -1167,7 +1171,7 @@ do
 		hubTitle.BackgroundColor3 = COLORS.accent
 		hubTitle.Text = "  Script Hub"
 		hubTitle.TextColor3 = COLORS.textPrimary
-		hubTitle.Font = Enum.Font.GothamBold
+		hubTitle.Font = Enum.Font.Code
 		hubTitle.TextSize = 12
 		hubTitle.TextXAlignment = Enum.TextXAlignment.Left
 		hubTitle.ZIndex = 10
@@ -1188,7 +1192,7 @@ do
 		hubClose.BackgroundTransparency = 1
 		hubClose.Text = "X"
 		hubClose.TextColor3 = COLORS.textPrimary
-		hubClose.Font = Enum.Font.GothamBold
+		hubClose.Font = Enum.Font.Code
 		hubClose.TextSize = 12
 		hubClose.ZIndex = 11
 		hubClose.Parent = hubFrame
@@ -1237,7 +1241,7 @@ do
 			pBtn.BackgroundColor3 = COLORS.tabBg
 			pBtn.Text = "  " .. preset[1]
 			pBtn.TextColor3 = COLORS.accent
-			pBtn.Font = Enum.Font.GothamBold
+			pBtn.Font = Enum.Font.Code
 			pBtn.TextSize = 11
 			pBtn.TextXAlignment = Enum.TextXAlignment.Left
 			pBtn.LayoutOrder = i
@@ -1312,7 +1316,7 @@ F.addNametag = function(player)
 		nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 		nameLabel.TextStrokeTransparency = 0.3
 		nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-		nameLabel.Font = Enum.Font.GothamBold
+		nameLabel.Font = Enum.Font.Code
 		nameLabel.TextSize = 14
 		nameLabel.Parent = bb
 
@@ -1324,7 +1328,7 @@ F.addNametag = function(player)
 		healthLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
 		healthLabel.TextStrokeTransparency = 0.4
 		healthLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-		healthLabel.Font = Enum.Font.Gotham
+		healthLabel.Font = Enum.Font.Code
 		healthLabel.TextSize = 12
 		healthLabel.Parent = bb
 
@@ -1351,7 +1355,7 @@ F.addNametag = function(player)
 		distLabel.TextColor3 = Color3.fromRGB(170, 170, 255)
 		distLabel.TextStrokeTransparency = 0.4
 		distLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-		distLabel.Font = Enum.Font.Gotham
+		distLabel.Font = Enum.Font.Code
 		distLabel.TextSize = 12
 		distLabel.Parent = bb
 
@@ -1732,7 +1736,7 @@ F.startFly = function()
 		flyUpBtn.BackgroundTransparency = 0.3
 		flyUpBtn.Text = "UP"
 		flyUpBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-		flyUpBtn.Font = Enum.Font.GothamBold
+		flyUpBtn.Font = Enum.Font.Code
 		flyUpBtn.TextSize = 14
 		flyUpBtn.Parent = screenGui
 		addCorner(flyUpBtn, 8)
@@ -1746,7 +1750,7 @@ F.startFly = function()
 		flyDownBtn.BackgroundTransparency = 0.3
 		flyDownBtn.Text = "DOWN"
 		flyDownBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-		flyDownBtn.Font = Enum.Font.GothamBold
+		flyDownBtn.Font = Enum.Font.Code
 		flyDownBtn.TextSize = 12
 		flyDownBtn.Parent = screenGui
 		addCorner(flyDownBtn, 8)
@@ -2947,7 +2951,7 @@ do
 	selectedPlayerLabel.BackgroundColor3 = COLORS.tabBg
 	selectedPlayerLabel.Text = "  None selected"
 	selectedPlayerLabel.TextColor3 = COLORS.textSecondary
-	selectedPlayerLabel.Font = Enum.Font.Gotham
+	selectedPlayerLabel.Font = Enum.Font.Code
 	selectedPlayerLabel.TextSize = 12
 	selectedPlayerLabel.TextXAlignment = Enum.TextXAlignment.Left
 	selectedPlayerLabel.LayoutOrder = 2
@@ -3086,7 +3090,7 @@ F.refreshPlayerList = function()
 			btn.BackgroundColor3 = (playerState.selectedPlayer == player) and COLORS.accent or COLORS.tabBg
 			btn.Text = "  " .. player.DisplayName .. " (@" .. player.Name .. ")"
 			btn.TextColor3 = (playerState.selectedPlayer == player) and COLORS.textPrimary or COLORS.textSecondary
-			btn.Font = Enum.Font.Gotham
+			btn.Font = Enum.Font.Code
 			btn.TextSize = 11
 			btn.TextXAlignment = Enum.TextXAlignment.Left
 			btn.LayoutOrder = order
@@ -3198,7 +3202,7 @@ do
 		colorBtn.BackgroundColor3 = preset[1]
 		colorBtn.Text = preset[2]
 		colorBtn.TextColor3 = COLORS.textPrimary
-		colorBtn.Font = Enum.Font.GothamBold
+		colorBtn.Font = Enum.Font.Code
 		colorBtn.TextSize = 10
 		colorBtn.Parent = fillRow
 		addCorner(colorBtn, 4)
@@ -3229,7 +3233,7 @@ do
 		colorBtn.BackgroundColor3 = preset[1]
 		colorBtn.Text = preset[2]
 		colorBtn.TextColor3 = (preset[2] == "White") and COLORS.bg or COLORS.textPrimary
-		colorBtn.Font = Enum.Font.GothamBold
+		colorBtn.Font = Enum.Font.Code
 		colorBtn.TextSize = 10
 		colorBtn.Parent = outRow
 		addCorner(colorBtn, 4)
