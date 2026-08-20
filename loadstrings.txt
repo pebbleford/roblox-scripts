@@ -28,6 +28,15 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scr
 -- Industrialist Auto Farm (v1.2.0)
 loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/industrialist.lua"))()
 
+-- Prison Life Hub
+loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/prisonlife.lua"))()
+
+-- Chat Translator (any game)
+loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/translator.lua"))()
+
+-- Private Server Teleporter (any game)
+loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/psteleport.lua"))()
+
 -- Standalone Scripts (not obfuscated)
 -- Spin Fling
 loadstring(game:HttpGet("https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/spinfling.lua"))()
