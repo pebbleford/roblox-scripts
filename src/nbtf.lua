@@ -3309,7 +3309,7 @@ end
 
 function uiBuilder.createSectionLabel(parent, text, order)
 	if not parent then return end
-	return parent:AddParagraph({Title = text, Content = ""})
+	return parent:AddSection(text)
 end
 
 function uiBuilder.createInfoLabel(parent, text, order)

@@ -246,7 +246,7 @@ local function nextFlag() _flagN = _flagN + 1 return "sx_" .. _flagN end
 
 local function createSectionLabel(parent, text, order)
 	if not parent then return end
-	return parent:AddParagraph({Title = text, Content = ""})
+	return parent:AddSection(text)
 end
 local function createInfoLabel(parent, text, order)
 	if not parent then return end
@@ -2393,6 +2393,19 @@ pcall(function()
 			processCommand(msg)
 		end
 	end)
+end)
+-- LocalPlayer.Chatted does not fire under the new TextChatService, now the
+-- default, so also hook SendingMessage or commands silently do nothing there.
+pcall(function()
+	local TCS = game:GetService("TextChatService")
+	if TCS and TCS.SendingMessage then
+		TCS.SendingMessage:Connect(function(message)
+			local msg = message and message.Text
+			if type(msg) == "string" and msg:sub(1, 1) == ";" then
+				processCommand(msg)
+			end
+		end)
+	end
 end)
 
 -- ===================== KEYBOARD SHORTCUT =====================

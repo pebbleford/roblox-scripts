@@ -256,7 +256,7 @@ local function nextFlag() _flagN = _flagN + 1 return "sx_" .. _flagN end
 
 local function createSectionLabel(parent, text, order)
 	if not parent then return end
-	return parent:AddParagraph({Title = text, Content = ""})
+	return parent:AddSection(text)
 end
 local function createInfoLabel(parent, text, order)
 	if not parent then return end
