@@ -539,9 +539,15 @@ end
 
 local function createToggle(parent, text, order, callback)
 	if not parent then return end
+	-- Fluent fires this once on creation with the default (false); skip it, or
+	-- features that respawn on "off" (FE invisible) fire at load.
+	local first = true
 	return parent:AddToggle(nextFlag(), {
 		Title = text, Default = false,
-		Callback = function(v) if callback then pcall(callback, v) end end,
+		Callback = function(v)
+			if first then first = false return end
+			if callback then pcall(callback, v) end
+		end,
 	})
 end
 

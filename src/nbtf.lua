@@ -3343,9 +3343,13 @@ local function nbtfFlag() _nbtfFlag = _nbtfFlag + 1 return "nbtf_" .. _nbtfFlag 
 
 function uiBuilder.createToggle(parent, text, order, callback)
 	if not parent then return end
+	local first = true
 	return parent:AddToggle(nbtfFlag(), {
 		Title = text, Default = false,
-		Callback = function(value) if callback then pcall(callback, value) end end,
+		Callback = function(value)
+			if first then first = false return end
+			if callback then pcall(callback, value) end
+		end,
 	})
 end
 

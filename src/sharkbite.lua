@@ -320,8 +320,15 @@ local function createDynamicLabel(parent, text)
 end
 local function createToggle(parent, text, order, callback)
 	if not parent then return end
+	-- Fluent fires this callback once on creation with the default (false).
+	-- Running a feature's "off" path at load is pointless and, for things like
+	-- FE invisible, respawns the player, so the creation call is skipped.
+	local first = true
 	return parent:AddToggle(nextFlag(), {Title = text, Default = false,
-		Callback = function(v) if callback then pcall(callback, v) end end})
+		Callback = function(v)
+			if first then first = false return end
+			if callback then pcall(callback, v) end
+		end})
 end
 local function createActionButton(parent, text, order, callback)
 	if not parent then return end
