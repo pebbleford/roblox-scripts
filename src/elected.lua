@@ -1853,6 +1853,9 @@ do
 	for k,v in pairs(T) do COLORS[k] = v end
 end
 
+local _uiOrd = 0
+local function _nextOrd() _uiOrd = _uiOrd + 1 return _uiOrd end
+
 local tabNames = {"Mining", "Admin", "Build", "Players", "Movement", "Visuals", "Troll"}
 local tabFrames = {}
 uiState = uiState or {activeTab = tabNames[1]}
@@ -2034,7 +2037,7 @@ local function createSectionLabel(parent, text, order)
 	l.Font = Enum.Font.Code
 	l.TextSize = 12
 	l.TextXAlignment = Enum.TextXAlignment.Left
-	l.LayoutOrder = order or 0
+	l.LayoutOrder = _nextOrd()
 	l.Parent = parent
 	return l
 end
@@ -2051,7 +2054,7 @@ local function createInfoLabel(parent, text, order)
 	l.TextSize = 11
 	l.TextXAlignment = Enum.TextXAlignment.Left
 	l.TextWrapped = true
-	l.LayoutOrder = order or 0
+	l.LayoutOrder = _nextOrd()
 	l.Parent = parent
 	return l
 end
@@ -2075,7 +2078,7 @@ local function createToggle(parent, text, order, callback)
 	row.Size = UDim2.new(1, 0, 0, 36)
 	row.BackgroundColor3 = COLORS.tabBg
 	row.BorderSizePixel = 0
-	row.LayoutOrder = order or 0
+	row.LayoutOrder = _nextOrd()
 	row.Parent = parent
 	do local st = Instance.new("UIStroke") st.Color = COLORS.accentDark st.Thickness = 1 st.Parent = row end
 	local lbl = Instance.new("TextLabel")
@@ -2124,7 +2127,7 @@ local function createActionButton(parent, text, order, callback)
 	b.TextSize = 12
 	b.AutoButtonColor = false
 	b.BorderSizePixel = 0
-	b.LayoutOrder = order or 0
+	b.LayoutOrder = _nextOrd()
 	b.Parent = parent
 	do local st = Instance.new("UIStroke") st.Color = COLORS.accentDark st.Thickness = 1 st.Parent = b end
 	b.MouseEnter:Connect(function() b.BackgroundColor3 = COLORS.accentDark end)
@@ -2140,7 +2143,7 @@ local function createSlider(parent, text, min, max, default, order, callback)
 	c.Size = UDim2.new(1, 0, 0, 46)
 	c.BackgroundColor3 = COLORS.tabBg
 	c.BorderSizePixel = 0
-	c.LayoutOrder = order or 0
+	c.LayoutOrder = _nextOrd()
 	c.Parent = parent
 	do local st = Instance.new("UIStroke") st.Color = COLORS.accentDark st.Thickness = 1 st.Parent = c end
 	local lbl = Instance.new("TextLabel")
@@ -2201,7 +2204,7 @@ local function createDropdown(parent, text, options, default, callback)
 	b.TextSize = 12
 	b.AutoButtonColor = false
 	b.BorderSizePixel = 0
-	b.LayoutOrder = 0
+	b.LayoutOrder = _nextOrd()
 	b.Parent = parent
 	do local st = Instance.new("UIStroke") st.Color = COLORS.accentDark st.Thickness = 1 st.Parent = b end
 	local list = Instance.new("Frame")
@@ -2210,7 +2213,7 @@ local function createDropdown(parent, text, options, default, callback)
 	list.BackgroundColor3 = COLORS.bgSecondary
 	list.BorderSizePixel = 0
 	list.Visible = false
-	list.LayoutOrder = 0
+	list.LayoutOrder = _nextOrd()
 	list.Parent = parent
 	local ll = Instance.new("UIListLayout") ll.Parent = list
 	local function rebuild(opts)
@@ -2253,7 +2256,7 @@ local function createInput(parent, text, placeholder, callback)
 	box.TextSize = 12
 	box.ClearTextOnFocus = false
 	box.BorderSizePixel = 0
-	box.LayoutOrder = 0
+	box.LayoutOrder = _nextOrd()
 	box.Parent = parent
 	do local st = Instance.new("UIStroke") st.Color = COLORS.accentDark st.Thickness = 1 st.Parent = box end
 	local pd = Instance.new("UIPadding") pd.PaddingLeft = UDim.new(0,8) pd.Parent = box
@@ -2266,7 +2269,7 @@ local function createSpacer(parent, order)
 	local s = Instance.new("Frame")
 	s.Size = UDim2.new(1, 0, 0, 4)
 	s.BackgroundTransparency = 1
-	s.LayoutOrder = order or 0
+	s.LayoutOrder = _nextOrd()
 	s.Parent = parent
 end
 
