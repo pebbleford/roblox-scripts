@@ -581,12 +581,13 @@ tabBarLayout.Padding = UDim.new(0, 0)
 tabBarLayout.Parent = tabBar
 
 for i, tabName in ipairs(tabNames) do
+	-- Fixed width per tab, sized to the longest name so nothing is squished,
+	-- laid out in a horizontal scrolling row. AutomaticSize was leaving the
+	-- buttons at width 0 and therefore invisible.
+	local tabW = math.max(70, #tabName * 9 + 20)
 	local tabBtn = Instance.new("TextButton")
 	tabBtn.Name = tabName .. "Tab"
-	-- Auto-width to the label + padding, so long names are not squished and
-	-- the row scrolls horizontally, matching the mockup.
-	tabBtn.AutomaticSize = Enum.AutomaticSize.X
-	tabBtn.Size = UDim2.new(0, 0, 1, 0)
+	tabBtn.Size = UDim2.new(0, tabW, 1, 0)
 	tabBtn.BackgroundColor3 = COLORS.accentDark
 	tabBtn.BackgroundTransparency = (tabName == "Execute") and 0 or 1
 	tabBtn.Text = string.upper(tabName)
@@ -597,17 +598,13 @@ for i, tabName in ipairs(tabNames) do
 	tabBtn.LayoutOrder = i
 	tabBtn.Parent = tabBar
 
-	local pad = Instance.new("UIPadding")
-	pad.PaddingLeft = UDim.new(0, 14)
-	pad.PaddingRight = UDim.new(0, 14)
-	pad.Parent = tabBtn
-
 	-- 1px black separator on the right edge of each tab.
 	local sep = Instance.new("Frame")
 	sep.Size = UDim2.new(0, 1, 1, 0)
-	sep.Position = UDim2.new(1, 0, 0, 0)
+	sep.Position = UDim2.new(1, -1, 0, 0)
 	sep.BackgroundColor3 = COLORS.bg
 	sep.BorderSizePixel = 0
+	sep.ZIndex = 2
 	sep.Parent = tabBtn
 
 	tabButtons[tabName] = tabBtn
