@@ -356,14 +356,14 @@ end
 -- screenGui above is kept deliberately: the script editor in the Execute tab
 -- is a real multi-line code editor, which WindUI has no equivalent for, so it
 -- stays as its own window parented there.
-local WindUI
+local Fluent
 do
 	local ok, lib = pcall(function()
 		return loadstring(game:HttpGet(
-			"https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+			"https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 	end)
 	if not ok or not lib then
-		warn("[SX] WindUI failed to load: " .. tostring(lib))
+		warn("[SX] Fluent failed to load: " .. tostring(lib))
 		pcall(function()
 			game:GetService("StarterGui"):SetCore("SendNotification", {
 				Title = "Pebbleford Hub",
@@ -373,63 +373,35 @@ do
 		end)
 		return
 	end
-	WindUI = lib
+	Fluent = lib
 	_G.SX_UI = lib
 end
 
--- These lived in the hand-built GUI that this replaced. Without them the tab
--- loop below indexes a nil global and the script aborts on its first pass.
-local tabNames = {"Execute", "Main", "Player", "Combat", "ESP", "Movement", "Visuals", "Fun", "Server", "Settings"}
-local tabFrames = {}
-
-local Window = WindUI:CreateWindow({
+local Window = Fluent:CreateWindow({
 	Title = "Pebbleford Hub",
-	Author = "Universal Hub v3.1",
-	Folder = "PebblefordHub",
+	SubTitle = "Universal Hub v3.1",
+	TabWidth = 150,
 	Size = UDim2.fromOffset(580, 460),
-	HideSearchBar = true,
-	OpenButton = {
-		Title = "SX",
-		Enabled = true,
-		Draggable = true,
-		OnlyMobile = false,
-	},
+	-- Acrylic is the frosted blur; it is the expensive part and more
+	-- detectable, so it is off.
+	Acrylic = false,
+	Theme = "Dark",
+	MinimizeKey = Enum.KeyCode.RightShift,
 })
 
--- Execute is not created here: it is a code editor in its own window, opened
--- from a button on the Main tab further down.
 for _, name in ipairs(tabNames) do
 	if name ~= "Execute" then
-		tabFrames[name] = Window:Tab({Title = name})
+		tabFrames[name] = Window:AddTab({Title = name})
 	end
 end
 
--- Register the hub's own palettes as WindUI themes so its Theme buttons can
--- switch them natively. The old theme code recoloured hand-built frames that
--- no longer exist; WindUI owns the chrome now, so it must do the recolouring.
-do
-	local function reg(t)
-		pcall(function()
-			WindUI:AddTheme({
-				Name = t.name,
-				Accent = t.accent,
-				Dialog = t.bgSecondary,
-				Outline = t.border,
-				Text = t.textPrimary,
-				Placeholder = t.textDim,
-				Background = t.bg,
-				Button = t.accentDark,
-				Icon = t.textSecondary,
-				Toggle = t.toggleOn,
-				Slider = t.accent,
-				Checkbox = t.accent,
-			})
-		end)
-	end
-	for _, id in ipairs({"default", "galaxy", "ocean", "blood", "mint"}) do
-		if THEMES[id] then reg(THEMES[id]) end
-	end
-end
+-- Fluent ships its own themes (Dark, Light, Darker, Aqua, Amethyst, Rose)
+-- rather than accepting arbitrary colours, so the hub's palettes are mapped
+-- onto the nearest Fluent theme; the Theme control below switches them.
+local FLUENT_THEME_FOR = {
+	Default = "Dark", Galaxy = "Amethyst", Ocean = "Aqua",
+	Blood = "Rose", Mint = "Aqua",
+}
 
 local function switchTab(tabName)
 	uiState.activeTab = tabName
@@ -520,30 +492,39 @@ do
 	end)
 end
 
--- ===================== UI COMPONENT BUILDERS (WindUI) =====================
--- order is accepted and ignored: WindUI lays out in creation order, which is
--- the order these were already declared in.
+-- ===================== UI COMPONENT BUILDERS (Fluent) =====================
+-- Fluent needs a unique flag string per interactive element, so one is
+-- generated per call. order is accepted and ignored (Fluent lays out in
+-- creation order).
+local _flagN = 0
+local function nextFlag()
+	_flagN = _flagN + 1
+	return "sx_" .. _flagN
+end
+
 local function createSectionLabel(parent, text, order)
 	if not parent then return end
-	return parent:Section({Title = text})
+	return parent:AddParagraph({Title = text, Content = ""})
 end
 
 local function createInfoLabel(parent, text, order)
 	if not parent then return end
-	-- Text goes in Title: WindUI treats it as the primary rendered field, and
-	-- a paragraph with an empty Title draws as a blank box.
-	return parent:Paragraph({Title = text})
+	return parent:AddParagraph({Title = "", Content = text})
 end
 
 local function createDynamicLabel(parent, text)
 	if not parent then return setmetatable({}, {__newindex = function() end}) end
-	local para = parent:Paragraph({Title = tostring(text or "")})
+	local para = parent:AddParagraph({Title = "", Content = tostring(text or "")})
 	local last = tostring(text or "")
 	return setmetatable({}, {
 		__newindex = function(_, key, value)
 			if key == "Text" then
 				local str = tostring(value)
-				if str ~= last then last = str; pcall(function() para:SetTitle(str) end) end
+				-- Cached: skip redundant writes so a repeat value costs nothing.
+				if str ~= last then
+					last = str
+					pcall(function() para:SetDesc(str) end)
+				end
 			end
 		end,
 		__index = function() return nil end,
@@ -552,34 +533,27 @@ end
 
 local function createToggle(parent, text, order, callback)
 	if not parent then return end
-	return parent:Toggle({
-		Title = text,
-		Value = false,
-		Callback = function(value)
-			if callback then pcall(callback, value) end
-		end,
+	return parent:AddToggle(nextFlag(), {
+		Title = text, Default = false,
+		Callback = function(v) if callback then pcall(callback, v) end end,
 	})
 end
 
 local function createActionButton(parent, text, order, callback)
 	if not parent then return end
-	return parent:Button({
+	return parent:AddButton({
 		Title = text,
-		Callback = function()
-			if callback then pcall(callback) end
-		end,
+		Callback = function() if callback then pcall(callback) end end,
 	})
 end
+local createButton = createActionButton
 
 local function createSlider(parent, text, min, max, default, order, callback)
 	if not parent then return end
-	return parent:Slider({
-		Title = text,
-		Step = 1,
-		Value = {Min = min, Max = max, Default = default},
-		Callback = function(value)
-			-- WindUI can hand back a table for range sliders; take the number.
-			local n = type(value) == "table" and (value.Value or value.Default) or value
+	return parent:AddSlider(nextFlag(), {
+		Title = text, Min = min, Max = max, Default = default, Rounding = 0,
+		Callback = function(v)
+			local n = type(v) == "table" and (v.Value or v.Default) or v
 			if callback and type(n) == "number" then pcall(callback, n) end
 		end,
 	})
@@ -587,43 +561,31 @@ end
 
 local function createDropdown(parent, text, options, default, callback)
 	if not parent then return end
-	return parent:Dropdown({
-		Title = text,
-		Values = options,
-		Value = default,
-		Callback = function(chosen)
-			local value = type(chosen) == "table" and chosen[1] or chosen
-			if callback and value then pcall(callback, value) end
-		end,
+	return parent:AddDropdown(nextFlag(), {
+		Title = text, Values = options, Multi = false, Default = default,
+		Callback = function(v) if callback and v then pcall(callback, v) end end,
 	})
 end
 
 local function createInput(parent, text, placeholder, callback)
 	if not parent then return end
-	return parent:Input({
-		Title = text,
-		Placeholder = placeholder or "",
-		Callback = function(value)
-			if callback then pcall(callback, value) end
-		end,
+	return parent:AddInput(nextFlag(), {
+		Title = text, Default = "", Placeholder = placeholder or "",
+		Numeric = false, Finished = false,
+		Callback = function(v) if callback then pcall(callback, v) end end,
 	})
 end
 
 local function createSpacer(parent, order)
-	-- WindUI spaces its own elements.
 	return nil
 end
 
 -- Opens the script editor. It is a separate window rather than a tab because
--- WindUI has no multi-line code editor element.
+-- Fluent has no multi-line code editor element.
 if tabFrames["Main"] then
-	tabFrames["Main"]:Button({
-		Title = "Open Script Executor",
-		Desc = "Opens the Lua editor in its own window",
-		Callback = function()
-			executorWindow.Visible = not executorWindow.Visible
-		end,
-	})
+	createActionButton(tabFrames["Main"], "Open Script Executor", 999, function()
+		executorWindow.Visible = not executorWindow.Visible
+	end)
 end
 
 -- ===================== LOG SYSTEM =====================
@@ -2758,7 +2720,7 @@ F.refreshPlayerList = function()
 		end
 	end
 	if #names == 0 then names = {"(no players)"} end
-	if playerDropdown then pcall(function() playerDropdown:Refresh(names) end) end
+	if playerDropdown then pcall(function() playerDropdown:SetValues(names) end) end
 end
 Players.PlayerAdded:Connect(function() _wait(0.5) F.refreshPlayerList() end)
 Players.PlayerRemoving:Connect(function(player)
@@ -3185,8 +3147,9 @@ do
 		if THEMES[id] then table.insert(themeNames, THEMES[id].name) end
 	end
 	createDropdown(tab, "Theme", themeNames, THEMES.default.name, function(choice)
-		-- WindUI applies the registered theme by name across its whole UI.
-		pcall(function() WindUI:SetTheme(choice) end)
+		-- Fluent has fixed themes, so the hub palette maps to the nearest one.
+		local fluentTheme = FLUENT_THEME_FOR[choice] or "Dark"
+		pcall(function() Fluent:SetTheme(fluentTheme) end)
 		addLog("[THEME] " .. choice .. " applied!", COLORS.accent)
 	end)
 
