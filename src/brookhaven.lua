@@ -195,117 +195,438 @@ local function findPlayer(name)
 	return nil
 end
 
--- ===================== GUI SETUP (WindUI) =====================
--- The hand-built window, tab bar, drag handling and mobile toggle were
--- replaced with WindUI. The builder functions keep their original names and
--- signatures and now produce WindUI elements, so every feature call site is
--- untouched; only these bodies and the window setup changed.
-local Fluent
+-- ===================== GUI SETUP (Terminal, hand-built) =====================
+-- Terminal green-on-black hand-built UI. Feature call sites are untouched: the
+-- builder functions keep their signatures and now produce terminal-styled
+-- frames instead of Fluent elements. Light (no library), so no menu lag.
 do
-	local ok, lib = pcall(function()
-		return loadstring(game:HttpGet(
-			"https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
-	end)
-	if not ok or not lib then
-		warn("[SX] Fluent failed to load: " .. tostring(lib))
-		pcall(function()
-			game:GetService("StarterGui"):SetCore("SendNotification", {
-				Title = "Pebbleford Hub",
-				Text = "UI library failed to load. Check your internet/executor.",
-				Duration = 8,
-			})
-		end)
-		return
-	end
-	Fluent = lib
-	_G.SX_UI = lib
+	local T = {
+		bg = Color3.fromRGB(0,0,0), bgSecondary = Color3.fromRGB(5,12,6), tabBg = Color3.fromRGB(5,12,6),
+		accent = Color3.fromRGB(0,255,65), accentHover = Color3.fromRGB(93,255,143), accentDark = Color3.fromRGB(15,61,28),
+		textPrimary = Color3.fromRGB(191,255,205), textSecondary = Color3.fromRGB(63,191,95), textDim = Color3.fromRGB(31,122,52),
+		border = Color3.fromRGB(15,61,28), toggleOn = Color3.fromRGB(20,81,42), toggleOff = Color3.fromRGB(11,42,18),
+		error = Color3.fromRGB(255,85,85), success = Color3.fromRGB(0,255,65),
+	}
+	for k,v in pairs(T) do COLORS[k] = v end
 end
 
 local tabNames = {"Main", "Teleport", "Player", "Vehicle", "House", "Trolling", "Fun"}
 local tabFrames = {}
+uiState = uiState or {activeTab = tabNames[1]}
 
-local Window = Fluent:CreateWindow({
-	Title = "Brookhaven Hub",
-	SubTitle = "Pebbleford Hub",
-	TabWidth = 150,
-	Size = UDim2.fromOffset(560, 440),
-	Acrylic = false,
-	Theme = "Dark",
-	MinimizeKey = Enum.KeyCode.RightShift,
-})
+local _TUIS = UserInputService
+local _mobile = _TUIS.TouchEnabled and not _TUIS.KeyboardEnabled
+local _W = _mobile and 440 or 560
+local _H = _mobile and 380 or 440
 
-for _, name in ipairs(tabNames) do
-	tabFrames[name] = Window:AddTab({Title = name})
+local mainWindow = Instance.new("Frame")
+mainWindow.Name = "MainWindow"
+mainWindow.Size = UDim2.new(0, _W, 0, _H)
+mainWindow.Position = UDim2.new(0.5, -_W/2, 0.5, -_H/2)
+mainWindow.BackgroundColor3 = COLORS.bg
+mainWindow.BorderSizePixel = 0
+mainWindow.Active = true
+mainWindow.Parent = screenGui
+do local st = Instance.new("UIStroke") st.Color = COLORS.border st.Thickness = 1 st.Parent = mainWindow end
+
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 40)
+titleBar.BackgroundColor3 = COLORS.bgSecondary
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainWindow
+
+local titleAccent = Instance.new("Frame")
+titleAccent.Size = UDim2.new(1, 0, 0, 2)
+titleAccent.Position = UDim2.new(0, 0, 1, 0)
+titleAccent.BackgroundColor3 = COLORS.accent
+titleAccent.BorderSizePixel = 0
+titleAccent.ZIndex = 3
+titleAccent.Parent = titleBar
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, -160, 1, 0)
+titleLabel.Position = UDim2.new(0, 14, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "BROOKHAVEN HUB"
+titleLabel.TextColor3 = COLORS.textPrimary
+titleLabel.Font = Enum.Font.Code
+titleLabel.TextSize = 15
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = titleBar
+
+local keyBadge = Instance.new("TextLabel")
+keyBadge.Size = UDim2.new(0, 60, 0, 22)
+keyBadge.Position = UDim2.new(1, -132, 0.5, -11)
+keyBadge.BackgroundTransparency = 1
+keyBadge.Text = "KEY OK"
+keyBadge.TextColor3 = COLORS.textDim
+keyBadge.Font = Enum.Font.Code
+keyBadge.TextSize = 11
+keyBadge.Parent = titleBar
+
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.Size = UDim2.new(0, 28, 0, 28)
+minimizeBtn.Position = UDim2.new(1, -64, 0.5, -14)
+minimizeBtn.BackgroundColor3 = COLORS.accentDark
+minimizeBtn.Text = "-"
+minimizeBtn.TextColor3 = COLORS.textPrimary
+minimizeBtn.Font = Enum.Font.Code
+minimizeBtn.TextSize = 16
+minimizeBtn.BorderSizePixel = 0
+minimizeBtn.Parent = titleBar
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 28, 0, 28)
+closeBtn.Position = UDim2.new(1, -32, 0.5, -14)
+closeBtn.BackgroundColor3 = COLORS.accent
+closeBtn.Text = "X"
+closeBtn.TextColor3 = Color3.fromRGB(0,0,0)
+closeBtn.Font = Enum.Font.Code
+closeBtn.TextSize = 13
+closeBtn.BorderSizePixel = 0
+closeBtn.Parent = titleBar
+
+-- Drag (mouse + touch)
+do
+	local dragging, ds, sp = false, nil, nil
+	titleBar.InputBegan:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+			dragging = true ds = i.Position sp = mainWindow.Position
+		end
+	end)
+	_TUIS.InputChanged:Connect(function(i)
+		if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+			local d = i.Position - ds
+			mainWindow.Position = UDim2.new(sp.X.Scale, sp.X.Offset + d.X, sp.Y.Scale, sp.Y.Offset + d.Y)
+		end
+	end)
+	_TUIS.InputEnded:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dragging = false end
+	end)
 end
 
-local function switchTab(tabName) uiState = uiState or {}; uiState.activeTab = tabName end
+local tabBar = Instance.new("Frame")
+tabBar.Size = UDim2.new(1, 0, 0, 34)
+tabBar.Position = UDim2.new(0, 0, 0, 42)
+tabBar.BackgroundColor3 = COLORS.bgSecondary
+tabBar.BorderSizePixel = 0
+tabBar.Parent = mainWindow
+do local dv = Instance.new("Frame") dv.Size = UDim2.new(1,0,0,1) dv.Position = UDim2.new(0,0,1,-1) dv.BackgroundColor3 = COLORS.border dv.BorderSizePixel = 0 dv.ZIndex = 2 dv.Parent = tabBar end
 
--- ===================== UI COMPONENT BUILDERS (Fluent) =====================
--- Fluent needs a unique flag string per interactive element, so one is
--- generated per call. order is accepted and ignored.
-local _flagN = 0
-local function nextFlag() _flagN = _flagN + 1 return "sx_" .. _flagN end
+local tabButtons = {}
+local _tabN = #tabNames
+for i, tabName in ipairs(tabNames) do
+	local content = Instance.new("ScrollingFrame")
+	content.Size = UDim2.new(1, -8, 1, -84)
+	content.Position = UDim2.new(0, 4, 0, 80)
+	content.BackgroundTransparency = 1
+	content.BorderSizePixel = 0
+	content.ScrollBarThickness = 3
+	content.ScrollBarImageColor3 = COLORS.accent
+	content.CanvasSize = UDim2.new(0,0,0,0)
+	content.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	content.Visible = (i == 1)
+	content.Parent = mainWindow
+	local lay = Instance.new("UIListLayout") lay.SortOrder = Enum.SortOrder.LayoutOrder lay.Padding = UDim.new(0,4) lay.Parent = content
+	local pd = Instance.new("UIPadding") pd.PaddingLeft = UDim.new(0,4) pd.PaddingRight = UDim.new(0,4) pd.PaddingTop = UDim.new(0,4) pd.Parent = content
+	tabFrames[tabName] = content
 
+	local b = Instance.new("TextButton")
+	b.Position = UDim2.new((i-1)/_tabN, 0, 0, 0)
+	b.Size = UDim2.new(1/_tabN, 0, 1, -1)
+	b.BackgroundColor3 = COLORS.accentDark
+	b.BackgroundTransparency = (i == 1) and 0 or 1
+	b.Text = string.upper(tabName)
+	b.TextColor3 = (i == 1) and COLORS.accent or COLORS.textSecondary
+	b.Font = Enum.Font.Code
+	b.TextSize = 10
+	b.AutoButtonColor = false
+	b.ZIndex = 3
+	b.Parent = tabBar
+	tabButtons[tabName] = b
+end
+
+local function switchTab(name)
+	uiState.activeTab = name
+	for n, f in pairs(tabFrames) do f.Visible = (n == name) end
+	for n, b in pairs(tabButtons) do
+		if n == name then b.BackgroundTransparency = 0 b.TextColor3 = COLORS.accent
+		else b.BackgroundTransparency = 1 b.TextColor3 = COLORS.textSecondary end
+	end
+end
+for name, b in pairs(tabButtons) do b.MouseButton1Click:Connect(function() switchTab(name) end) end
+
+-- Minimise / close + mobile reopen button
+local reopenBtn = Instance.new("TextButton")
+reopenBtn.Size = UDim2.new(0, 46, 0, 46)
+reopenBtn.Position = UDim2.new(0, 12, 0.5, -23)
+reopenBtn.BackgroundColor3 = COLORS.accent
+reopenBtn.Text = "PB"
+reopenBtn.TextColor3 = Color3.fromRGB(0,0,0)
+reopenBtn.Font = Enum.Font.Code
+reopenBtn.TextSize = 14
+reopenBtn.BorderSizePixel = 0
+reopenBtn.Visible = false
+reopenBtn.Parent = screenGui
+local function _hide() mainWindow.Visible = false reopenBtn.Visible = true end
+minimizeBtn.MouseButton1Click:Connect(_hide)
+closeBtn.MouseButton1Click:Connect(_hide)
+reopenBtn.MouseButton1Click:Connect(function() mainWindow.Visible = true reopenBtn.Visible = false end)
+_TUIS.InputBegan:Connect(function(i, gp)
+	if gp then return end
+	if i.KeyCode == Enum.KeyCode.RightShift then
+		mainWindow.Visible = not mainWindow.Visible
+		reopenBtn.Visible = not mainWindow.Visible
+	end
+end)
+
+-- ===================== UI COMPONENT BUILDERS (Terminal) =====================
 local function createSectionLabel(parent, text, order)
 	if not parent then return end
-	return parent:AddSection(text)
+	local l = Instance.new("TextLabel")
+	l.Size = UDim2.new(1, 0, 0, 22)
+	l.BackgroundTransparency = 1
+	l.Text = string.upper(tostring(text))
+	l.TextColor3 = COLORS.accentHover
+	l.Font = Enum.Font.Code
+	l.TextSize = 12
+	l.TextXAlignment = Enum.TextXAlignment.Left
+	l.LayoutOrder = order or 0
+	l.Parent = parent
+	return l
 end
+
 local function createInfoLabel(parent, text, order)
 	if not parent then return end
-	return parent:AddParagraph({Title = "", Content = text})
+	local l = Instance.new("TextLabel")
+	l.Size = UDim2.new(1, 0, 0, 18)
+	l.AutomaticSize = Enum.AutomaticSize.Y
+	l.BackgroundTransparency = 1
+	l.Text = tostring(text)
+	l.TextColor3 = COLORS.textDim
+	l.Font = Enum.Font.Code
+	l.TextSize = 11
+	l.TextXAlignment = Enum.TextXAlignment.Left
+	l.TextWrapped = true
+	l.LayoutOrder = order or 0
+	l.Parent = parent
+	return l
 end
+
 local function createDynamicLabel(parent, text)
 	if not parent then return setmetatable({}, {__newindex = function() end}) end
-	local para = parent:AddParagraph({Title = "", Content = tostring(text or "")})
-	local last = tostring(text or "")
+	local l = createInfoLabel(parent, text or "", 0)
+	l.TextColor3 = COLORS.textSecondary
 	return setmetatable({}, {
 		__newindex = function(_, k, v)
-			if k == "Text" then
-				local str = tostring(v)
-				if str ~= last then last = str; pcall(function() para:SetDesc(str) end) end
-			end
+			if k == "Text" then pcall(function() l.Text = tostring(v) end)
+			elseif k == "TextColor3" then pcall(function() l.TextColor3 = v end) end
 		end,
 		__index = function() return nil end,
 	})
 end
+
 local function createToggle(parent, text, order, callback)
 	if not parent then return end
-	-- Fluent fires this callback once on creation with the default (false).
-	-- Running a feature's "off" path at load is pointless and, for things like
-	-- FE invisible, respawns the player, so the creation call is skipped.
-	local first = true
-	return parent:AddToggle(nextFlag(), {Title = text, Default = false,
-		Callback = function(v)
-			if first then first = false return end
-			if callback then pcall(callback, v) end
-		end})
+	local row = Instance.new("Frame")
+	row.Size = UDim2.new(1, 0, 0, 36)
+	row.BackgroundColor3 = COLORS.tabBg
+	row.BorderSizePixel = 0
+	row.LayoutOrder = order or 0
+	row.Parent = parent
+	do local st = Instance.new("UIStroke") st.Color = COLORS.accentDark st.Thickness = 1 st.Parent = row end
+	local lbl = Instance.new("TextLabel")
+	lbl.Size = UDim2.new(1, -66, 1, 0)
+	lbl.Position = UDim2.new(0, 10, 0, 0)
+	lbl.BackgroundTransparency = 1
+	lbl.Text = tostring(text)
+	lbl.TextColor3 = COLORS.textPrimary
+	lbl.Font = Enum.Font.Code
+	lbl.TextSize = 13
+	lbl.TextXAlignment = Enum.TextXAlignment.Left
+	lbl.Parent = row
+	local pill = Instance.new("TextLabel")
+	pill.Size = UDim2.new(0, 50, 0, 22)
+	pill.Position = UDim2.new(1, -56, 0.5, -11)
+	pill.BackgroundColor3 = COLORS.toggleOff
+	pill.BorderSizePixel = 0
+	pill.Text = "OFF"
+	pill.TextColor3 = COLORS.accent
+	pill.Font = Enum.Font.Code
+	pill.TextSize = 12
+	pill.Parent = row
+	local isOn = false
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(1, 0, 1, 0)
+	btn.BackgroundTransparency = 1
+	btn.Text = ""
+	btn.Parent = row
+	local function set(on)
+		isOn = on
+		pill.Text = on and "ON" or "OFF"
+		pill.BackgroundColor3 = on and COLORS.toggleOn or COLORS.toggleOff
+	end
+	btn.MouseButton1Click:Connect(function() set(not isOn) if callback then pcall(callback, isOn) end end)
+	return {setVisualState = set, isOn = function() return isOn end}
 end
+
 local function createActionButton(parent, text, order, callback)
 	if not parent then return end
-	return parent:AddButton({Title = text,
-		Callback = function() if callback then pcall(callback) end end})
+	local b = Instance.new("TextButton")
+	b.Size = UDim2.new(1, 0, 0, 32)
+	b.BackgroundColor3 = COLORS.tabBg
+	b.Text = string.upper(tostring(text))
+	b.TextColor3 = COLORS.accent
+	b.Font = Enum.Font.Code
+	b.TextSize = 12
+	b.AutoButtonColor = false
+	b.BorderSizePixel = 0
+	b.LayoutOrder = order or 0
+	b.Parent = parent
+	do local st = Instance.new("UIStroke") st.Color = COLORS.accentDark st.Thickness = 1 st.Parent = b end
+	b.MouseEnter:Connect(function() b.BackgroundColor3 = COLORS.accentDark end)
+	b.MouseLeave:Connect(function() b.BackgroundColor3 = COLORS.tabBg end)
+	b.MouseButton1Click:Connect(function() if callback then pcall(callback) end end)
+	return b
 end
 local createButton = createActionButton
+
 local function createSlider(parent, text, min, max, default, order, callback)
 	if not parent then return end
-	return parent:AddSlider(nextFlag(), {Title = text, Min = min, Max = max, Default = default, Rounding = 0,
-		Callback = function(v)
-			local n = type(v) == "table" and (v.Value or v.Default) or v
-			if callback and type(n) == "number" then pcall(callback, n) end
-		end})
+	local c = Instance.new("Frame")
+	c.Size = UDim2.new(1, 0, 0, 46)
+	c.BackgroundColor3 = COLORS.tabBg
+	c.BorderSizePixel = 0
+	c.LayoutOrder = order or 0
+	c.Parent = parent
+	do local st = Instance.new("UIStroke") st.Color = COLORS.accentDark st.Thickness = 1 st.Parent = c end
+	local lbl = Instance.new("TextLabel")
+	lbl.Size = UDim2.new(1, -80, 0, 20)
+	lbl.Position = UDim2.new(0, 10, 0, 3)
+	lbl.BackgroundTransparency = 1
+	lbl.Text = tostring(text)
+	lbl.TextColor3 = COLORS.textSecondary
+	lbl.Font = Enum.Font.Code
+	lbl.TextSize = 12
+	lbl.TextXAlignment = Enum.TextXAlignment.Left
+	lbl.Parent = c
+	local val = Instance.new("TextLabel")
+	val.Size = UDim2.new(0, 70, 0, 20)
+	val.Position = UDim2.new(1, -75, 0, 3)
+	val.BackgroundTransparency = 1
+	val.Text = tostring(default)
+	val.TextColor3 = COLORS.accentHover
+	val.Font = Enum.Font.Code
+	val.TextSize = 12
+	val.TextXAlignment = Enum.TextXAlignment.Right
+	val.Parent = c
+	local bg = Instance.new("Frame")
+	bg.Size = UDim2.new(1, -20, 0, 6)
+	bg.Position = UDim2.new(0, 10, 0, 30)
+	bg.BackgroundColor3 = COLORS.bgSecondary
+	bg.BorderSizePixel = 0
+	bg.Parent = c
+	local fill = Instance.new("Frame")
+	fill.Size = UDim2.new((default-min)/(max-min), 0, 1, 0)
+	fill.BackgroundColor3 = COLORS.accent
+	fill.BorderSizePixel = 0
+	fill.Parent = bg
+	local drag = false
+	local function upd(x)
+		local p = math.clamp((x - bg.AbsolutePosition.X)/bg.AbsoluteSize.X, 0, 1)
+		fill.Size = UDim2.new(p, 0, 1, 0)
+		local v = math.floor(min + p*(max-min))
+		val.Text = tostring(v)
+		if callback then pcall(callback, v) end
+	end
+	bg.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then drag = true upd(i.Position.X) end end)
+	bg.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then drag = false end end)
+	_TUIS.InputChanged:Connect(function(i) if drag and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then upd(i.Position.X) end end)
+	return c
 end
+
 local function createDropdown(parent, text, options, default, callback)
 	if not parent then return end
-	return parent:AddDropdown(nextFlag(), {Title = text, Values = options, Multi = false, Default = default,
-		Callback = function(v) if callback and v then pcall(callback, v) end end})
+	local wrap = {}
+	local cur = default
+	local b = Instance.new("TextButton")
+	b.Size = UDim2.new(1, 0, 0, 32)
+	b.BackgroundColor3 = COLORS.tabBg
+	b.Text = tostring(text) .. ": " .. tostring(default)
+	b.TextColor3 = COLORS.accent
+	b.Font = Enum.Font.Code
+	b.TextSize = 12
+	b.AutoButtonColor = false
+	b.BorderSizePixel = 0
+	b.LayoutOrder = 0
+	b.Parent = parent
+	do local st = Instance.new("UIStroke") st.Color = COLORS.accentDark st.Thickness = 1 st.Parent = b end
+	local list = Instance.new("Frame")
+	list.Size = UDim2.new(1, 0, 0, 0)
+	list.AutomaticSize = Enum.AutomaticSize.Y
+	list.BackgroundColor3 = COLORS.bgSecondary
+	list.BorderSizePixel = 0
+	list.Visible = false
+	list.LayoutOrder = 0
+	list.Parent = parent
+	local ll = Instance.new("UIListLayout") ll.Parent = list
+	local function rebuild(opts)
+		for _, ch in ipairs(list:GetChildren()) do if ch:IsA("TextButton") then ch:Destroy() end end
+		for _, opt in ipairs(opts) do
+			local o = Instance.new("TextButton")
+			o.Size = UDim2.new(1, 0, 0, 26)
+			o.BackgroundColor3 = COLORS.bgSecondary
+			o.Text = tostring(opt)
+			o.TextColor3 = COLORS.textSecondary
+			o.Font = Enum.Font.Code
+			o.TextSize = 11
+			o.BorderSizePixel = 0
+			o.Parent = list
+			o.MouseButton1Click:Connect(function()
+				cur = opt
+				b.Text = tostring(text) .. ": " .. tostring(opt)
+				list.Visible = false
+				if callback then pcall(callback, opt) end
+			end)
+		end
+	end
+	rebuild(options or {})
+	b.MouseButton1Click:Connect(function() list.Visible = not list.Visible end)
+	function wrap:Refresh(opts) rebuild(opts) end
+	function wrap:SetValues(opts) rebuild(opts) end
+	return wrap
 end
+
 local function createInput(parent, text, placeholder, callback)
 	if not parent then return end
-	return parent:AddInput(nextFlag(), {Title = text, Default = "", Placeholder = placeholder or "",
-		Numeric = false, Finished = false,
-		Callback = function(v) if callback then pcall(callback, v) end end})
+	local box = Instance.new("TextBox")
+	box.Size = UDim2.new(1, 0, 0, 32)
+	box.BackgroundColor3 = COLORS.tabBg
+	box.Text = ""
+	box.PlaceholderText = placeholder or tostring(text)
+	box.PlaceholderColor3 = COLORS.textDim
+	box.TextColor3 = COLORS.textPrimary
+	box.Font = Enum.Font.Code
+	box.TextSize = 12
+	box.ClearTextOnFocus = false
+	box.BorderSizePixel = 0
+	box.LayoutOrder = 0
+	box.Parent = parent
+	do local st = Instance.new("UIStroke") st.Color = COLORS.accentDark st.Thickness = 1 st.Parent = box end
+	local pd = Instance.new("UIPadding") pd.PaddingLeft = UDim.new(0,8) pd.Parent = box
+	box.FocusLost:Connect(function() if callback then pcall(callback, box.Text) end end)
+	return box
 end
-local function createSpacer(parent, order) return nil end
+
+local function createSpacer(parent, order)
+	if not parent then return end
+	local s = Instance.new("Frame")
+	s.Size = UDim2.new(1, 0, 0, 4)
+	s.BackgroundTransparency = 1
+	s.LayoutOrder = order or 0
+	s.Parent = parent
+end
+
 
 -- ===================== LOG SYSTEM =====================
 local logFrame
