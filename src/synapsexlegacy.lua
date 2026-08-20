@@ -477,7 +477,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 50, 1, 0)
 versionLabel.Position = UDim2.new(0, 168, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v4.1"
+versionLabel.Text = "v4.2"
 versionLabel.TextColor3 = COLORS.textDim
 versionLabel.Font = Enum.Font.Code
 versionLabel.TextSize = 11
@@ -1804,12 +1804,25 @@ F.stopFly = function()
 		local hrp = character:FindFirstChild("HumanoidRootPart")
 		if hum then hum.PlatformStand = flyState.savedPlatformStand or false end
 		if hrp then
-			-- Keep facing (yaw), drop the pitch/roll the fly gyro left behind,
-			-- and zero any residual velocity so you do not drift or stay tilted.
+			-- Keep facing (yaw), drop the pitch/roll the fly gyro left behind.
 			local _, yaw, _ = hrp.CFrame:ToOrientation()
 			hrp.CFrame = CFrame.new(hrp.Position) * CFrame.Angles(0, yaw, 0)
 			hrp.AssemblyLinearVelocity = Vector3.zero
 			hrp.AssemblyAngularVelocity = Vector3.zero
+			-- Destroying the fly movers leaves their momentum on the assembly,
+			-- which flung the character on unfly. Keep zeroing the velocity for
+			-- a short window so the leftover impulse is fully bled off.
+			_spawn(function()
+				local t0 = tick()
+				while tick() - t0 < 0.35 do
+					local c = LocalPlayer.Character
+					local r = c and c:FindFirstChild("HumanoidRootPart")
+					if not r then break end
+					r.AssemblyLinearVelocity = Vector3.zero
+					r.AssemblyAngularVelocity = Vector3.zero
+					RunService.RenderStepped:Wait()
+				end
+			end)
 		end
 		if hum then
 			pcall(function() hum:ChangeState(Enum.HumanoidStateType.GettingUp) end)
@@ -3860,6 +3873,64 @@ commands["cmds"] = function()
 	addLog("Prefix un- to disable any toggle (e.g. ;unfly)", COLORS.textSecondary)
 end
 
+-- ===================== COMMAND INDICATOR =====================
+-- A small terminal-styled toast at the bottom-right that flashes whenever a
+-- command runs, so there is on-screen feedback that ; commands registered.
+local cmdIndicatorGui, cmdIndicatorLabel, cmdIndicatorHideAt
+local function showCommandIndicator(text)
+	pcall(function()
+		if not cmdIndicatorGui then
+			cmdIndicatorGui = Instance.new("ScreenGui")
+			cmdIndicatorGui.Name = "SXCmdIndicator"
+			cmdIndicatorGui.ResetOnSpawn = false
+			cmdIndicatorGui.IgnoreGuiInset = true
+			cmdIndicatorGui.DisplayOrder = 1000
+			pcall(function() cmdIndicatorGui.Parent = screenGui.Parent end)
+			if not cmdIndicatorGui.Parent then cmdIndicatorGui.Parent = screenGui end
+
+			local box = Instance.new("Frame")
+			box.Name = "Box"
+			box.AnchorPoint = Vector2.new(1, 1)
+			box.Position = UDim2.new(1, -14, 1, -14)
+			box.Size = UDim2.new(0, 250, 0, 34)
+			box.BackgroundColor3 = COLORS.bgSecondary
+			box.BorderSizePixel = 0
+			box.Parent = cmdIndicatorGui
+			local st = Instance.new("UIStroke")
+			st.Color = COLORS.accent
+			st.Thickness = 1
+			st.Parent = box
+			local bar = Instance.new("Frame")
+			bar.Size = UDim2.new(0, 3, 1, 0)
+			bar.BackgroundColor3 = COLORS.accent
+			bar.BorderSizePixel = 0
+			bar.Parent = box
+			cmdIndicatorLabel = Instance.new("TextLabel")
+			cmdIndicatorLabel.Size = UDim2.new(1, -14, 1, 0)
+			cmdIndicatorLabel.Position = UDim2.new(0, 12, 0, 0)
+			cmdIndicatorLabel.BackgroundTransparency = 1
+			cmdIndicatorLabel.Text = ""
+			cmdIndicatorLabel.TextColor3 = COLORS.accent
+			cmdIndicatorLabel.Font = Enum.Font.Code
+			cmdIndicatorLabel.TextSize = 13
+			cmdIndicatorLabel.TextXAlignment = Enum.TextXAlignment.Left
+			cmdIndicatorLabel.TextTruncate = Enum.TextTruncate.AtEnd
+			cmdIndicatorLabel.Parent = box
+		end
+		cmdIndicatorLabel.Text = "> " .. tostring(text)
+		cmdIndicatorGui.Enabled = true
+		cmdIndicatorHideAt = tick() + 2.5
+		_spawn(function()
+			local mine = cmdIndicatorHideAt
+			_wait(2.6)
+			-- Only hide if no newer command replaced this one.
+			if cmdIndicatorHideAt == mine and cmdIndicatorGui then
+				cmdIndicatorGui.Enabled = false
+			end
+		end)
+	end)
+end
+
 F.processCommand = function(input)
 	if input:sub(1, 1) == ";" then input = input:sub(2) end
 	local parts = {}
@@ -3868,8 +3939,12 @@ F.processCommand = function(input)
 	local cmd = parts[1]:lower()
 	local args = {}
 	for i = 2, #parts do table.insert(args, parts[i]) end
-	if commands[cmd] then commands[cmd](args)
-	else addLog("[CMD] Unknown: " .. cmd .. " (;cmds for help)", COLORS.error) end
+	if commands[cmd] then
+		showCommandIndicator(cmd .. (#args > 0 and (" " .. table.concat(args, " ")) or ""))
+		commands[cmd](args)
+	else
+		addLog("[CMD] Unknown: " .. cmd .. " (;cmds for help)", COLORS.error)
+	end
 end
 
 -- Chat hook: messages starting with ; are commands. Both chat systems are
