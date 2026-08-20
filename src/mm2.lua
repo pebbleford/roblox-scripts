@@ -489,14 +489,14 @@ end
 -- replaced with WindUI. The builder functions keep their original names and
 -- signatures and now produce WindUI elements, so every feature call site is
 -- untouched; only these bodies and the window setup changed.
-local WindUI
+local Fluent
 do
 	local ok, lib = pcall(function()
 		return loadstring(game:HttpGet(
-			"https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+			"https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 	end)
 	if not ok or not lib then
-		warn("[SX] WindUI failed to load: " .. tostring(lib))
+		warn("[SX] Fluent failed to load: " .. tostring(lib))
 		pcall(function()
 			game:GetService("StarterGui"):SetCore("SendNotification", {
 				Title = "Pebbleford Hub",
@@ -506,47 +506,52 @@ do
 		end)
 		return
 	end
-	WindUI = lib
+	Fluent = lib
 	_G.SX_UI = lib
 end
 
 local tabNames = {"Main", "Combat", "ESP", "Farming", "Player", "Fun", "Config"}
 local tabFrames = {}
 
-local Window = WindUI:CreateWindow({
+local Window = Fluent:CreateWindow({
 	Title = "MM2 Hub",
-	Author = "Pebbleford Hub",
-	Folder = "PebblefordHub",
+	SubTitle = "Pebbleford Hub",
+	TabWidth = 150,
 	Size = UDim2.fromOffset(560, 440),
-	HideSearchBar = false,
-	OpenButton = { Title = "Hub", Enabled = true, Draggable = true, OnlyMobile = false },
+	Acrylic = false,
+	Theme = "Dark",
+	MinimizeKey = Enum.KeyCode.RightShift,
 })
 
 for _, name in ipairs(tabNames) do
-	tabFrames[name] = Window:Tab({Title = name})
+	tabFrames[name] = Window:AddTab({Title = name})
 end
 
 local function switchTab(tabName) uiState = uiState or {}; uiState.activeTab = tabName end
 
--- ===================== UI COMPONENT BUILDERS (WindUI) =====================
--- order is accepted and ignored; WindUI lays out in creation order.
+-- ===================== UI COMPONENT BUILDERS (Fluent) =====================
+-- Fluent needs a unique flag string per interactive element, so one is
+-- generated per call. order is accepted and ignored.
+local _flagN = 0
+local function nextFlag() _flagN = _flagN + 1 return "sx_" .. _flagN end
+
 local function createSectionLabel(parent, text, order)
 	if not parent then return end
-	return parent:Section({Title = text})
+	return parent:AddParagraph({Title = text, Content = ""})
 end
 local function createInfoLabel(parent, text, order)
 	if not parent then return end
-	return parent:Paragraph({Title = text})
+	return parent:AddParagraph({Title = "", Content = text})
 end
 local function createDynamicLabel(parent, text)
 	if not parent then return setmetatable({}, {__newindex = function() end}) end
-	local para = parent:Paragraph({Title = tostring(text or "")})
+	local para = parent:AddParagraph({Title = "", Content = tostring(text or "")})
 	local last = tostring(text or "")
 	return setmetatable({}, {
 		__newindex = function(_, k, v)
 			if k == "Text" then
 				local str = tostring(v)
-				if str ~= last then last = str; pcall(function() para:SetTitle(str) end) end
+				if str ~= last then last = str; pcall(function() para:SetDesc(str) end) end
 			end
 		end,
 		__index = function() return nil end,
@@ -554,20 +559,18 @@ local function createDynamicLabel(parent, text)
 end
 local function createToggle(parent, text, order, callback)
 	if not parent then return end
-	return parent:Toggle({Title = text, Value = false, Callback = function(v)
-		if callback then pcall(callback, v) end
-	end})
+	return parent:AddToggle(nextFlag(), {Title = text, Default = false,
+		Callback = function(v) if callback then pcall(callback, v) end end})
 end
 local function createActionButton(parent, text, order, callback)
 	if not parent then return end
-	return parent:Button({Title = text, Callback = function()
-		if callback then pcall(callback) end
-	end})
+	return parent:AddButton({Title = text,
+		Callback = function() if callback then pcall(callback) end end})
 end
 local createButton = createActionButton
 local function createSlider(parent, text, min, max, default, order, callback)
 	if not parent then return end
-	return parent:Slider({Title = text, Step = 1, Value = {Min = min, Max = max, Default = default},
+	return parent:AddSlider(nextFlag(), {Title = text, Min = min, Max = max, Default = default, Rounding = 0,
 		Callback = function(v)
 			local n = type(v) == "table" and (v.Value or v.Default) or v
 			if callback and type(n) == "number" then pcall(callback, n) end
@@ -575,16 +578,14 @@ local function createSlider(parent, text, min, max, default, order, callback)
 end
 local function createDropdown(parent, text, options, default, callback)
 	if not parent then return end
-	return parent:Dropdown({Title = text, Values = options, Value = default, Callback = function(c)
-		local val = type(c) == "table" and c[1] or c
-		if callback and val then pcall(callback, val) end
-	end})
+	return parent:AddDropdown(nextFlag(), {Title = text, Values = options, Multi = false, Default = default,
+		Callback = function(v) if callback and v then pcall(callback, v) end end})
 end
 local function createInput(parent, text, placeholder, callback)
 	if not parent then return end
-	return parent:Input({Title = text, Placeholder = placeholder or "", Callback = function(v)
-		if callback then pcall(callback, v) end
-	end})
+	return parent:AddInput(nextFlag(), {Title = text, Default = "", Placeholder = placeholder or "",
+		Numeric = false, Finished = false,
+		Callback = function(v) if callback then pcall(callback, v) end end})
 end
 local function createSpacer(parent, order) return nil end
 
@@ -4054,7 +4055,7 @@ do
 			end
 		end
 		if #names == 0 then names = {"(no players)"} end
-		if mm2Dropdown then pcall(function() mm2Dropdown:Refresh(names) end) end
+		if mm2Dropdown then pcall(function() mm2Dropdown:SetValues(names) end) end
 	end
 	mm2Dropdown = createDropdown(tab, "Select Player", {"(refresh first)"}, "(refresh first)", function(choice)
 		local player = mm2Players[choice]
@@ -4437,7 +4438,7 @@ end
 	end)
 	bindKey("UIToggle", "K", function()
 		-- WindUI owns show/hide; the old window vars are gone.
-		if _G.SX_UI then pcall(function() _G.SX_UI:ToggleUI() end) end
+		-- WindUI-specific toggle removed; Fluent has its own minimise key.
 	end)
 
 	-- capture the next key press when a Bind button is armed
@@ -4908,7 +4909,7 @@ do
 	-- RightShift is already handled by a hardcoded toggle elsewhere, so binding a
 	-- second RightShift handler here would double-toggle (net no-op / dead key).
 	bindKey("UIMinimize", "RightControl", function()
-		if _G.SX_UI then pcall(function() _G.SX_UI:ToggleUI() end) end
+		-- WindUI-specific toggle removed; Fluent has its own minimise key.
 	end)
 
 	-- ================= RESPAWN HOOK (called from CharacterAdded) =================

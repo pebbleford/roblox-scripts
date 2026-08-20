@@ -3253,14 +3253,14 @@ end
 -- site is untouched: uiBuilder keeps the same signatures and builds WindUI
 -- elements instead, and tabFrames holds WindUI tab objects. That kept a
 -- fifty-control port to one adapter rather than fifty rewrites.
-local WindUI
+local Fluent
 do
 	local ok, lib = pcall(function()
 		return loadstring(game:HttpGet(
-			"https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+			"https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 	end)
 	if not ok or not lib then
-		warn("[SX NBTF] WindUI failed to load: " .. tostring(lib))
+		warn("[SX NBTF] Fluent failed to load: " .. tostring(lib))
 		pcall(function()
 			game:GetService("StarterGui"):SetCore("SendNotification", {
 				Title = "Pebbleford NBTF",
@@ -3270,23 +3270,18 @@ do
 		end)
 		return
 	end
-	WindUI = lib
-	-- Published so helpers.notify, defined earlier in the file, can find it.
+	Fluent = lib
 	_G.SXNBTF_UI = lib
 end
 
-local Window = WindUI:CreateWindow({
+local Window = Fluent:CreateWindow({
 	Title = "Pebbleford Hub - NBTF",
-	Author = "NBTF Hub v7.2",
-	Folder = "PebblefordHub",
+	SubTitle = "NBTF Hub v7.2",
+	TabWidth = 150,
 	Size = UDim2.fromOffset(580, 460),
-	HideSearchBar = false,
-	OpenButton = {
-		Title = "NBTF",
-		Enabled = true,
-		Draggable = true,
-		OnlyMobile = false,
-	},
+	Acrylic = false,
+	Theme = "Dark",
+	MinimizeKey = Enum.KeyCode.RightShift,
 })
 
 -- Declared here because the old declaration lived in the hand-built GUI that
@@ -3295,7 +3290,7 @@ local tabFrames = {}
 
 -- Same tab names as before, so every build block below still finds its tab.
 for _, name in ipairs({"Aim", "Combat", "Movement", "Visuals", "Teleport", "Players", "Misc", "Settings"}) do
-	tabFrames[name] = Window:Tab({Title = name})
+	tabFrames[name] = Window:AddTab({Title = name})
 end
 
 -- ===================== UI BUILDERS (WindUI adapters) =====================
@@ -3314,15 +3309,12 @@ end
 
 function uiBuilder.createSectionLabel(parent, text, order)
 	if not parent then return end
-	return parent:Section({Title = text})
+	return parent:AddParagraph({Title = text, Content = ""})
 end
 
 function uiBuilder.createInfoLabel(parent, text, order)
 	if not parent then return end
-	-- The text goes in Title, not Desc. WindUI treats Title as the primary
-	-- rendered field, so a paragraph with an empty Title draws as a blank box
-	-- regardless of what Desc contains.
-	return parent:Paragraph({Title = text})
+	return parent:AddParagraph({Title = "", Content = text})
 end
 
 -- Returns a proxy, not a WindUI object. The feature code updates these labels
@@ -3330,18 +3322,15 @@ end
 -- and quietly absorbs the cosmetic properties the library manages itself.
 function uiBuilder.createDynamicLabel(parent, text)
 	if not parent then return setmetatable({}, {__newindex = function() end}) end
-	local para = parent:Paragraph({Title = tostring(text or "")})
+	local para = parent:AddParagraph({Title = "", Content = tostring(text or "")})
 	local lastText = tostring(text or "")
 	return setmetatable({}, {
 		__newindex = function(_, key, value)
 			if key == "Text" then
 				local str = tostring(value)
-				-- Only touch WindUI when the text actually changed; SetTitle
-				-- relays out the whole scroll frame, so an unchanged write was
-				-- pure churn every update tick and the main source of the lag.
 				if str ~= lastText then
 					lastText = str
-					pcall(function() para:SetTitle(str) end)
+					pcall(function() para:SetDesc(str) end)
 				end
 			end
 		end,
@@ -3349,35 +3338,30 @@ function uiBuilder.createDynamicLabel(parent, text)
 	})
 end
 
+local _nbtfFlag = 0
+local function nbtfFlag() _nbtfFlag = _nbtfFlag + 1 return "nbtf_" .. _nbtfFlag end
+
 function uiBuilder.createToggle(parent, text, order, callback)
 	if not parent then return end
-	return parent:Toggle({
-		Title = text,
-		Value = false,
-		Callback = function(value)
-			if callback then pcall(callback, value) end
-		end,
+	return parent:AddToggle(nbtfFlag(), {
+		Title = text, Default = false,
+		Callback = function(value) if callback then pcall(callback, value) end end,
 	})
 end
 
 function uiBuilder.createButton(parent, text, order, callback)
 	if not parent then return end
-	return parent:Button({
+	return parent:AddButton({
 		Title = text,
-		Callback = function()
-			if callback then pcall(callback) end
-		end,
+		Callback = function() if callback then pcall(callback) end end,
 	})
 end
 
 function uiBuilder.createSlider(parent, text, min, max, default, order, callback)
 	if not parent then return end
-	return parent:Slider({
-		Title = text,
-		Step = 1,
-		Value = {Min = min, Max = max, Default = default},
+	return parent:AddSlider(nbtfFlag(), {
+		Title = text, Min = min, Max = max, Default = default, Rounding = 0,
 		Callback = function(value)
-			-- WindUI can hand back a table for range sliders; take the number.
 			local n = type(value) == "table" and (value.Value or value.Default) or value
 			if callback and type(n) == "number" then pcall(callback, n) end
 		end,
@@ -3386,10 +3370,8 @@ end
 
 function uiBuilder.createDropdown(parent, text, options, default, callback)
 	if not parent then return end
-	return parent:Dropdown({
-		Title = text,
-		Values = options,
-		Value = default,
+	return parent:AddDropdown(nbtfFlag(), {
+		Title = text, Values = options, Multi = false, Default = default,
 		Callback = function(chosen)
 			local value = type(chosen) == "table" and chosen[1] or chosen
 			if callback and value then pcall(callback, value) end
@@ -3399,12 +3381,10 @@ end
 
 function uiBuilder.createInput(parent, text, placeholder, callback)
 	if not parent then return end
-	return parent:Input({
-		Title = text,
-		Placeholder = placeholder or "",
-		Callback = function(value)
-			if callback then pcall(callback, value) end
-		end,
+	return parent:AddInput(nbtfFlag(), {
+		Title = text, Default = "", Placeholder = placeholder or "",
+		Numeric = false, Finished = false,
+		Callback = function(value) if callback then pcall(callback, value) end end,
 	})
 end
 
@@ -4557,7 +4537,7 @@ do
 			return
 		end
 		if locationDropdown then
-			pcall(function() locationDropdown:Refresh(names) end)
+			pcall(function() locationDropdown:SetValues(names) end)
 		end
 		helpers.notify("Scan", "Found " .. #names .. " locations!")
 	end
@@ -4597,7 +4577,7 @@ do
 			end
 		end
 		if #names == 0 then names = {"(no players)"} end
-		if tpDropdown then pcall(function() tpDropdown:Refresh(names) end) end
+		if tpDropdown then pcall(function() tpDropdown:SetValues(names) end) end
 	end
 
 	tpDropdown = uiBuilder.createDropdown(tab, "Teleport Target", {"(refresh first)"}, "(refresh first)", function(choice)
@@ -4624,7 +4604,7 @@ do
 			end
 		end
 		if #names == 0 then names = {"(no players)"} end
-		if specDropdown then pcall(function() specDropdown:Refresh(names) end) end
+		if specDropdown then pcall(function() specDropdown:SetValues(names) end) end
 	end
 
 	specDropdown = uiBuilder.createDropdown(tab, "Spectate Target", {"(refresh first)"}, "(refresh first)", function(choice)
@@ -4663,7 +4643,7 @@ do
 			end
 		end
 		if #names == 0 then names = {"(no players)"} end
-		if actionDropdown then pcall(function() actionDropdown:Refresh(names) end) end
+		if actionDropdown then pcall(function() actionDropdown:SetValues(names) end) end
 	end
 
 	actionDropdown = uiBuilder.createDropdown(tab, "Target Player", {"(refresh first)"}, "(refresh first)", function(choice)
@@ -4775,7 +4755,7 @@ do
 			end
 		end
 		if #names == 0 then names = {"(no players)"} end
-		if orbitDropdown then pcall(function() orbitDropdown:Refresh(names) end) end
+		if orbitDropdown then pcall(function() orbitDropdown:SetValues(names) end) end
 	end
 
 	local orbitSelected = nil
