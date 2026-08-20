@@ -1066,7 +1066,14 @@ F.addNametag = function(player)
 			table.insert(espState.espConnections, conn)
 		end
 
-		local distConn = RunService.Heartbeat:Connect(function()
+		-- Throttled to ~5 updates a second instead of every frame. Per-player
+		-- per-frame distance math and a BillboardGui text write is a real cost
+		-- on mobile in a full server, and 200ms is imperceptible on a nametag.
+		local distAccum = 0
+		local distConn = RunService.Heartbeat:Connect(function(dt)
+			distAccum = distAccum + dt
+			if distAccum < 0.2 then return end
+			distAccum = 0
 			pcall(function()
 				if not bb or not bb.Parent then return end
 				local myChar = LocalPlayer.Character
