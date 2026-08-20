@@ -549,17 +549,13 @@ do
 end
 
 -- ===================== TAB BAR (horizontal) =====================
-local tabBar = Instance.new("ScrollingFrame")
+local tabBar = Instance.new("Frame")
 tabBar.Name = "TabBar"
 tabBar.Size = UDim2.new(1, 0, 0, 34)
 tabBar.Position = UDim2.new(0, 0, 0, 42)
 tabBar.BackgroundColor3 = COLORS.bgSecondary
 tabBar.BorderSizePixel = 0
-tabBar.ScrollBarThickness = 2
-tabBar.ScrollBarImageColor3 = COLORS.accent
-tabBar.ScrollingDirection = Enum.ScrollingDirection.X
-tabBar.CanvasSize = UDim2.new(0, 0, 0, 0)
-tabBar.AutomaticCanvasSize = Enum.AutomaticSize.X
+tabBar.ClipsDescendants = true
 tabBar.Parent = mainWindow
 
 local tabBarDivider = Instance.new("Frame")
@@ -581,26 +577,24 @@ tabBarLayout.Padding = UDim.new(0, 0)
 tabBarLayout.Parent = tabBar
 
 for i, tabName in ipairs(tabNames) do
-	-- Fixed width per tab, sized to the longest name so nothing is squished,
-	-- laid out in a horizontal scrolling row. AutomaticSize was leaving the
-	-- buttons at width 0 and therefore invisible.
-	local tabW = math.max(70, #tabName * 9 + 20)
 	local tabBtn = Instance.new("TextButton")
 	tabBtn.Name = tabName .. "Tab"
-	tabBtn.Size = UDim2.new(0, tabW, 0, 33)
+	-- Equal width across the bar; Scale sizing works because tabBar is a plain
+	-- Frame (a ScrollingFrame sized by its zero-height canvas hid these).
+	tabBtn.Size = UDim2.new(1 / #tabNames, 0, 1, 0)
 	tabBtn.BackgroundColor3 = COLORS.accentDark
 	tabBtn.BackgroundTransparency = (tabName == "Execute") and 0 or 1
 	tabBtn.Text = string.upper(tabName)
 	tabBtn.TextColor3 = (tabName == "Execute") and COLORS.accent or COLORS.textDim
 	tabBtn.Font = Enum.Font.Code
-	tabBtn.TextSize = 11
+	tabBtn.TextSize = 10
 	tabBtn.AutoButtonColor = false
 	tabBtn.LayoutOrder = i
 	tabBtn.Parent = tabBar
 
-	-- 1px black separator on the right edge of each tab.
+	-- 1px black separator on the right edge.
 	local sep = Instance.new("Frame")
-	sep.Size = UDim2.new(0, 1, 0, 33)
+	sep.Size = UDim2.new(0, 1, 1, 0)
 	sep.Position = UDim2.new(1, -1, 0, 0)
 	sep.BackgroundColor3 = COLORS.bg
 	sep.BorderSizePixel = 0
