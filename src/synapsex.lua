@@ -404,6 +404,33 @@ for _, name in ipairs(tabNames) do
 	end
 end
 
+-- Register the hub's own palettes as WindUI themes so its Theme buttons can
+-- switch them natively. The old theme code recoloured hand-built frames that
+-- no longer exist; WindUI owns the chrome now, so it must do the recolouring.
+do
+	local function reg(t)
+		pcall(function()
+			WindUI:AddTheme({
+				Name = t.name,
+				Accent = t.accent,
+				Dialog = t.bgSecondary,
+				Outline = t.border,
+				Text = t.textPrimary,
+				Placeholder = t.textDim,
+				Background = t.bg,
+				Button = t.accentDark,
+				Icon = t.textSecondary,
+				Toggle = t.toggleOn,
+				Slider = t.accent,
+				Checkbox = t.accent,
+			})
+		end)
+	end
+	for _, id in ipairs({"default", "galaxy", "ocean", "blood", "mint"}) do
+		if THEMES[id] then reg(THEMES[id]) end
+	end
+end
+
 local function switchTab(tabName)
 	uiState.activeTab = tabName
 end
@@ -3134,89 +3161,15 @@ do
 
 	createSpacer(tab, 6)
 	createSectionLabel(tab, "Theme", 7)
-	local themeOrder = 8
-	local themeList = {"default", "galaxy", "ocean", "blood", "mint"}
-	for _, themeId in ipairs(themeList) do
-		local themeData = THEMES[themeId]
-		local themeName = themeData.name
-		createActionButton(tab, themeName, themeOrder, function()
-			-- Save old colors for mapping
-			local oldColors = {}
-			for k, v in pairs(COLORS) do oldColors[k] = v end
-
-			-- Apply new theme to COLORS table
-			for k, v in pairs(themeData) do
-				if k ~= "name" then COLORS[k] = v end
-			end
-			currentThemeName = themeId
-
-			-- Build color mapping: old color -> list of new color roles
-			local colorMap = {}
-			for role, oldColor in pairs(oldColors) do
-				local key = tostring(oldColor)
-				if not colorMap[key] then colorMap[key] = {} end
-				colorMap[key][role] = true
-			end
-
-			-- Walk EVERY descendant of the GUI and update colors
-			pcall(function()
-				for _, obj in ipairs(screenGui:GetDescendants()) do
-					pcall(function()
-						-- Update BackgroundColor3
-						if obj:IsA("GuiObject") and obj.BackgroundTransparency < 1 then
-							local bgKey = tostring(obj.BackgroundColor3)
-							if colorMap[bgKey] then
-								-- Pick best match: bg > bgSecondary > tabBg > accent > toggleOff > editor > editorLine > btnClear > btnExecute
-								local priority = {"bg", "bgSecondary", "tabBg", "accent", "accentDark", "accentHover", "toggleOff", "toggleOn", "editor", "editorLine", "btnClear", "btnExecute", "border", "error", "success"}
-								for _, role in ipairs(priority) do
-									if colorMap[bgKey][role] then
-										obj.BackgroundColor3 = COLORS[role]
-										break
-									end
-								end
-							end
-						end
-						-- Update TextColor3
-						if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
-							local txtKey = tostring(obj.TextColor3)
-							if colorMap[txtKey] then
-								local priority = {"textPrimary", "textSecondary", "textDim", "accent", "accentHover", "error", "success"}
-								for _, role in ipairs(priority) do
-									if colorMap[txtKey][role] then
-										obj.TextColor3 = COLORS[role]
-										break
-									end
-								end
-							end
-							-- Update PlaceholderColor3 for TextBoxes
-							if obj:IsA("TextBox") then
-								pcall(function()
-									local phKey = tostring(obj.PlaceholderColor3)
-									if colorMap[phKey] and colorMap[phKey]["textDim"] then
-										obj.PlaceholderColor3 = COLORS.textDim
-									end
-								end)
-							end
-						end
-						-- Update UIStroke color
-						if obj:IsA("UIStroke") then
-							local sKey = tostring(obj.Color)
-							if colorMap[sKey] then
-								for role, _ in pairs(colorMap[sKey]) do
-									if COLORS[role] then obj.Color = COLORS[role] break end
-								end
-							end
-						end
-					end)
-				end
-				-- The logo and toggle button belonged to the hand-built
-				-- window chrome; WindUI draws and themes its own.
-			end)
-
-			addLog("[THEME] " .. themeName .. " applied!", COLORS.accent)
-		end)
-		themeOrder = themeOrder + 1
+	local themeNames = {}
+	for _, id in ipairs({"default", "galaxy", "ocean", "blood", "mint"}) do
+		if THEMES[id] then table.insert(themeNames, THEMES[id].name) end
 	end
+	createDropdown(tab, "Theme", themeNames, THEMES.default.name, function(choice)
+		-- WindUI applies the registered theme by name across its whole UI.
+		pcall(function() WindUI:SetTheme(choice) end)
+		addLog("[THEME] " .. choice .. " applied!", COLORS.accent)
+	end)
 
 	createSpacer(tab, themeOrder)
 	themeOrder = themeOrder + 1
