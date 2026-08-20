@@ -477,7 +477,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 50, 1, 0)
 versionLabel.Position = UDim2.new(0, 168, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v4.0"
+versionLabel.Text = "v4.1"
 versionLabel.TextColor3 = COLORS.textDim
 versionLabel.Font = Enum.Font.Code
 versionLabel.TextSize = 11
@@ -1793,11 +1793,28 @@ F.stopFly = function()
 	-- Remove mobile fly buttons
 	if flyState.flyUpBtn then pcall(function() flyState.flyUpBtn:Destroy() end) flyState.flyUpBtn = nil end
 	if flyState.flyDownBtn then pcall(function() flyState.flyDownBtn:Destroy() end) flyState.flyDownBtn = nil end
-	-- Restore PlatformStand
+	-- Restore PlatformStand and, crucially, transition the humanoid out of the
+	-- platform-standing state. Clearing PlatformStand alone leaves the humanoid
+	-- stuck in that state and the body still tilted from the fly orientation,
+	-- which is the "frozen in a weird position" on unfly. Uprighting the root
+	-- and nudging the state back to normal releases it.
 	local character = LocalPlayer.Character
 	if character then
-		local hum = character:FindFirstChild("Humanoid")
+		local hum = character:FindFirstChildOfClass("Humanoid")
+		local hrp = character:FindFirstChild("HumanoidRootPart")
 		if hum then hum.PlatformStand = flyState.savedPlatformStand or false end
+		if hrp then
+			-- Keep facing (yaw), drop the pitch/roll the fly gyro left behind,
+			-- and zero any residual velocity so you do not drift or stay tilted.
+			local _, yaw, _ = hrp.CFrame:ToOrientation()
+			hrp.CFrame = CFrame.new(hrp.Position) * CFrame.Angles(0, yaw, 0)
+			hrp.AssemblyLinearVelocity = Vector3.zero
+			hrp.AssemblyAngularVelocity = Vector3.zero
+		end
+		if hum then
+			pcall(function() hum:ChangeState(Enum.HumanoidStateType.GettingUp) end)
+			pcall(function() hum:ChangeState(Enum.HumanoidStateType.Running) end)
+		end
 	end
 	addLog("[FLY] OFF", COLORS.error)
 end
