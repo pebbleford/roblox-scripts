@@ -35,14 +35,15 @@ local F = {} -- shared function table (avoids Luau 200 local limit)
 -- ===================== THEME SYSTEM =====================
 local THEMES = {
 	default = {
-		name = "Default",
-		bg = Color3.fromRGB(20, 20, 20), bgSecondary = Color3.fromRGB(30, 30, 30), tabBg = Color3.fromRGB(45, 45, 45),
-		accent = Color3.fromRGB(255, 102, 0), accentHover = Color3.fromRGB(255, 133, 51), accentDark = Color3.fromRGB(180, 72, 0),
-		textPrimary = Color3.fromRGB(255, 255, 255), textSecondary = Color3.fromRGB(176, 176, 176), textDim = Color3.fromRGB(120, 120, 120),
-		border = Color3.fromRGB(50, 50, 50), toggleOn = Color3.fromRGB(255, 102, 0), toggleOff = Color3.fromRGB(85, 85, 85),
-		error = Color3.fromRGB(255, 68, 68), success = Color3.fromRGB(68, 255, 68),
-		editor = Color3.fromRGB(15, 15, 15), editorLine = Color3.fromRGB(35, 35, 35),
-		btnExecute = Color3.fromRGB(255, 102, 0), btnClear = Color3.fromRGB(60, 60, 60),
+		name = "Terminal",
+		-- Terminal / hacker green-on-black theme (from the Blender/HTML mockup).
+		bg = Color3.fromRGB(0, 0, 0), bgSecondary = Color3.fromRGB(5, 12, 6), tabBg = Color3.fromRGB(5, 12, 6),
+		accent = Color3.fromRGB(0, 255, 65), accentHover = Color3.fromRGB(93, 255, 143), accentDark = Color3.fromRGB(15, 61, 28),
+		textPrimary = Color3.fromRGB(191, 255, 205), textSecondary = Color3.fromRGB(63, 191, 95), textDim = Color3.fromRGB(31, 122, 52),
+		border = Color3.fromRGB(15, 61, 28), toggleOn = Color3.fromRGB(20, 81, 42), toggleOff = Color3.fromRGB(11, 42, 18),
+		error = Color3.fromRGB(255, 85, 85), success = Color3.fromRGB(0, 255, 65),
+		editor = Color3.fromRGB(1, 4, 1), editorLine = Color3.fromRGB(5, 12, 6),
+		btnExecute = Color3.fromRGB(0, 255, 65), btnClear = Color3.fromRGB(11, 42, 18),
 	},
 	galaxy = {
 		name = "Galaxy",
@@ -324,10 +325,17 @@ end
 
 -- ===================== UTILITY FUNCTIONS =====================
 local function addCorner(parent, radius)
-	local c = Instance.new("UICorner")
-	c.CornerRadius = UDim.new(0, radius or 6)
-	c.Parent = parent
-	return c
+	-- Terminal theme uses sharp corners, so this is intentionally a no-op.
+	-- A 1px border is added instead to match the mockup's outlined panels.
+	pcall(function()
+		if parent:IsA("GuiObject") and parent.BorderSizePixel == 0 then
+			local st = Instance.new("UIStroke")
+			st.Color = COLORS.border
+			st.Thickness = 1
+			st.Parent = parent
+		end
+	end)
+	return nil
 end
 
 local function addStroke(parent, color, thickness)
@@ -358,271 +366,555 @@ F.findPlayer = function(name)
 	return nil
 end
 
--- ===================== GUI SETUP (WindUI) =====================
--- The hand-built window, tab bar, drag handling and mobile toggle were
--- replaced with WindUI. The builder functions keep their original names and
--- signatures and now produce WindUI elements, so all ~150 feature call sites
--- below are untouched; only these bodies changed.
---
--- screenGui above is kept deliberately: the script editor in the Execute tab
--- is a real multi-line code editor, which WindUI has no equivalent for, so it
--- stays as its own window parented there.
-local Fluent
+-- ===================== MAIN WINDOW =====================
+local mainWindow = Instance.new("Frame")
+mainWindow.Name = "MainWindow"
+mainWindow.Size = UDim2.new(0, windowW, 0, windowH)
+mainWindow.Position = UDim2.new(0.5, -math.floor(windowW / 2), 0.5, -math.floor(windowH / 2))
+mainWindow.BackgroundColor3 = COLORS.bg
+mainWindow.BorderSizePixel = 0
+mainWindow.Active = true
+mainWindow.Parent = screenGui
+addCorner(mainWindow, 8)
+addStroke(mainWindow, COLORS.border, 2)
+
+-- ===================== RESIZE HANDLE =====================
+local MIN_W = isMobile and 300 or 400
+local MIN_H = isMobile and 250 or 300
+local MAX_W = math.min(math.floor(screenSize.X * 0.95), 900)
+local MAX_H = math.min(math.floor(screenSize.Y * 0.85), 700)
+
+local resizeHandle = Instance.new("TextButton")
+resizeHandle.Name = "ResizeHandle"
+resizeHandle.Size = UDim2.new(0, 20, 0, 20)
+resizeHandle.Position = UDim2.new(1, -20, 1, -20)
+resizeHandle.BackgroundTransparency = 1
+resizeHandle.Text = ""
+resizeHandle.ZIndex = 10
+resizeHandle.Parent = mainWindow
+
+local _rl1 = Instance.new("Frame")
+_rl1.Size = UDim2.new(0, 14, 0, 2)
+_rl1.Position = UDim2.new(0, 3, 1, -7)
+_rl1.Rotation = -45
+_rl1.BackgroundColor3 = COLORS.textDim
+_rl1.BorderSizePixel = 0
+_rl1.ZIndex = 10
+_rl1.Parent = resizeHandle
+
+local _rl2 = Instance.new("Frame")
+_rl2.Size = UDim2.new(0, 8, 0, 2)
+_rl2.Position = UDim2.new(0, 9, 1, -5)
+_rl2.Rotation = -45
+_rl2.BackgroundColor3 = COLORS.textDim
+_rl2.BorderSizePixel = 0
+_rl2.ZIndex = 10
+_rl2.Parent = resizeHandle
+
 do
-	local ok, lib = pcall(function()
-		return loadstring(game:HttpGet(
-			"https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+	local resizing = false
+	local resizeStart, startSize
+
+	resizeHandle.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			resizing = true
+			resizeStart = input.Position
+			startSize = mainWindow.AbsoluteSize
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					resizing = false
+				end
+			end)
+		end
 	end)
-	if not ok or not lib then
-		warn("[SX] Fluent failed to load: " .. tostring(lib))
-		pcall(function()
-			game:GetService("StarterGui"):SetCore("SendNotification", {
-				Title = "Pebbleford Hub",
-				Text = "UI library failed to load. Check your internet/executor.",
-				Duration = 8,
-			})
-		end)
-		return
-	end
-	Fluent = lib
-	_G.SX_UI = lib
+
+	UserInputService.InputChanged:Connect(function(input)
+		if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			local delta = input.Position - resizeStart
+			local newW = startSize.X + delta.X
+			local newH = startSize.Y + delta.Y
+			if newW < MIN_W then newW = MIN_W end
+			if newW > MAX_W then newW = MAX_W end
+			if newH < MIN_H then newH = MIN_H end
+			if newH > MAX_H then newH = MAX_H end
+			mainWindow.Size = UDim2.new(0, newW, 0, newH)
+		end
+	end)
 end
 
-local Window = Fluent:CreateWindow({
-	Title = "Pebbleford Hub",
-	SubTitle = "Universal Hub v3.1",
-	TabWidth = 150,
-	Size = UDim2.fromOffset(580, 460),
-	-- Acrylic is the frosted blur; it is the expensive part and more
-	-- detectable, so it is off.
-	Acrylic = false,
-	Theme = "Dark",
-	MinimizeKey = Enum.KeyCode.RightShift,
-})
+-- Shadow effect (outer glow)
+local shadow = Instance.new("ImageLabel")
+shadow.Name = "Shadow"
+shadow.Size = UDim2.new(1, 30, 1, 30)
+shadow.Position = UDim2.new(0, -15, 0, -15)
+shadow.BackgroundTransparency = 1
+shadow.ImageTransparency = 0.6
+shadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
+shadow.ScaleType = Enum.ScaleType.Slice
+shadow.SliceCenter = Rect.new(24, 24, 276, 276)
+shadow.Image = "rbxassetid://6015897843"
+shadow.ZIndex = -1
+shadow.Parent = mainWindow
 
--- Re-declared here: the Fluent port replaced the block that originally held
--- these, so without them the loop below indexes a nil global and the script
--- halts with an empty window.
-local tabNames = {"Execute", "Main", "Player", "Combat", "ESP", "Movement", "Visuals", "Fun", "Server", "Settings"}
-local tabFrames = {}
+-- ===================== TITLE BAR =====================
+local titleBar = Instance.new("Frame")
+titleBar.Name = "TitleBar"
+titleBar.Size = UDim2.new(1, 0, 0, 40)
+titleBar.BackgroundColor3 = COLORS.bgSecondary
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainWindow
 
-for _, name in ipairs(tabNames) do
-	if name ~= "Execute" then
-		tabFrames[name] = Window:AddTab({Title = name})
-	end
-end
+-- Bright green 2px accent line under the title, as in the mockup.
+local titleAccent = Instance.new("Frame")
+titleAccent.Size = UDim2.new(1, 0, 0, 2)
+titleAccent.Position = UDim2.new(0, 0, 1, 0)
+titleAccent.BackgroundColor3 = COLORS.accent
+titleAccent.BorderSizePixel = 0
+titleAccent.ZIndex = 3
+titleAccent.Parent = titleBar
 
--- Fluent ships its own themes (Dark, Light, Darker, Aqua, Amethyst, Rose)
--- rather than accepting arbitrary colours, so the hub's palettes are mapped
--- onto the nearest Fluent theme; the Theme control below switches them.
-local FLUENT_THEME_FOR = {
-	Default = "Dark", Galaxy = "Amethyst", Ocean = "Aqua",
-	Blood = "Rose", Mint = "Aqua",
-}
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(0, 220, 1, 0)
+titleLabel.Position = UDim2.new(0, 14, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "PEBBLEFORD HUB"
+titleLabel.TextColor3 = COLORS.textPrimary
+titleLabel.Font = Enum.Font.Code
+titleLabel.TextSize = 15
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = titleBar
 
-local function switchTab(tabName)
-	uiState.activeTab = tabName
-end
+local versionLabel = Instance.new("TextLabel")
+versionLabel.Size = UDim2.new(0, 50, 1, 0)
+versionLabel.Position = UDim2.new(0, 168, 0, 0)
+versionLabel.BackgroundTransparency = 1
+versionLabel.Text = "v4.2"
+versionLabel.TextColor3 = COLORS.textDim
+versionLabel.Font = Enum.Font.Code
+versionLabel.TextSize = 11
+versionLabel.TextXAlignment = Enum.TextXAlignment.Left
+versionLabel.Parent = titleBar
 
--- ===================== SCRIPT EDITOR WINDOW =====================
--- WindUI has no multi-line code editor, so the Execute tab keeps its original
--- hand-built editor and lives in its own draggable window instead of a tab.
--- The executor code further down parents itself to executeFrame unchanged.
-local executorWindow = Instance.new("Frame")
-executorWindow.Name = "ExecutorWindow"
-executorWindow.Size = UDim2.new(0, 560, 0, 400)
-executorWindow.Position = UDim2.new(0.5, -280, 0.5, -200)
-executorWindow.BackgroundColor3 = COLORS.bg
-executorWindow.BorderSizePixel = 0
-executorWindow.Visible = false
-executorWindow.Active = true
-executorWindow.Parent = screenGui
-addCorner(executorWindow, 8)
-addStroke(executorWindow, COLORS.border, 1)
+-- KEY OK badge, right side.
+local keyBadge = Instance.new("TextLabel")
+keyBadge.Size = UDim2.new(0, 60, 0, 22)
+keyBadge.Position = UDim2.new(1, -132, 0.5, -11)
+keyBadge.BackgroundTransparency = 1
+keyBadge.Text = "KEY OK"
+keyBadge.TextColor3 = COLORS.textDim
+keyBadge.Font = Enum.Font.Code
+keyBadge.TextSize = 11
+keyBadge.TextXAlignment = Enum.TextXAlignment.Right
+keyBadge.Parent = titleBar
 
-local execTitleBar = Instance.new("Frame")
-execTitleBar.Size = UDim2.new(1, 0, 0, 32)
-execTitleBar.BackgroundColor3 = COLORS.bgSecondary
-execTitleBar.BorderSizePixel = 0
-execTitleBar.Parent = executorWindow
-addCorner(execTitleBar, 8)
+-- Collapse (dark) + close (green) buttons, 28x28, sharp.
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.Size = UDim2.new(0, 28, 0, 28)
+minimizeBtn.Position = UDim2.new(1, -64, 0.5, -14)
+minimizeBtn.BackgroundColor3 = COLORS.accentDark
+minimizeBtn.Text = "-"
+minimizeBtn.TextColor3 = COLORS.textPrimary
+minimizeBtn.Font = Enum.Font.Code
+minimizeBtn.TextSize = 16
+minimizeBtn.BorderSizePixel = 0
+minimizeBtn.Parent = titleBar
 
-local execTitle = Instance.new("TextLabel")
-execTitle.Size = UDim2.new(1, -40, 1, 0)
-execTitle.Position = UDim2.new(0, 12, 0, 0)
-execTitle.BackgroundTransparency = 1
-execTitle.Text = "Script Executor"
-execTitle.TextColor3 = COLORS.textPrimary
-execTitle.TextSize = 14
-execTitle.Font = Enum.Font.GothamBold
-execTitle.TextXAlignment = Enum.TextXAlignment.Left
-execTitle.Parent = execTitleBar
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 28, 0, 28)
+closeBtn.Position = UDim2.new(1, -32, 0.5, -14)
+closeBtn.BackgroundColor3 = COLORS.accent
+closeBtn.Text = "X"
+closeBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
+closeBtn.Font = Enum.Font.Code
+closeBtn.TextSize = 13
+closeBtn.BorderSizePixel = 0
+closeBtn.Parent = titleBar
 
-local execClose = Instance.new("TextButton")
-execClose.Size = UDim2.new(0, 24, 0, 24)
-execClose.Position = UDim2.new(1, -30, 0, 4)
-execClose.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-execClose.Text = "X"
-execClose.TextColor3 = Color3.fromRGB(255, 255, 255)
-execClose.TextSize = 12
-execClose.Font = Enum.Font.GothamBold
-execClose.BorderSizePixel = 0
-execClose.Parent = execTitleBar
-addCorner(execClose, 5)
-execClose.MouseButton1Click:Connect(function()
-	executorWindow.Visible = false
-end)
-
-local executeFrame = Instance.new("Frame")
-executeFrame.Name = "ExecuteFrame"
-executeFrame.Size = UDim2.new(1, 0, 1, -32)
-executeFrame.Position = UDim2.new(0, 0, 0, 32)
-executeFrame.BackgroundTransparency = 1
-executeFrame.Parent = executorWindow
-tabFrames["Execute"] = executeFrame
-
--- Touch and mouse both, so the window can be moved on a phone.
+-- ===================== DRAG LOGIC =====================
 do
-	local dragging, dragStart, startPos = false, nil, nil
-	execTitleBar.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1
-			or input.UserInputType == Enum.UserInputType.Touch then
+	local dragging = false
+	local dragStart, startPos
+
+	titleBar.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
 			dragStart = input.Position
-			startPos = executorWindow.Position
-		end
-	end)
-	UserInputService.InputChanged:Connect(function(input)
-		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
-			or input.UserInputType == Enum.UserInputType.Touch) then
-			local delta = input.Position - dragStart
-			executorWindow.Position = UDim2.new(
-				startPos.X.Scale, startPos.X.Offset + delta.X,
-				startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-		end
-	end)
-	UserInputService.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1
-			or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = false
-		end
-	end)
-end
-
--- ===================== UI COMPONENT BUILDERS (Fluent) =====================
--- Fluent needs a unique flag string per interactive element, so one is
--- generated per call. order is accepted and ignored (Fluent lays out in
--- creation order).
-local _flagN = 0
-local function nextFlag()
-	_flagN = _flagN + 1
-	return "sx_" .. _flagN
-end
-
-local function createSectionLabel(parent, text, order)
-	if not parent then return end
-	return parent:AddSection(text)
-end
-
-local function createInfoLabel(parent, text, order)
-	if not parent then return end
-	return parent:AddParagraph({Title = "", Content = text})
-end
-
-local function createDynamicLabel(parent, text)
-	if not parent then return setmetatable({}, {__newindex = function() end}) end
-	local para = parent:AddParagraph({Title = "", Content = tostring(text or "")})
-	local last = tostring(text or "")
-	return setmetatable({}, {
-		__newindex = function(_, key, value)
-			if key == "Text" then
-				local str = tostring(value)
-				-- Cached: skip redundant writes so a repeat value costs nothing.
-				if str ~= last then
-					last = str
-					pcall(function() para:SetDesc(str) end)
+			startPos = mainWindow.Position
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
 				end
-			end
-		end,
-		__index = function() return nil end,
-	})
+			end)
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			local delta = input.Position - dragStart
+			mainWindow.Position = UDim2.new(
+				startPos.X.Scale, startPos.X.Offset + delta.X,
+				startPos.Y.Scale, startPos.Y.Offset + delta.Y
+			)
+		end
+	end)
+end
+
+-- ===================== TAB BAR (horizontal) =====================
+local tabBar = Instance.new("Frame")
+tabBar.Name = "TabBar"
+tabBar.Size = UDim2.new(1, 0, 0, 34)
+tabBar.Position = UDim2.new(0, 0, 0, 42)
+tabBar.BackgroundColor3 = COLORS.bgSecondary
+tabBar.BorderSizePixel = 0
+tabBar.ClipsDescendants = false
+tabBar.Parent = mainWindow
+
+local tabBarDivider = Instance.new("Frame")
+tabBarDivider.Size = UDim2.new(1, 0, 0, 1)
+tabBarDivider.Position = UDim2.new(0, 0, 1, -1)
+tabBarDivider.BackgroundColor3 = COLORS.border
+tabBarDivider.BorderSizePixel = 0
+tabBarDivider.ZIndex = 2
+tabBarDivider.Parent = tabBar
+
+local tabNames = {"Execute", "Main", "Player", "Combat", "ESP", "Movement", "Visuals", "Fun", "Server", "Settings"}
+local tabButtons = {}
+local tabFrames = {}
+
+-- Manual positioning instead of a UIListLayout: no layout dependency, so the
+-- buttons cannot end up at zero size. Each tab is 1/N of the bar width.
+local _tabCount = #tabNames
+for i, tabName in ipairs(tabNames) do
+	local tabBtn = Instance.new("TextButton")
+	tabBtn.Name = tabName .. "Tab"
+	tabBtn.Position = UDim2.new((i - 1) / _tabCount, 0, 0, 0)
+	tabBtn.Size = UDim2.new(1 / _tabCount, 0, 1, -1)
+	tabBtn.BackgroundColor3 = COLORS.accentDark
+	tabBtn.BackgroundTransparency = (tabName == "Execute") and 0 or 1
+	tabBtn.Text = string.upper(tabName)
+	tabBtn.TextColor3 = (tabName == "Execute") and COLORS.accent or COLORS.textSecondary
+	tabBtn.Font = Enum.Font.Code
+	tabBtn.TextSize = 10
+	tabBtn.TextScaled = false
+	tabBtn.AutoButtonColor = false
+	tabBtn.ZIndex = 3
+	tabBtn.Parent = tabBar
+
+	tabButtons[tabName] = tabBtn
+end
+
+-- ===================== CONTENT AREA =====================
+local contentArea = Instance.new("Frame")
+contentArea.Name = "ContentArea"
+contentArea.Size = UDim2.new(1, 0, 1, -78)
+contentArea.Position = UDim2.new(0, 0, 0, 78)
+contentArea.BackgroundTransparency = 1
+contentArea.BorderSizePixel = 0
+contentArea.ClipsDescendants = true
+contentArea.Parent = mainWindow
+
+-- ===================== TOGGLE BUTTON (show/hide) =====================
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Name = "ToggleBtn"
+toggleBtn.Size = UDim2.new(0, 44, 0, 44)
+toggleBtn.Position = UDim2.new(0, 10, 0.5, -22)
+toggleBtn.BackgroundColor3 = COLORS.accent
+toggleBtn.Text = "PB"
+toggleBtn.TextColor3 = COLORS.textPrimary
+toggleBtn.Font = Enum.Font.Code
+toggleBtn.TextSize = 15
+toggleBtn.Visible = false
+toggleBtn.Parent = screenGui
+addCorner(toggleBtn, 22)
+addStroke(toggleBtn, COLORS.accentDark, 2)
+
+if isMobile then
+	toggleBtn.Visible = true
+	toggleBtn.Size = UDim2.new(0, 50, 0, 50)
+	toggleBtn.Position = UDim2.new(1, -60, 0.5, -25)
+	toggleBtn.BackgroundTransparency = 0.3
+end
+
+-- ===================== BUTTON LOGIC =====================
+minimizeBtn.MouseButton1Click:Connect(function()
+	mainWindow.Visible = false
+	if not isMobile then toggleBtn.Visible = true end
+	uiState.windowVisible = false
+end)
+
+closeBtn.MouseButton1Click:Connect(function()
+	mainWindow.Visible = false
+	if not isMobile then toggleBtn.Visible = true end
+	uiState.windowVisible = false
+end)
+
+toggleBtn.MouseButton1Click:Connect(function()
+	mainWindow.Visible = true
+	toggleBtn.Visible = false
+	uiState.windowVisible = true
+end)
+
+-- ===================== TAB CONTENT FRAMES =====================
+local function createTabFrame(name)
+	local frame = Instance.new("ScrollingFrame")
+	frame.Name = name .. "Frame"
+	frame.Size = UDim2.new(1, 0, 1, 0)
+	frame.BackgroundTransparency = 1
+	frame.BorderSizePixel = 0
+	frame.ScrollBarThickness = 4
+	frame.ScrollBarImageColor3 = COLORS.accent
+	frame.Visible = (name == "Execute")
+	frame.CanvasSize = UDim2.new(0, 0, 0, 0)
+	frame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	frame.Parent = contentArea
+
+	local layout = Instance.new("UIListLayout")
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Padding = UDim.new(0, 6)
+	layout.Parent = frame
+
+	addPadding(frame, 8, 8, 8, 8)
+
+	tabFrames[name] = frame
+	return frame
+end
+
+-- Create Execute tab as a raw frame (not scrolling, needs custom layout)
+local executeFrame = Instance.new("Frame")
+executeFrame.Name = "ExecuteFrame"
+executeFrame.Size = UDim2.new(1, 0, 1, 0)
+executeFrame.BackgroundTransparency = 1
+executeFrame.BorderSizePixel = 0
+executeFrame.Visible = true
+executeFrame.Parent = contentArea
+tabFrames["Execute"] = executeFrame
+
+-- Create the other tabs as scrolling frames
+for _, name in ipairs(tabNames) do
+	if name ~= "Execute" then
+		createTabFrame(name)
+	end
+end
+
+-- ===================== TAB SWITCHING =====================
+local function switchTab(tabName)
+	uiState.activeTab = tabName
+	for name, frame in pairs(tabFrames) do
+		frame.Visible = (name == tabName)
+	end
+	for name, btn in pairs(tabButtons) do
+		if name == tabName then
+			btn.BackgroundTransparency = 0
+			btn.BackgroundColor3 = COLORS.accentDark
+			btn.TextColor3 = COLORS.accent
+		else
+			btn.BackgroundTransparency = 1
+			btn.TextColor3 = COLORS.textSecondary
+		end
+	end
+end
+
+for name, btn in pairs(tabButtons) do
+	btn.MouseButton1Click:Connect(function()
+		switchTab(name)
+	end)
+end
+
+-- ===================== UI COMPONENT BUILDERS =====================
+local function createSectionLabel(parent, text, order)
+	local lbl = Instance.new("TextLabel")
+	lbl.Size = UDim2.new(1, 0, 0, 22)
+	lbl.BackgroundTransparency = 1
+	lbl.Text = string.upper(text)
+	lbl.TextColor3 = COLORS.accentHover
+	lbl.Font = Enum.Font.Code
+	lbl.TextSize = 12
+	lbl.TextXAlignment = Enum.TextXAlignment.Left
+	lbl.LayoutOrder = order or 0
+	lbl.Parent = parent
+	return lbl
 end
 
 local function createToggle(parent, text, order, callback)
-	if not parent then return end
-	-- Fluent fires this once on creation with the default (false); skip it, or
-	-- features that respawn on "off" (FE invisible) fire at load.
-	local first = true
-	return parent:AddToggle(nextFlag(), {
-		Title = text, Default = false,
-		Callback = function(v)
-			if first then first = false return end
-			if callback then pcall(callback, v) end
-		end,
-	})
+	local row = Instance.new("Frame")
+	row.Size = UDim2.new(1, 0, 0, 36)
+	row.BackgroundColor3 = COLORS.tabBg
+	row.BorderSizePixel = 0
+	row.LayoutOrder = order or 0
+	row.Parent = parent
+	addCorner(row, 0)
+
+	local lbl = Instance.new("TextLabel")
+	lbl.Size = UDim2.new(1, -66, 1, 0)
+	lbl.Position = UDim2.new(0, 10, 0, 0)
+	lbl.BackgroundTransparency = 1
+	lbl.Text = text
+	lbl.TextColor3 = COLORS.textPrimary
+	lbl.Font = Enum.Font.Code
+	lbl.TextSize = 13
+	lbl.TextXAlignment = Enum.TextXAlignment.Left
+	lbl.Parent = row
+
+	-- ON/OFF pill on the right, matching the mockup.
+	local pill = Instance.new("TextLabel")
+	pill.Size = UDim2.new(0, 50, 0, 22)
+	pill.Position = UDim2.new(1, -56, 0.5, -11)
+	pill.BackgroundColor3 = COLORS.toggleOff
+	pill.BorderSizePixel = 0
+	pill.Text = "OFF"
+	pill.TextColor3 = COLORS.accent
+	pill.Font = Enum.Font.Code
+	pill.TextSize = 12
+	pill.Parent = row
+
+	local isOn = false
+	local toggleButton = Instance.new("TextButton")
+	toggleButton.Size = UDim2.new(1, 0, 1, 0)
+	toggleButton.BackgroundTransparency = 1
+	toggleButton.Text = ""
+	toggleButton.Parent = row
+
+	local function setVisualState(on)
+		isOn = on
+		pill.Text = on and "ON" or "OFF"
+		pill.BackgroundColor3 = on and COLORS.toggleOn or COLORS.toggleOff
+	end
+
+	toggleButton.MouseButton1Click:Connect(function()
+		isOn = not isOn
+		setVisualState(isOn)
+		if callback then callback(isOn) end
+	end)
+
+	return {row = row, setVisualState = setVisualState, isOn = function() return isOn end}
+end
+
+local function createSlider(parent, text, min, max, default, order, callback)
+	local container = Instance.new("Frame")
+	container.Size = UDim2.new(1, 0, 0, 48)
+	container.BackgroundColor3 = COLORS.tabBg
+	container.BorderSizePixel = 0
+	container.LayoutOrder = order or 0
+	container.Parent = parent
+	addCorner(container, 5)
+
+	local lbl = Instance.new("TextLabel")
+	lbl.Size = UDim2.new(1, -80, 0, 20)
+	lbl.Position = UDim2.new(0, 10, 0, 2)
+	lbl.BackgroundTransparency = 1
+	lbl.Text = text
+	lbl.TextColor3 = COLORS.textSecondary
+	lbl.Font = Enum.Font.Code
+	lbl.TextSize = 12
+	lbl.TextXAlignment = Enum.TextXAlignment.Left
+	lbl.Parent = container
+
+	local valueLbl = Instance.new("TextLabel")
+	valueLbl.Size = UDim2.new(0, 70, 0, 20)
+	valueLbl.Position = UDim2.new(1, -75, 0, 2)
+	valueLbl.BackgroundTransparency = 1
+	valueLbl.Text = tostring(default)
+	valueLbl.TextColor3 = COLORS.accentHover
+	valueLbl.Font = Enum.Font.Code
+	valueLbl.TextSize = 12
+	valueLbl.TextXAlignment = Enum.TextXAlignment.Right
+	valueLbl.Parent = container
+
+	local sliderBg = Instance.new("Frame")
+	sliderBg.Size = UDim2.new(1, -20, 0, 8)
+	sliderBg.Position = UDim2.new(0, 10, 0, 28)
+	sliderBg.BackgroundColor3 = COLORS.bgSecondary
+	sliderBg.BorderSizePixel = 0
+	sliderBg.Parent = container
+	addCorner(sliderBg, 4)
+
+	local sliderFill = Instance.new("Frame")
+	local initPct = (default - min) / (max - min)
+	sliderFill.Size = UDim2.new(initPct, 0, 1, 0)
+	sliderFill.BackgroundColor3 = COLORS.accent
+	sliderFill.BorderSizePixel = 0
+	sliderFill.Parent = sliderBg
+	addCorner(sliderFill, 4)
+
+	local currentValue = default
+	local draggingSlider = false
+
+	local function updateSlider(inputX)
+		local absPos = sliderBg.AbsolutePosition.X
+		local absSize = sliderBg.AbsoluteSize.X
+		local pct = (inputX - absPos) / absSize
+		if pct < 0 then pct = 0 end
+		if pct > 1 then pct = 1 end
+		sliderFill.Size = UDim2.new(pct, 0, 1, 0)
+		currentValue = math.floor(min + pct * (max - min))
+		valueLbl.Text = tostring(currentValue)
+		if callback then callback(currentValue) end
+	end
+
+	sliderBg.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			draggingSlider = true
+			updateSlider(input.Position.X)
+		end
+	end)
+	sliderBg.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			draggingSlider = false
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if draggingSlider and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			updateSlider(input.Position.X)
+		end
+	end)
+
+	return {container = container, getValue = function() return currentValue end}
 end
 
 local function createActionButton(parent, text, order, callback)
-	if not parent then return end
-	return parent:AddButton({
-		Title = text,
-		Callback = function() if callback then pcall(callback) end end,
-	})
-end
-local createButton = createActionButton
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(1, 0, 0, 30)
+	btn.BackgroundColor3 = COLORS.tabBg
+	btn.Text = string.upper(text)
+	btn.TextColor3 = COLORS.accent
+	btn.Font = Enum.Font.Code
+	btn.TextSize = 12
+	btn.LayoutOrder = order or 0
+	btn.Parent = parent
+	addCorner(btn, 5)
 
-local function createSlider(parent, text, min, max, default, order, callback)
-	if not parent then return end
-	return parent:AddSlider(nextFlag(), {
-		Title = text, Min = min, Max = max, Default = default, Rounding = 0,
-		Callback = function(v)
-			local n = type(v) == "table" and (v.Value or v.Default) or v
-			if callback and type(n) == "number" then pcall(callback, n) end
-		end,
-	})
+	btn.MouseEnter:Connect(function() btn.BackgroundColor3 = COLORS.bgSecondary end)
+	btn.MouseLeave:Connect(function() btn.BackgroundColor3 = COLORS.tabBg end)
+	btn.MouseButton1Click:Connect(function() if callback then callback() end end)
+	return btn
 end
 
-local function createDropdown(parent, text, options, default, callback)
-	if not parent then return end
-	return parent:AddDropdown(nextFlag(), {
-		Title = text, Values = options, Multi = false, Default = default,
-		Callback = function(v) if callback and v then pcall(callback, v) end end,
-	})
-end
-
-local function createInput(parent, text, placeholder, callback)
-	if not parent then return end
-	return parent:AddInput(nextFlag(), {
-		Title = text, Default = "", Placeholder = placeholder or "",
-		Numeric = false, Finished = false,
-		Callback = function(v) if callback then pcall(callback, v) end end,
-	})
+local function createInfoLabel(parent, text, order)
+	local lbl = Instance.new("TextLabel")
+	lbl.Size = UDim2.new(1, 0, 0, 20)
+	lbl.BackgroundTransparency = 1
+	lbl.Text = text
+	lbl.TextColor3 = COLORS.textDim
+	lbl.Font = Enum.Font.Code
+	lbl.TextSize = 11
+	lbl.TextXAlignment = Enum.TextXAlignment.Left
+	lbl.LayoutOrder = order or 0
+	lbl.Parent = parent
+	return lbl
 end
 
 local function createSpacer(parent, order)
-	return nil
-end
-
--- Opens the script editor. It is a separate window rather than a tab because
--- Fluent has no multi-line code editor element.
-if tabFrames["Main"] then
-	createActionButton(tabFrames["Main"], "Open Script Executor", 999, function()
-		executorWindow.Visible = not executorWindow.Visible
-	end)
+	local spacer = Instance.new("Frame")
+	spacer.Size = UDim2.new(1, 0, 0, 4)
+	spacer.BackgroundTransparency = 1
+	spacer.LayoutOrder = order or 0
+	spacer.Parent = parent
 end
 
 -- ===================== LOG SYSTEM =====================
 local logFrame
 
--- Backing state for the player dropdown that replaced the old button list.
-local playerDropdown
-local playerLookup = {}
-
 local function addLog(msg, color)
-	-- The scrolling log panel went with the hand-built window, so lines go to
-	-- the console. They are still kept in uiState for anything that reads them,
-	-- and the logFrame branch below stays dormant since it is never assigned.
-	print("[SX] " .. tostring(msg))
 	table.insert(uiState.logLines, {text = msg, color = color or COLORS.textSecondary})
 	if #uiState.logLines > uiState.MAX_LOG_LINES then
 		table.remove(uiState.logLines, 1)
@@ -749,7 +1041,7 @@ do
 	executeBtn.BackgroundColor3 = COLORS.btnExecute
 	executeBtn.Text = "Execute"
 	executeBtn.TextColor3 = COLORS.textPrimary
-	executeBtn.Font = Enum.Font.GothamBold
+	executeBtn.Font = Enum.Font.Code
 	executeBtn.TextSize = 14
 	executeBtn.LayoutOrder = 1
 	executeBtn.Parent = btnBar
@@ -761,7 +1053,7 @@ do
 	clearBtn.BackgroundColor3 = COLORS.btnClear
 	clearBtn.Text = "Clear"
 	clearBtn.TextColor3 = COLORS.textSecondary
-	clearBtn.Font = Enum.Font.GothamBold
+	clearBtn.Font = Enum.Font.Code
 	clearBtn.TextSize = 13
 	clearBtn.LayoutOrder = 2
 	clearBtn.Parent = btnBar
@@ -773,7 +1065,7 @@ do
 	pasteBtn.BackgroundColor3 = COLORS.btnClear
 	pasteBtn.Text = "Paste Clipboard"
 	pasteBtn.TextColor3 = COLORS.textSecondary
-	pasteBtn.Font = Enum.Font.GothamBold
+	pasteBtn.Font = Enum.Font.Code
 	pasteBtn.TextSize = 13
 	pasteBtn.LayoutOrder = 3
 	pasteBtn.Parent = btnBar
@@ -785,7 +1077,7 @@ do
 	hubBtn.BackgroundColor3 = COLORS.accentDark
 	hubBtn.Text = "Script Hub"
 	hubBtn.TextColor3 = COLORS.textPrimary
-	hubBtn.Font = Enum.Font.GothamBold
+	hubBtn.Font = Enum.Font.Code
 	hubBtn.TextSize = 13
 	hubBtn.LayoutOrder = 4
 	hubBtn.Parent = btnBar
@@ -851,12 +1143,12 @@ do
 		end
 
 		hubFrame = Instance.new("Frame")
-		hubFrame.Size = UDim2.new(0, 380, 0, 200)
-		hubFrame.Position = UDim2.new(0.5, -190, 0.5, -100)
+		hubFrame.Size = UDim2.new(1, -16, 0, 200)
+		hubFrame.Position = UDim2.new(0, 8, 1, -250)
 		hubFrame.BackgroundColor3 = COLORS.bgSecondary
 		hubFrame.BorderSizePixel = 0
 		hubFrame.ZIndex = 10
-		hubFrame.Parent = screenGui
+		hubFrame.Parent = tab
 		addCorner(hubFrame, 6)
 		addStroke(hubFrame, COLORS.accent, 1)
 		hubOpen = true
@@ -866,7 +1158,7 @@ do
 		hubTitle.BackgroundColor3 = COLORS.accent
 		hubTitle.Text = "  Script Hub"
 		hubTitle.TextColor3 = COLORS.textPrimary
-		hubTitle.Font = Enum.Font.GothamBold
+		hubTitle.Font = Enum.Font.Code
 		hubTitle.TextSize = 12
 		hubTitle.TextXAlignment = Enum.TextXAlignment.Left
 		hubTitle.ZIndex = 10
@@ -887,7 +1179,7 @@ do
 		hubClose.BackgroundTransparency = 1
 		hubClose.Text = "X"
 		hubClose.TextColor3 = COLORS.textPrimary
-		hubClose.Font = Enum.Font.GothamBold
+		hubClose.Font = Enum.Font.Code
 		hubClose.TextSize = 12
 		hubClose.ZIndex = 11
 		hubClose.Parent = hubFrame
@@ -936,7 +1228,7 @@ do
 			pBtn.BackgroundColor3 = COLORS.tabBg
 			pBtn.Text = "  " .. preset[1]
 			pBtn.TextColor3 = COLORS.accent
-			pBtn.Font = Enum.Font.GothamBold
+			pBtn.Font = Enum.Font.Code
 			pBtn.TextSize = 11
 			pBtn.TextXAlignment = Enum.TextXAlignment.Left
 			pBtn.LayoutOrder = i
@@ -1011,7 +1303,7 @@ F.addNametag = function(player)
 		nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 		nameLabel.TextStrokeTransparency = 0.3
 		nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-		nameLabel.Font = Enum.Font.GothamBold
+		nameLabel.Font = Enum.Font.Code
 		nameLabel.TextSize = 14
 		nameLabel.Parent = bb
 
@@ -1023,7 +1315,7 @@ F.addNametag = function(player)
 		healthLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
 		healthLabel.TextStrokeTransparency = 0.4
 		healthLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-		healthLabel.Font = Enum.Font.Gotham
+		healthLabel.Font = Enum.Font.Code
 		healthLabel.TextSize = 12
 		healthLabel.Parent = bb
 
@@ -1050,7 +1342,7 @@ F.addNametag = function(player)
 		distLabel.TextColor3 = Color3.fromRGB(170, 170, 255)
 		distLabel.TextStrokeTransparency = 0.4
 		distLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-		distLabel.Font = Enum.Font.Gotham
+		distLabel.Font = Enum.Font.Code
 		distLabel.TextSize = 12
 		distLabel.Parent = bb
 
@@ -1077,14 +1369,7 @@ F.addNametag = function(player)
 			table.insert(espState.espConnections, conn)
 		end
 
-		-- Throttled to ~5 updates a second instead of every frame. Per-player
-		-- per-frame distance math and a BillboardGui text write is a real cost
-		-- on mobile in a full server, and 200ms is imperceptible on a nametag.
-		local distAccum = 0
-		local distConn = RunService.Heartbeat:Connect(function(dt)
-			distAccum = distAccum + dt
-			if distAccum < 0.2 then return end
-			distAccum = 0
+		local distConn = RunService.Heartbeat:Connect(function()
 			pcall(function()
 				if not bb or not bb.Parent then return end
 				local myChar = LocalPlayer.Character
@@ -1438,7 +1723,7 @@ F.startFly = function()
 		flyUpBtn.BackgroundTransparency = 0.3
 		flyUpBtn.Text = "UP"
 		flyUpBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-		flyUpBtn.Font = Enum.Font.GothamBold
+		flyUpBtn.Font = Enum.Font.Code
 		flyUpBtn.TextSize = 14
 		flyUpBtn.Parent = screenGui
 		addCorner(flyUpBtn, 8)
@@ -1452,7 +1737,7 @@ F.startFly = function()
 		flyDownBtn.BackgroundTransparency = 0.3
 		flyDownBtn.Text = "DOWN"
 		flyDownBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-		flyDownBtn.Font = Enum.Font.GothamBold
+		flyDownBtn.Font = Enum.Font.Code
 		flyDownBtn.TextSize = 12
 		flyDownBtn.Parent = screenGui
 		addCorner(flyDownBtn, 8)
@@ -1519,11 +1804,41 @@ F.stopFly = function()
 	-- Remove mobile fly buttons
 	if flyState.flyUpBtn then pcall(function() flyState.flyUpBtn:Destroy() end) flyState.flyUpBtn = nil end
 	if flyState.flyDownBtn then pcall(function() flyState.flyDownBtn:Destroy() end) flyState.flyDownBtn = nil end
-	-- Restore PlatformStand
+	-- Restore PlatformStand and, crucially, transition the humanoid out of the
+	-- platform-standing state. Clearing PlatformStand alone leaves the humanoid
+	-- stuck in that state and the body still tilted from the fly orientation,
+	-- which is the "frozen in a weird position" on unfly. Uprighting the root
+	-- and nudging the state back to normal releases it.
 	local character = LocalPlayer.Character
 	if character then
-		local hum = character:FindFirstChild("Humanoid")
+		local hum = character:FindFirstChildOfClass("Humanoid")
+		local hrp = character:FindFirstChild("HumanoidRootPart")
 		if hum then hum.PlatformStand = flyState.savedPlatformStand or false end
+		if hrp then
+			-- Keep facing (yaw), drop the pitch/roll the fly gyro left behind.
+			local _, yaw, _ = hrp.CFrame:ToOrientation()
+			hrp.CFrame = CFrame.new(hrp.Position) * CFrame.Angles(0, yaw, 0)
+			hrp.AssemblyLinearVelocity = Vector3.zero
+			hrp.AssemblyAngularVelocity = Vector3.zero
+			-- Destroying the fly movers leaves their momentum on the assembly,
+			-- which flung the character on unfly. Keep zeroing the velocity for
+			-- a short window so the leftover impulse is fully bled off.
+			_spawn(function()
+				local t0 = tick()
+				while tick() - t0 < 0.35 do
+					local c = LocalPlayer.Character
+					local r = c and c:FindFirstChild("HumanoidRootPart")
+					if not r then break end
+					r.AssemblyLinearVelocity = Vector3.zero
+					r.AssemblyAngularVelocity = Vector3.zero
+					RunService.RenderStepped:Wait()
+				end
+			end)
+		end
+		if hum then
+			pcall(function() hum:ChangeState(Enum.HumanoidStateType.GettingUp) end)
+			pcall(function() hum:ChangeState(Enum.HumanoidStateType.Running) end)
+		end
 	end
 	addLog("[FLY] OFF", COLORS.error)
 end
@@ -2543,10 +2858,6 @@ F.rejoinServer = function()
 end
 
 F.respawnCharacter = function()
-	-- Kills the character so the server respawns it. Works wherever
-	-- CharacterAutoLoads is left on, which is the default. Breaking the root's
-	-- joints is more reliable than Health=0 alone against god-mode style loops
-	-- that pin health, so both are done.
 	pcall(function()
 		local char = LocalPlayer.Character
 		if not char then return end
@@ -2583,9 +2894,14 @@ do
 	local tab = tabFrames["Main"]
 
 	createSectionLabel(tab, "Welcome", 1)
-	createInfoLabel(tab, "Pebbleford Hub v3.1", 2)
+	createInfoLabel(tab, "Pebbleford Hub v3.0", 2)
 	createInfoLabel(tab, "Player: " .. LocalPlayer.DisplayName .. " (@" .. LocalPlayer.Name .. ")", 3)
 
+	local spacer = Instance.new("Frame")
+	spacer.Size = UDim2.new(1, 0, 0, 4)
+	spacer.BackgroundTransparency = 1
+	spacer.LayoutOrder = 4
+	spacer.Parent = tab
 
 	createSectionLabel(tab, "Quick Toggles", 5)
 
@@ -2610,10 +2926,31 @@ do
 		if on then F.startInfJump() else F.stopInfJump() end
 	end)
 
+	local spacer2 = Instance.new("Frame")
+	spacer2.Size = UDim2.new(1, 0, 0, 4)
+	spacer2.BackgroundTransparency = 1
+	spacer2.LayoutOrder = 11
+	spacer2.Parent = tab
 
 	createSectionLabel(tab, "Output Log", 12)
 
-	createInfoLabel(tab, "Output goes to notifications and the F9 console.", 13)
+	logFrame = Instance.new("ScrollingFrame")
+	logFrame.Size = UDim2.new(1, 0, 0, 100)
+	logFrame.BackgroundColor3 = COLORS.editor
+	logFrame.BorderSizePixel = 0
+	logFrame.ScrollBarThickness = 3
+	logFrame.ScrollBarImageColor3 = COLORS.accent
+	logFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+	logFrame.LayoutOrder = 13
+	logFrame.Parent = tab
+	addCorner(logFrame, 5)
+	addStroke(logFrame, COLORS.border, 1)
+	addPadding(logFrame, 4, 6, 4, 6)
+
+	local logLayout = Instance.new("UIListLayout")
+	logLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	logLayout.Padding = UDim.new(0, 2)
+	logLayout.Parent = logFrame
 end
 
 -- ===================== BUILD PLAYER TAB =====================
@@ -2626,7 +2963,17 @@ do
 
 	createSectionLabel(tab, "Selected Player", 1)
 
-	selectedPlayerLabel = createDynamicLabel(tab, "None selected")
+	selectedPlayerLabel = Instance.new("TextLabel")
+	selectedPlayerLabel.Size = UDim2.new(1, 0, 0, 22)
+	selectedPlayerLabel.BackgroundColor3 = COLORS.tabBg
+	selectedPlayerLabel.Text = "  None selected"
+	selectedPlayerLabel.TextColor3 = COLORS.textSecondary
+	selectedPlayerLabel.Font = Enum.Font.Code
+	selectedPlayerLabel.TextSize = 12
+	selectedPlayerLabel.TextXAlignment = Enum.TextXAlignment.Left
+	selectedPlayerLabel.LayoutOrder = 2
+	selectedPlayerLabel.Parent = tab
+	addCorner(selectedPlayerLabel, 5)
 
 	createSectionLabel(tab, "Actions", 3)
 
@@ -2704,6 +3051,11 @@ do
 		if on then F.startKillAura() else F.stopKillAura() end
 	end)
 
+	local spacer = Instance.new("Frame")
+	spacer.Size = UDim2.new(1, 0, 0, 4)
+	spacer.BackgroundTransparency = 1
+	spacer.LayoutOrder = 9
+	spacer.Parent = tab
 
 	
 	createSpacer(tab, 20)
@@ -2730,33 +3082,54 @@ do
 
 	createSectionLabel(tab, "Player List", 10)
 
-	playerDropdown = createDropdown(tab, "Select Player", {"(refresh first)"}, "(refresh first)", function(choice)
-		local player = playerLookup[choice]
-		if not player then return end
-		playerState.selectedPlayer = player
-		selectedPlayerLabel.Text = player.DisplayName .. " (@" .. player.Name .. ")"
-	end)
-	createActionButton(tab, "Refresh Player List", 12, function() F.refreshPlayerList() end)
+	playerListFrame = Instance.new("Frame")
+	playerListFrame.Size = UDim2.new(1, 0, 0, 0)
+	playerListFrame.BackgroundTransparency = 1
+	playerListFrame.AutomaticSize = Enum.AutomaticSize.Y
+	playerListFrame.LayoutOrder = 11
+	playerListFrame.Parent = tab
+
+	local playerListLayout = Instance.new("UIListLayout")
+	playerListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	playerListLayout.Padding = UDim.new(0, 3)
+	playerListLayout.Parent = playerListFrame
 end
 
 F.refreshPlayerList = function()
-	playerLookup = {}
-	local names = {}
+	for _, btn in pairs(playerButtons) do pcall(function() btn:Destroy() end) end
+	playerButtons = {}
+	local order = 0
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player ~= LocalPlayer then
-			local label = player.DisplayName .. " (@" .. player.Name .. ")"
-			playerLookup[label] = player
-			table.insert(names, label)
+			order = order + 1
+			local btn = Instance.new("TextButton")
+			btn.Size = UDim2.new(1, 0, 0, 26)
+			btn.BackgroundColor3 = (playerState.selectedPlayer == player) and COLORS.accent or COLORS.tabBg
+			btn.Text = "  " .. player.DisplayName .. " (@" .. player.Name .. ")"
+			btn.TextColor3 = (playerState.selectedPlayer == player) and COLORS.textPrimary or COLORS.textSecondary
+			btn.Font = Enum.Font.Code
+			btn.TextSize = 11
+			btn.TextXAlignment = Enum.TextXAlignment.Left
+			btn.LayoutOrder = order
+			btn.Parent = playerListFrame
+			addCorner(btn, 4)
+			btn.MouseButton1Click:Connect(function()
+				playerState.selectedPlayer = player
+				selectedPlayerLabel.Text = "  " .. player.DisplayName .. " (@" .. player.Name .. ")"
+				selectedPlayerLabel.TextColor3 = COLORS.accent
+				F.refreshPlayerList()
+			end)
+			playerButtons[player] = btn
 		end
 	end
-	if #names == 0 then names = {"(no players)"} end
-	if playerDropdown then pcall(function() playerDropdown:SetValues(names) end) end
 end
+
 Players.PlayerAdded:Connect(function() _wait(0.5) F.refreshPlayerList() end)
 Players.PlayerRemoving:Connect(function(player)
 	if playerState.selectedPlayer == player then
 		playerState.selectedPlayer = nil
-		selectedPlayerLabel.Text = "None selected"
+		selectedPlayerLabel.Text = "  None selected"
+		selectedPlayerLabel.TextColor3 = COLORS.textSecondary
 	end
 	_wait(0.1) F.refreshPlayerList()
 end)
@@ -2778,6 +3151,11 @@ do
 		end
 	end)
 
+	local spacer = Instance.new("Frame")
+	spacer.Size = UDim2.new(1, 0, 0, 4)
+	spacer.BackgroundTransparency = 1
+	spacer.LayoutOrder = 5
+	spacer.Parent = tab
 
 	createSectionLabel(tab, "Actions", 6)
 	createActionButton(tab, "Respawn Character", 6, function() F.respawnCharacter() end)
@@ -2815,6 +3193,11 @@ do
 	end)
 	createInfoLabel(tab, "Drawing ESP has no distance limit - shows boxes + names + HP", 4)
 
+	local spacer = Instance.new("Frame")
+	spacer.Size = UDim2.new(1, 0, 0, 4)
+	spacer.BackgroundTransparency = 1
+	spacer.LayoutOrder = 5
+	spacer.Parent = tab
 
 	createSectionLabel(tab, "Fill Color", 4)
 
@@ -2824,18 +3207,26 @@ do
 		{Color3.fromRGB(0, 100, 255), "Blue"},
 		{Color3.fromRGB(255, 102, 0), "Orange"},
 	}
-	do
-		local byName, names = {}, {}
-		for _, preset in ipairs(fillColors) do
-			byName[preset[2]] = preset[1]
-			table.insert(names, preset[2])
-		end
-		createDropdown(tab, "ESP Fill Color", names, names[1], function(choice)
-			local col = byName[choice]
-			if not col then return end
-			espState.HIGHLIGHT_COLOR = col
-			for _, hl in pairs(espState.highlights) do pcall(function() hl.FillColor = col end) end
-			addLog("[ESP] Fill: " .. choice, COLORS.accent)
+	local fillRow = Instance.new("Frame")
+	fillRow.Size = UDim2.new(1, 0, 0, 26)
+	fillRow.BackgroundTransparency = 1
+	fillRow.LayoutOrder = 5
+	fillRow.Parent = tab
+	for i, preset in ipairs(fillColors) do
+		local colorBtn = Instance.new("TextButton")
+		colorBtn.Size = UDim2.new(0.25, -4, 1, 0)
+		colorBtn.Position = UDim2.new((i-1)*0.25, 2, 0, 0)
+		colorBtn.BackgroundColor3 = preset[1]
+		colorBtn.Text = preset[2]
+		colorBtn.TextColor3 = COLORS.textPrimary
+		colorBtn.Font = Enum.Font.Code
+		colorBtn.TextSize = 10
+		colorBtn.Parent = fillRow
+		addCorner(colorBtn, 4)
+		colorBtn.MouseButton1Click:Connect(function()
+			espState.HIGHLIGHT_COLOR = preset[1]
+			for _, hl in pairs(espState.highlights) do pcall(function() hl.FillColor = preset[1] end) end
+			addLog("[ESP] Fill: " .. preset[2], COLORS.accent)
 		end)
 	end
 
@@ -2847,20 +3238,34 @@ do
 		{Color3.fromRGB(255, 102, 0), "Orange"},
 		{Color3.fromRGB(0, 255, 255), "Cyan"},
 	}
-	do
-		local byName, names = {}, {}
-		for _, preset in ipairs(outlineColors) do
-			byName[preset[2]] = preset[1]
-			table.insert(names, preset[2])
-		end
-		createDropdown(tab, "ESP Outline Color", names, names[1], function(choice)
-			local col = byName[choice]
-			if not col then return end
-			espState.OUTLINE_COLOR = col
-			for _, hl in pairs(espState.highlights) do pcall(function() hl.OutlineColor = col end) end
-			addLog("[ESP] Outline: " .. choice, COLORS.accent)
+	local outRow = Instance.new("Frame")
+	outRow.Size = UDim2.new(1, 0, 0, 26)
+	outRow.BackgroundTransparency = 1
+	outRow.LayoutOrder = 7
+	outRow.Parent = tab
+	for i, preset in ipairs(outlineColors) do
+		local colorBtn = Instance.new("TextButton")
+		colorBtn.Size = UDim2.new(0.25, -4, 1, 0)
+		colorBtn.Position = UDim2.new((i-1)*0.25, 2, 0, 0)
+		colorBtn.BackgroundColor3 = preset[1]
+		colorBtn.Text = preset[2]
+		colorBtn.TextColor3 = (preset[2] == "White") and COLORS.bg or COLORS.textPrimary
+		colorBtn.Font = Enum.Font.Code
+		colorBtn.TextSize = 10
+		colorBtn.Parent = outRow
+		addCorner(colorBtn, 4)
+		colorBtn.MouseButton1Click:Connect(function()
+			espState.OUTLINE_COLOR = preset[1]
+			for _, hl in pairs(espState.highlights) do pcall(function() hl.OutlineColor = preset[1] end) end
+			addLog("[ESP] Outline: " .. preset[2], COLORS.accent)
 		end)
 	end
+
+	local spacer2 = Instance.new("Frame")
+	spacer2.Size = UDim2.new(1, 0, 0, 4)
+	spacer2.BackgroundTransparency = 1
+	spacer2.LayoutOrder = 8
+	spacer2.Parent = tab
 
 	createSectionLabel(tab, "Refresh", 9)
 	createSlider(tab, "Interval (seconds)", 1, 30, espState.REFRESH_INTERVAL, 10, function(val)
@@ -2906,6 +3311,11 @@ do
 		moveState.carSpeedValue = val
 	end)
 
+	local spacer = Instance.new("Frame")
+	spacer.Size = UDim2.new(1, 0, 0, 4)
+	spacer.BackgroundTransparency = 1
+	spacer.LayoutOrder = 7
+	spacer.Parent = tab
 
 	createSectionLabel(tab, "Movement", 8)
 	createToggle(tab, "Speed Boost", 9, function(on)
@@ -2942,6 +3352,11 @@ do
 	end)
 	createSlider(tab, "Backseat Speed", 20, 300, moveState.backseatDriveSpeed, 15, function(val) moveState.backseatDriveSpeed = val end)
 
+	local spacer2 = Instance.new("Frame")
+	spacer2.Size = UDim2.new(1, 0, 0, 4)
+	spacer2.BackgroundTransparency = 1
+	spacer2.LayoutOrder = 16
+	spacer2.Parent = tab
 
 	createSectionLabel(tab, "Jumping", 17)
 	createToggle(tab, "Infinite Jump", 17, function(on)
@@ -2950,6 +3365,11 @@ do
 	end)
 	createSlider(tab, "Jump Power", 10, 500, moveState.jumpPowerValue, 18, function(val) moveState.jumpPowerValue = val F.setJumpPower(val) end)
 
+	local spacer3 = Instance.new("Frame")
+	spacer3.Size = UDim2.new(1, 0, 0, 4)
+	spacer3.BackgroundTransparency = 1
+	spacer3.LayoutOrder = 19
+	spacer3.Parent = tab
 
 	createSectionLabel(tab, "World", 20)
 	createSlider(tab, "Gravity", 0, 1000, math.floor(moveState.gravityValue), 21, function(val) moveState.gravityValue = val F.setGravity(val) end)
@@ -3007,6 +3427,11 @@ do
 	end)
 	createSlider(tab, "Car Fling Power", 1000, 99999, flingState.carFlingPower, 7, function(val) flingState.carFlingPower = val end)
 
+	local spacer = Instance.new("Frame")
+	spacer.Size = UDim2.new(1, 0, 0, 4)
+	spacer.BackgroundTransparency = 1
+	spacer.LayoutOrder = 8
+	spacer.Parent = tab
 
 	createSectionLabel(tab, "Visual Effects", 9)
 	createToggle(tab, "Invisible", 10, function(on)
@@ -3022,6 +3447,11 @@ do
 		if on then F.startSeizure() else F.stopSeizure() end
 	end)
 
+	local spacer2 = Instance.new("Frame")
+	spacer2.Size = UDim2.new(1, 0, 0, 4)
+	spacer2.BackgroundTransparency = 1
+	spacer2.LayoutOrder = 13
+	spacer2.Parent = tab
 
 	createSectionLabel(tab, "Emotes", 14)
 	createActionButton(tab, "Emote 1", 15, function()
@@ -3172,16 +3602,91 @@ do
 
 	createSpacer(tab, 6)
 	createSectionLabel(tab, "Theme", 7)
-	local themeNames = {}
-	for _, id in ipairs({"default", "galaxy", "ocean", "blood", "mint"}) do
-		if THEMES[id] then table.insert(themeNames, THEMES[id].name) end
+	local themeOrder = 8
+	local themeList = {"default", "galaxy", "ocean", "blood", "mint"}
+	for _, themeId in ipairs(themeList) do
+		local themeData = THEMES[themeId]
+		local themeName = themeData.name
+		createActionButton(tab, themeName, themeOrder, function()
+			-- Save old colors for mapping
+			local oldColors = {}
+			for k, v in pairs(COLORS) do oldColors[k] = v end
+
+			-- Apply new theme to COLORS table
+			for k, v in pairs(themeData) do
+				if k ~= "name" then COLORS[k] = v end
+			end
+			currentThemeName = themeId
+
+			-- Build color mapping: old color -> list of new color roles
+			local colorMap = {}
+			for role, oldColor in pairs(oldColors) do
+				local key = tostring(oldColor)
+				if not colorMap[key] then colorMap[key] = {} end
+				colorMap[key][role] = true
+			end
+
+			-- Walk EVERY descendant of the GUI and update colors
+			pcall(function()
+				for _, obj in ipairs(screenGui:GetDescendants()) do
+					pcall(function()
+						-- Update BackgroundColor3
+						if obj:IsA("GuiObject") and obj.BackgroundTransparency < 1 then
+							local bgKey = tostring(obj.BackgroundColor3)
+							if colorMap[bgKey] then
+								-- Pick best match: bg > bgSecondary > tabBg > accent > toggleOff > editor > editorLine > btnClear > btnExecute
+								local priority = {"bg", "bgSecondary", "tabBg", "accent", "accentDark", "accentHover", "toggleOff", "toggleOn", "editor", "editorLine", "btnClear", "btnExecute", "border", "error", "success"}
+								for _, role in ipairs(priority) do
+									if colorMap[bgKey][role] then
+										obj.BackgroundColor3 = COLORS[role]
+										break
+									end
+								end
+							end
+						end
+						-- Update TextColor3
+						if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
+							local txtKey = tostring(obj.TextColor3)
+							if colorMap[txtKey] then
+								local priority = {"textPrimary", "textSecondary", "textDim", "accent", "accentHover", "error", "success"}
+								for _, role in ipairs(priority) do
+									if colorMap[txtKey][role] then
+										obj.TextColor3 = COLORS[role]
+										break
+									end
+								end
+							end
+							-- Update PlaceholderColor3 for TextBoxes
+							if obj:IsA("TextBox") then
+								pcall(function()
+									local phKey = tostring(obj.PlaceholderColor3)
+									if colorMap[phKey] and colorMap[phKey]["textDim"] then
+										obj.PlaceholderColor3 = COLORS.textDim
+									end
+								end)
+							end
+						end
+						-- Update UIStroke color
+						if obj:IsA("UIStroke") then
+							local sKey = tostring(obj.Color)
+							if colorMap[sKey] then
+								for role, _ in pairs(colorMap[sKey]) do
+									if COLORS[role] then obj.Color = COLORS[role] break end
+								end
+							end
+						end
+					end)
+				end
+				-- Update logo icon
+				logoIcon.BackgroundColor3 = COLORS.accent
+				-- Update toggle button
+				toggleBtn.BackgroundColor3 = COLORS.accent
+			end)
+
+			addLog("[THEME] " .. themeName .. " applied!", COLORS.accent)
+		end)
+		themeOrder = themeOrder + 1
 	end
-	createDropdown(tab, "Theme", themeNames, THEMES.default.name, function(choice)
-		-- Fluent has fixed themes, so the hub palette maps to the nearest one.
-		local fluentTheme = FLUENT_THEME_FOR[choice] or "Dark"
-		pcall(function() Fluent:SetTheme(fluentTheme) end)
-		addLog("[THEME] " .. choice .. " applied!", COLORS.accent)
-	end)
 
 	createSpacer(tab, themeOrder)
 	themeOrder = themeOrder + 1
@@ -3200,7 +3705,7 @@ do
 	themeOrder = themeOrder + 1
 	createSectionLabel(tab, "About", themeOrder)
 	themeOrder = themeOrder + 1
-	createInfoLabel(tab, "Pebbleford Hub v3.1", themeOrder)
+	createInfoLabel(tab, "Pebbleford Hub v3.0", themeOrder)
 	themeOrder = themeOrder + 1
 	createInfoLabel(tab, "50+ features | 10 tabs", themeOrder)
 	themeOrder = themeOrder + 1
@@ -3353,7 +3858,7 @@ commands["panic"] = function() pcall(function() screenGui:Destroy() end) end
 commands["unload"] = function() F.unloadScript() end
 
 commands["cmds"] = function()
-	addLog("--- v3.1 Commands (90+) ---", COLORS.accent)
+	addLog("--- v3.0 Commands (90+) ---", COLORS.accent)
 	addLog("== Combat ==", COLORS.textSecondary)
 	addLog(";aimbot ;triggerbot ;hitbox [sz] ;antifling ;antivoid", COLORS.textSecondary)
 	addLog(";killaura / un- versions to disable", COLORS.textSecondary)
@@ -3375,8 +3880,66 @@ commands["cmds"] = function()
 	addLog(";playerinfo", COLORS.textSecondary)
 	addLog("== Server ==", COLORS.textSecondary)
 	addLog(";rejoin ;serverhop ;antiafk ;chatspy ;joinnotify", COLORS.textSecondary)
-	addLog(";respawn ;autorespawn ;panic ;unload ;cmds", COLORS.textSecondary)
+	addLog(";autorespawn ;panic ;unload ;cmds", COLORS.textSecondary)
 	addLog("Prefix un- to disable any toggle (e.g. ;unfly)", COLORS.textSecondary)
+end
+
+-- ===================== COMMAND INDICATOR =====================
+-- A small terminal-styled toast at the bottom-right that flashes whenever a
+-- command runs, so there is on-screen feedback that ; commands registered.
+local cmdIndicatorGui, cmdIndicatorLabel, cmdIndicatorHideAt
+local function showCommandIndicator(text)
+	pcall(function()
+		if not cmdIndicatorGui then
+			cmdIndicatorGui = Instance.new("ScreenGui")
+			cmdIndicatorGui.Name = "SXCmdIndicator"
+			cmdIndicatorGui.ResetOnSpawn = false
+			cmdIndicatorGui.IgnoreGuiInset = true
+			cmdIndicatorGui.DisplayOrder = 1000
+			pcall(function() cmdIndicatorGui.Parent = screenGui.Parent end)
+			if not cmdIndicatorGui.Parent then cmdIndicatorGui.Parent = screenGui end
+
+			local box = Instance.new("Frame")
+			box.Name = "Box"
+			box.AnchorPoint = Vector2.new(1, 1)
+			box.Position = UDim2.new(1, -14, 1, -14)
+			box.Size = UDim2.new(0, 250, 0, 34)
+			box.BackgroundColor3 = COLORS.bgSecondary
+			box.BorderSizePixel = 0
+			box.Parent = cmdIndicatorGui
+			local st = Instance.new("UIStroke")
+			st.Color = COLORS.accent
+			st.Thickness = 1
+			st.Parent = box
+			local bar = Instance.new("Frame")
+			bar.Size = UDim2.new(0, 3, 1, 0)
+			bar.BackgroundColor3 = COLORS.accent
+			bar.BorderSizePixel = 0
+			bar.Parent = box
+			cmdIndicatorLabel = Instance.new("TextLabel")
+			cmdIndicatorLabel.Size = UDim2.new(1, -14, 1, 0)
+			cmdIndicatorLabel.Position = UDim2.new(0, 12, 0, 0)
+			cmdIndicatorLabel.BackgroundTransparency = 1
+			cmdIndicatorLabel.Text = ""
+			cmdIndicatorLabel.TextColor3 = COLORS.accent
+			cmdIndicatorLabel.Font = Enum.Font.Code
+			cmdIndicatorLabel.TextSize = 13
+			cmdIndicatorLabel.TextXAlignment = Enum.TextXAlignment.Left
+			cmdIndicatorLabel.TextTruncate = Enum.TextTruncate.AtEnd
+			cmdIndicatorLabel.Parent = box
+		end
+		cmdIndicatorLabel.Text = "> " .. tostring(text)
+		cmdIndicatorGui.Enabled = true
+		cmdIndicatorHideAt = tick() + 2.5
+		_spawn(function()
+			local mine = cmdIndicatorHideAt
+			_wait(2.6)
+			-- Only hide if no newer command replaced this one.
+			if cmdIndicatorHideAt == mine and cmdIndicatorGui then
+				cmdIndicatorGui.Enabled = false
+			end
+		end)
+	end)
 end
 
 F.processCommand = function(input)
@@ -3387,14 +3950,17 @@ F.processCommand = function(input)
 	local cmd = parts[1]:lower()
 	local args = {}
 	for i = 2, #parts do table.insert(args, parts[i]) end
-	if commands[cmd] then commands[cmd](args)
-	else addLog("[CMD] Unknown: " .. cmd .. " (;cmds for help)", COLORS.error) end
+	if commands[cmd] then
+		showCommandIndicator(cmd .. (#args > 0 and (" " .. table.concat(args, " ")) or ""))
+		commands[cmd](args)
+	else
+		addLog("[CMD] Unknown: " .. cmd .. " (;cmds for help)", COLORS.error)
+	end
 end
 
--- Chat hook: messages starting with ; are treated as commands. Both chat
--- systems are hooked because LocalPlayer.Chatted does not fire in games using
--- the new TextChatService, which is now the default, so the legacy hook alone
--- meant commands silently did nothing in most games.
+-- Chat hook: messages starting with ; are commands. Both chat systems are
+-- hooked because LocalPlayer.Chatted does not fire under the new
+-- TextChatService, now the default, so the legacy hook alone did nothing there.
 pcall(function()
 	LocalPlayer.Chatted:Connect(function(msg)
 		if msg:sub(1, 1) == ";" then F.processCommand(msg) end
@@ -3413,8 +3979,14 @@ pcall(function()
 end)
 
 -- ===================== KEYBOARD SHORTCUT =====================
--- WindUI provides its own show/hide control and open button, so the old
--- RightShift handler that drove the hand-built window is gone.
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.KeyCode == Enum.KeyCode.RightShift then
+		uiState.windowVisible = not uiState.windowVisible
+		mainWindow.Visible = uiState.windowVisible
+		toggleBtn.Visible = not uiState.windowVisible
+	end
+end)
 
 
 -- ===================== AIMBOT LOGIC =====================
@@ -4327,8 +4899,8 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ===================== STARTUP =====================
-addLog("Pebbleford Hub v3.1", COLORS.accent)
+addLog("Pebbleford Hub v3.0", COLORS.accent)
 addLog("50+ features loaded across 10 tabs", COLORS.success)
 addLog("Type ;cmds in chat for commands", COLORS.textSecondary)
 addLog("Press Right Shift to toggle window", COLORS.textSecondary)
-print("[Pebbleford Hub] v3.1 loaded")
+print("[Pebbleford Hub] v3.0 loaded")
