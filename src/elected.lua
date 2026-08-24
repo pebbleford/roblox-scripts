@@ -1,7 +1,18 @@
 -- Key System Gate
-local SXKeyURL = "https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/keysystem.lua?v=" .. tostring(tick())
-local keyOk, keySystem = pcall(function() return loadstring(game:HttpGet(SXKeyURL))() end)
-if not keyOk or not keySystem or not keySystem.validate("elected") then return end
+-- Key gate, resilient to a single host failing. raw.githubusercontent
+-- often rate-limits or fails to fetch on executors, which silently
+-- returned here and made the whole hub look dead; jsDelivr mirrors the
+-- same repo through a CDN and is the fallback.
+local SXKeySources = {
+	"https://raw.githubusercontent.com/pebbleford/roblox-scripts/main/keysystem.lua?v=" .. tostring(tick()),
+	"https://cdn.jsdelivr.net/gh/pebbleford/roblox-scripts@main/keysystem.lua",
+}
+local keySystem
+for _, SXKeyURL in ipairs(SXKeySources) do
+	local ok, res = pcall(function() return loadstring(game:HttpGet(SXKeyURL))() end)
+	if ok and res then keySystem = res break end
+end
+if not keySystem or not keySystem.validate("elected") then return end
 
 -- ================================================================
 -- Pebbleford Hub - Elected Admin Hub v1.3
