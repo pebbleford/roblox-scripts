@@ -519,8 +519,9 @@ uiState = uiState or {activeTab = tabNames[1]}
 
 local _TUIS = UserInputService
 local _mobile = _TUIS.TouchEnabled and not _TUIS.KeyboardEnabled
-local _W = _mobile and 440 or 560
-local _H = _mobile and 380 or 440
+local _vp = (workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize) or Vector2.new(1280, 720)
+local _W = _mobile and math.floor(math.min(_vp.X * 0.95, 540)) or 560
+local _H = _mobile and math.floor(math.min(_vp.Y * 0.82, 620)) or 440
 
 local mainWindow = Instance.new("Frame")
 mainWindow.Name = "MainWindow"
@@ -608,44 +609,57 @@ do
 	end)
 end
 
+local tabButtons = {}
+local _tabN = #tabNames
+-- Tabs wrap into rows instead of squishing into one, so names stay readable on
+-- phones. Fewer per row on mobile, taller cells for fat-finger taps.
+local _perRow = _mobile and 4 or math.min(_tabN, 6)
+if _tabN < _perRow then _perRow = _tabN end
+local _cellW = math.floor(_W / _perRow)
+local _cellH = _mobile and 34 or 28
+local _rows = math.ceil(_tabN / _perRow)
+local _tabBarH = _rows * _cellH
+local _contentTop = 42 + _tabBarH + 2
+
 local tabBar = Instance.new("Frame")
-tabBar.Size = UDim2.new(1, 0, 0, 34)
+tabBar.Size = UDim2.new(1, 0, 0, _tabBarH)
 tabBar.Position = UDim2.new(0, 0, 0, 42)
 tabBar.BackgroundColor3 = COLORS.bgSecondary
 tabBar.BorderSizePixel = 0
 tabBar.Parent = mainWindow
 do local dv = Instance.new("Frame") dv.Size = UDim2.new(1,0,0,1) dv.Position = UDim2.new(0,0,1,-1) dv.BackgroundColor3 = COLORS.border dv.BorderSizePixel = 0 dv.ZIndex = 2 dv.Parent = tabBar end
+do local g = Instance.new("UIGridLayout") g.CellSize = UDim2.new(0, _cellW, 0, _cellH) g.CellPadding = UDim2.new(0,0,0,0) g.SortOrder = Enum.SortOrder.LayoutOrder g.FillDirectionMaxCells = _perRow g.Parent = tabBar end
 
-local tabButtons = {}
-local _tabN = #tabNames
 for i, tabName in ipairs(tabNames) do
 	local content = Instance.new("ScrollingFrame")
-	content.Size = UDim2.new(1, -8, 1, -84)
-	content.Position = UDim2.new(0, 4, 0, 80)
+	content.Size = UDim2.new(1, -8, 1, -(_contentTop + 4))
+	content.Position = UDim2.new(0, 4, 0, _contentTop)
 	content.BackgroundTransparency = 1
 	content.BorderSizePixel = 0
-	content.ScrollBarThickness = 3
+	content.ScrollBarThickness = _mobile and 5 or 3
 	content.ScrollBarImageColor3 = COLORS.accent
 	content.CanvasSize = UDim2.new(0,0,0,0)
 	content.AutomaticCanvasSize = Enum.AutomaticSize.Y
 	content.Visible = (i == 1)
 	content.Parent = mainWindow
-	local lay = Instance.new("UIListLayout") lay.SortOrder = Enum.SortOrder.LayoutOrder lay.Padding = UDim.new(0,4) lay.Parent = content
+	local lay = Instance.new("UIListLayout") lay.SortOrder = Enum.SortOrder.LayoutOrder lay.Padding = UDim.new(0, _mobile and 6 or 4) lay.Parent = content
 	local pd = Instance.new("UIPadding") pd.PaddingLeft = UDim.new(0,4) pd.PaddingRight = UDim.new(0,4) pd.PaddingTop = UDim.new(0,4) pd.Parent = content
 	tabFrames[tabName] = content
 
 	local b = Instance.new("TextButton")
-	b.Position = UDim2.new((i-1)/_tabN, 0, 0, 0)
-	b.Size = UDim2.new(1/_tabN, 0, 1, -1)
+	b.Size = UDim2.new(0, _cellW, 0, _cellH)
 	b.BackgroundColor3 = COLORS.accentDark
 	b.BackgroundTransparency = (i == 1) and 0 or 1
 	b.Text = string.upper(tabName)
 	b.TextColor3 = (i == 1) and COLORS.accent or COLORS.textSecondary
 	b.Font = Enum.Font.Code
-	b.TextSize = 10
+	b.TextSize = _mobile and 11 or 10
+	b.TextScaled = false
 	b.AutoButtonColor = false
+	b.LayoutOrder = i
 	b.ZIndex = 3
 	b.Parent = tabBar
+	do local sep = Instance.new("Frame") sep.Size = UDim2.new(0,1,1,0) sep.Position = UDim2.new(1,-1,0,0) sep.BackgroundColor3 = COLORS.bg sep.BorderSizePixel = 0 sep.ZIndex = 4 sep.Parent = b end
 	tabButtons[tabName] = b
 end
 
@@ -732,7 +746,7 @@ end
 local function createToggle(parent, text, order, callback)
 	if not parent then return end
 	local row = Instance.new("Frame")
-	row.Size = UDim2.new(1, 0, 0, 36)
+	row.Size = UDim2.new(1, 0, 0, _mobile and 44 or 36)
 	row.BackgroundColor3 = COLORS.tabBg
 	row.BorderSizePixel = 0
 	row.LayoutOrder = _nextOrd()
@@ -745,7 +759,7 @@ local function createToggle(parent, text, order, callback)
 	lbl.Text = tostring(text)
 	lbl.TextColor3 = COLORS.textPrimary
 	lbl.Font = Enum.Font.Code
-	lbl.TextSize = 13
+	lbl.TextSize = _mobile and 15 or 13
 	lbl.TextXAlignment = Enum.TextXAlignment.Left
 	lbl.Parent = row
 	local pill = Instance.new("TextLabel")
@@ -776,7 +790,7 @@ end
 local function createActionButton(parent, text, order, callback)
 	if not parent then return end
 	local b = Instance.new("TextButton")
-	b.Size = UDim2.new(1, 0, 0, 32)
+	b.Size = UDim2.new(1, 0, 0, _mobile and 40 or 32)
 	b.BackgroundColor3 = COLORS.tabBg
 	b.Text = string.upper(tostring(text))
 	b.TextColor3 = COLORS.accent
@@ -797,7 +811,7 @@ local createButton = createActionButton
 local function createSlider(parent, text, min, max, default, order, callback)
 	if not parent then return end
 	local c = Instance.new("Frame")
-	c.Size = UDim2.new(1, 0, 0, 46)
+	c.Size = UDim2.new(1, 0, 0, _mobile and 54 or 46)
 	c.BackgroundColor3 = COLORS.tabBg
 	c.BorderSizePixel = 0
 	c.LayoutOrder = _nextOrd()

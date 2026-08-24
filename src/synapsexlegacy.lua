@@ -296,7 +296,7 @@ local windowW = ORIG_W
 local windowH = ORIG_H
 if isMobile then
 	windowW = math.min(math.floor(screenSize.X * 0.92), ORIG_W)
-	windowH = math.min(math.floor(screenSize.Y * 0.7), ORIG_H)
+	windowH = math.min(math.floor(screenSize.Y * 0.82), ORIG_H + 80)
 	if windowW < 320 then windowW = 320 end
 	if windowH < 280 then windowH = 280 end
 end
@@ -488,7 +488,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 50, 1, 0)
 versionLabel.Position = UDim2.new(0, 168, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v4.2"
+versionLabel.Text = "v4.3"
 versionLabel.TextColor3 = COLORS.textDim
 versionLabel.Font = Enum.Font.Code
 versionLabel.TextSize = 11
@@ -560,9 +560,18 @@ do
 end
 
 -- ===================== TAB BAR (horizontal) =====================
+local tabNames = {"Execute", "Main", "Player", "Combat", "ESP", "Movement", "Visuals", "Fun", "Server", "Settings"}
+-- Tabs wrap into rows so 10 names stay readable on a phone instead of being
+-- squished into one strip. Fewer per row and taller cells on mobile.
+local _perRow = isMobile and 4 or 5
+local _cellH = isMobile and 34 or 28
+local _rows = math.ceil(#tabNames / _perRow)
+local _tabBarH = _rows * _cellH
+local _contentTop = 42 + _tabBarH + 2
+
 local tabBar = Instance.new("Frame")
 tabBar.Name = "TabBar"
-tabBar.Size = UDim2.new(1, 0, 0, 34)
+tabBar.Size = UDim2.new(1, 0, 0, _tabBarH)
 tabBar.Position = UDim2.new(0, 0, 0, 42)
 tabBar.BackgroundColor3 = COLORS.bgSecondary
 tabBar.BorderSizePixel = 0
@@ -577,37 +586,37 @@ tabBarDivider.BorderSizePixel = 0
 tabBarDivider.ZIndex = 2
 tabBarDivider.Parent = tabBar
 
-local tabNames = {"Execute", "Main", "Player", "Combat", "ESP", "Movement", "Visuals", "Fun", "Server", "Settings"}
 local tabButtons = {}
 local tabFrames = {}
 
 -- Manual positioning instead of a UIListLayout: no layout dependency, so the
 -- buttons cannot end up at zero size. Each tab is 1/N of the bar width.
-local _tabCount = #tabNames
 for i, tabName in ipairs(tabNames) do
+	local col = (i - 1) % _perRow
+	local row = math.floor((i - 1) / _perRow)
 	local tabBtn = Instance.new("TextButton")
 	tabBtn.Name = tabName .. "Tab"
-	tabBtn.Position = UDim2.new((i - 1) / _tabCount, 0, 0, 0)
-	tabBtn.Size = UDim2.new(1 / _tabCount, 0, 1, -1)
+	tabBtn.Position = UDim2.new(col / _perRow, 0, 0, row * _cellH)
+	tabBtn.Size = UDim2.new(1 / _perRow, 0, 0, _cellH - 1)
 	tabBtn.BackgroundColor3 = COLORS.accentDark
 	tabBtn.BackgroundTransparency = (tabName == "Execute") and 0 or 1
 	tabBtn.Text = string.upper(tabName)
 	tabBtn.TextColor3 = (tabName == "Execute") and COLORS.accent or COLORS.textSecondary
 	tabBtn.Font = Enum.Font.Code
-	tabBtn.TextSize = 10
+	tabBtn.TextSize = isMobile and 11 or 10
 	tabBtn.TextScaled = false
 	tabBtn.AutoButtonColor = false
 	tabBtn.ZIndex = 3
 	tabBtn.Parent = tabBar
-
+	do local sep = Instance.new("Frame") sep.Size = UDim2.new(0,1,1,0) sep.Position = UDim2.new(1,-1,0,0) sep.BackgroundColor3 = COLORS.bg sep.BorderSizePixel = 0 sep.ZIndex = 4 sep.Parent = tabBtn end
 	tabButtons[tabName] = tabBtn
 end
 
 -- ===================== CONTENT AREA =====================
 local contentArea = Instance.new("Frame")
 contentArea.Name = "ContentArea"
-contentArea.Size = UDim2.new(1, 0, 1, -78)
-contentArea.Position = UDim2.new(0, 0, 0, 78)
+contentArea.Size = UDim2.new(1, 0, 1, -(_contentTop))
+contentArea.Position = UDim2.new(0, 0, 0, _contentTop)
 contentArea.BackgroundTransparency = 1
 contentArea.BorderSizePixel = 0
 contentArea.ClipsDescendants = true
