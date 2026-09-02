@@ -15,7 +15,7 @@ end
 if not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v7.2
+-- Pebbleford Hub - NBTF Hub v7.3
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -3259,6 +3259,14 @@ function actions.scanLocations()
 	return found
 end
 
+-- tabFrames is read by the per-tab feature code far below, so it must stay at
+-- main-chunk scope. Everything else the terminal adapter builds (window, title
+-- bar, tab bar, builder functions) is wrapped in the `do ... end` block below so
+-- its ~35 locals leave the main chunk. Luau caps a function at 200 locals and
+-- nbtf's main chunk was over it ("Out of local registers ... exceeded limit 200").
+local tabFrames = {}
+do -- === terminal adapter scope (keeps its locals out of the main chunk) ===
+
 -- nbtf has no screenGui after the port; create one for the terminal window.
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "PebblefordNBTF"
@@ -3291,7 +3299,7 @@ local _uiOrd = 0
 local function _nextOrd() _uiOrd = _uiOrd + 1 return _uiOrd end
 
 local tabNames = {"Aim", "Combat", "Movement", "Visuals", "Teleport", "Players", "Misc", "Settings"}
-local tabFrames = {}
+-- tabFrames declared at main-chunk scope above (feature code reads it); reuse it.
 uiState = uiState or {activeTab = tabNames[1]}
 
 local _TUIS = UserInputService
@@ -3328,7 +3336,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "NBTF HUB"
+titleLabel.Text = "NBTF HUB v7.3"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -3735,6 +3743,8 @@ uiBuilder.createInput = createInput
 uiBuilder.createSpacer = createSpacer
 function uiBuilder.addCorner(inst, r) return nil end
 function uiBuilder.setActiveTab(name) if switchTab then switchTab(name) end end
+
+end -- === end terminal adapter scope ===
 
 
 -- ===================== X-RAY =====================
@@ -5426,7 +5436,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v7.2", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v7.3", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -5457,7 +5467,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("Pebbleford NBTF", "Loaded - Right Shift toggles the menu")
-print("[SX NBTF v7.2] Pebbleford Hub - NBTF Hub v7.2")
-print("[SX NBTF v7.2] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v7.2] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v7.2] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v7.3] Pebbleford Hub - NBTF Hub v7.3")
+print("[SX NBTF v7.3] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v7.3] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v7.3] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
