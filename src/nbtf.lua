@@ -15,7 +15,7 @@ end
 if not keySystem or not keySystem.validate("nbtf") then return end
 
 -- ================================================================
--- Pebbleford Hub - NBTF Hub v7.3
+-- Pebbleford Hub - NBTF Hub v7.4
 -- Nuclear Blast Testing Facility
 -- Silent Aim | Wallbang | ESP | Aimbot | Fly | Teleports
 -- Anti-Kick | Anti-Ragdoll | Weapon Selector | Player Actions
@@ -3259,6 +3259,122 @@ function actions.scanLocations()
 	return found
 end
 
+-- ===================== CORE SAFETY CODE FINDER =====================
+-- The reactor's safety/shutdown codes are generated server-side each round and
+-- then replicated to your client so the game can show them on the in-map
+-- keypads/screens and check what you type. That means the values live somewhere
+-- your client can already read. There is no fixed path (it changes per map
+-- version), so this scans every likely home for them:
+--   1. Value objects (String/Int/Number) named like a code/safety/core thing
+--   2. Attributes with those keyword names
+--   3. On-screen text (labels/keypads) that looks like a code and sits under a
+--      core/reactor/safety/control object
+-- It only reads what the game already sent you - it does not talk to the server.
+local CORE_CODE_KEYWORDS = {
+	"deactivat", "safety", "reactor", "core", "meltdown", "scram", "shutdown",
+	"override", "abort", "disable", "passcode", "password", "code", "pin",
+	"keypad", "sequence", "combo", "combination", "access", "auth", "unlock",
+	"coolant", "containment", "launch", "silo",
+}
+
+local function _coreKeywordHit(str)
+	if not str or str == "" then return nil end
+	str = str:lower()
+	for _, kw in ipairs(CORE_CODE_KEYWORDS) do
+		if str:find(kw, 1, true) then return kw end
+	end
+	return nil
+end
+
+-- Short-ish string dominated by digits (typical keypad code); rejects prose.
+local function _looksLikeCode(txt)
+	if not txt then return false end
+	txt = tostring(txt):gsub("%s+", "")
+	if #txt < 3 or #txt > 16 then return false end
+	local _, digits = txt:gsub("%d", "")
+	if digits >= 3 then return true end
+	-- all-caps short token with no spaces (e.g. an alnum override key)
+	if #txt <= 10 and txt:upper() == txt and txt:find("%a") and not txt:find("%s") then
+		return true
+	end
+	return false
+end
+
+-- Bounded ancestry path so we don't walk the whole DataModel per instance.
+local function _ancestryContext(inst)
+	local parts, cur, depth = {}, inst.Parent, 0
+	while cur and depth < 5 do
+		table.insert(parts, 1, cur.Name)
+		cur = cur.Parent
+		depth = depth + 1
+	end
+	return table.concat(parts, "/")
+end
+
+function actions.scanCoreCodes()
+	local results, seen = {}, {}
+	local function add(label, value)
+		value = tostring(value)
+		if value == "" or value == "nil" then return end
+		local key = label .. "\0" .. value
+		if seen[key] then return end
+		seen[key] = true
+		table.insert(results, {label = label, value = value})
+	end
+
+	local roots = {
+		game:GetService("ReplicatedStorage"),
+		workspace,
+		game:GetService("Lighting"),
+		game:GetService("ReplicatedFirst"),
+	}
+	pcall(function()
+		local pg = LocalPlayer:FindFirstChild("PlayerGui")
+		if pg then table.insert(roots, pg) end
+	end)
+
+	local scanned = 0
+	for _, root in ipairs(roots) do
+		pcall(function()
+			for _, obj in ipairs(root:GetDescendants()) do
+				scanned = scanned + 1
+				if scanned > 80000 then break end
+
+				-- 1) Named Value objects
+				if obj:IsA("StringValue") or obj:IsA("IntValue") or obj:IsA("NumberValue") then
+					local hit = _coreKeywordHit(obj.Name) or _coreKeywordHit(obj.Parent and obj.Parent.Name or "")
+					if hit then
+						add("[" .. hit .. "] " .. obj.Name .. "  <" .. _ancestryContext(obj) .. ">", obj.Value)
+					end
+				end
+
+				-- 2) Keyword-named attributes on any instance
+				pcall(function()
+					local attrs = obj:GetAttributes()
+					for aName, aVal in pairs(attrs) do
+						local h = _coreKeywordHit(aName)
+						if h and (type(aVal) == "string" or type(aVal) == "number") then
+							add("[" .. h .. "] @" .. aName .. " on " .. obj.Name, aVal)
+						end
+					end
+				end)
+
+				-- 3) On-screen text that looks like a code, under a core/safety object
+				if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
+					local ctx = _ancestryContext(obj)
+					local h = _coreKeywordHit(obj.Name) or _coreKeywordHit(ctx)
+					if h and _looksLikeCode(obj.Text) then
+						add("[" .. h .. "] screen <" .. ctx .. ">", obj.Text)
+					end
+				end
+			end
+		end)
+	end
+
+	table.sort(results, function(a, b) return a.label < b.label end)
+	return results, scanned
+end
+
 -- tabFrames is read by the per-tab feature code far below, so it must stay at
 -- main-chunk scope. Everything else the terminal adapter builds (window, title
 -- bar, tab bar, builder functions) is wrapped in the `do ... end` block below so
@@ -3336,7 +3452,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "NBTF HUB v7.3"
+titleLabel.Text = "NBTF HUB v7.4"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -5141,6 +5257,56 @@ do
 	local n = 0
 	local function o() n = n + 1 return n end
 
+	uiBuilder.createSectionLabel(tab, "Core Safety Codes", o())
+	local coreCodeLabel = uiBuilder.createDynamicLabel(tab, "Press SCAN to search the map for the reactor safety codes.")
+	local lastCoreCodes = {}
+	uiBuilder.createButton(tab, "SCAN for Safety Codes", o(), function()
+		coreCodeLabel.Text = "Scanning..."
+		task.spawn(function()
+			local ok, results, scanned = pcall(actions.scanCoreCodes)
+			if not ok then
+				coreCodeLabel.Text = "Scan failed: " .. tostring(results)
+				coreCodeLabel.TextColor3 = COLORS.error
+				return
+			end
+			lastCoreCodes = results
+			print("=== CORE SAFETY CODE SCAN (" .. #results .. " candidates, " .. tostring(scanned) .. " objects scanned) ===")
+			for _, r in ipairs(results) do
+				print("  " .. r.value .. "    " .. r.label)
+			end
+			print("=== END SCAN ===")
+			if #results == 0 then
+				coreCodeLabel.Text = "No codes found yet. Try again after the meltdown/alarm starts, and while standing near a Core Control keypad."
+				coreCodeLabel.TextColor3 = COLORS.textDim
+				helpers.notify("Core Codes", "None found - see F9 console")
+			else
+				local lines = {}
+				for i = 1, math.min(#results, 8) do
+					table.insert(lines, results[i].value .. "  " .. results[i].label)
+				end
+				if #results > 8 then table.insert(lines, "...+" .. (#results - 8) .. " more (see F9 console)") end
+				coreCodeLabel.Text = "Found " .. #results .. ":\n" .. table.concat(lines, "\n")
+				coreCodeLabel.TextColor3 = COLORS.success
+				helpers.notify("Core Codes", #results .. " candidate(s) - full list in F9")
+			end
+		end)
+	end)
+	uiBuilder.createButton(tab, "Copy Codes to Clipboard", o(), function()
+		if #lastCoreCodes == 0 then
+			helpers.notify("Core Codes", "Run SCAN first")
+			return
+		end
+		local lines = {}
+		for _, r in ipairs(lastCoreCodes) do table.insert(lines, r.value .. "  " .. r.label) end
+		local text = table.concat(lines, "\n")
+		local cb = (setclipboard or toclipboard or (syn and syn.write_clipboard))
+		local ok = cb and pcall(cb, text)
+		helpers.notify("Core Codes", ok and "Copied to clipboard" or "Clipboard unavailable - use F9")
+	end)
+	uiBuilder.createInfoLabel(tab, "Reads codes the game already sent your client (Value objects, attributes, keypad text). Best results near Core Control once the alarm is active. Full list prints to the F9 console.", o())
+
+	uiBuilder.createSpacer(tab, o())
+
 	uiBuilder.createSectionLabel(tab, "Utility", o())
 	uiBuilder.createToggle(tab, "Auto Interact (Doors / Pickups)", o(), function(on)
 		miscState.autoInteractActive = on
@@ -5436,7 +5602,7 @@ do
 	uiBuilder.createSpacer(tab, o())
 
 	uiBuilder.createSectionLabel(tab, "About", o())
-	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v7.3", o())
+	uiBuilder.createInfoLabel(tab, "Pebbleford Hub - NBTF Hub v7.4", o())
 	uiBuilder.createInfoLabel(tab, "Uses WeaponsSystem.Network.WeaponHit for combat", o())
 	uiBuilder.createInfoLabel(tab, "Stealth mode with configurable cooldowns", o())
 end
@@ -5467,7 +5633,7 @@ setupAutoRespawn()
 
 -- ===================== STARTUP =====================
 helpers.notify("Pebbleford NBTF", "Loaded - Right Shift toggles the menu")
-print("[SX NBTF v7.3] Pebbleford Hub - NBTF Hub v7.3")
-print("[SX NBTF v7.3] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
-print("[SX NBTF v7.3] Uses WeaponsSystem.Network.WeaponHit for combat")
-print("[SX NBTF v7.3] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
+print("[SX NBTF v7.4] Pebbleford Hub - NBTF Hub v7.4")
+print("[SX NBTF v7.4] Tabs: Aim | Combat | Movement | Visuals | Teleport | Players | Misc | Settings")
+print("[SX NBTF v7.4] Uses WeaponsSystem.Network.WeaponHit for combat")
+print("[SX NBTF v7.4] New: Kill Aura, Trigger Bot, Freecam, Tracers, FOV Circle, Chat Spy, Orbit + more")
