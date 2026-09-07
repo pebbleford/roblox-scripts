@@ -488,7 +488,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 50, 1, 0)
 versionLabel.Position = UDim2.new(0, 168, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v4.4"
+versionLabel.Text = "v4.5"
 versionLabel.TextColor3 = COLORS.textDim
 versionLabel.Font = Enum.Font.Code
 versionLabel.TextSize = 11
@@ -2915,7 +2915,7 @@ do
 	local tab = tabFrames["Main"]
 
 	createSectionLabel(tab, "Welcome", 1)
-	createInfoLabel(tab, "Pebbleford Hub v4.4", 2)
+	createInfoLabel(tab, "Pebbleford Hub v4.5", 2)
 	createInfoLabel(tab, "Player: " .. LocalPlayer.DisplayName .. " (@" .. LocalPlayer.Name .. ")", 3)
 
 	local spacer = Instance.new("Frame")
@@ -3116,19 +3116,17 @@ do
 	playerListLayout.Parent = playerListFrame
 
 	createSpacer(tab, 29)
-	createSectionLabel(tab, "Admin Sudo (Game Admin)", 30)
-	local sudoTargetBox = createInput(tab, "Target player (name or all)", 31)
-	local sudoCmdBox = createInput(tab, "Command (e.g. kill all)", 32)
-	createActionButton(tab, "Send ;sudo", 33, function()
-		local target = (sudoTargetBox.Text ~= "" and sudoTargetBox.Text) or "all"
+	createSectionLabel(tab, "Send Command To Game (bypass hub)", 30)
+	local sudoCmdBox = createInput(tab, "Game command (e.g. fly, kill all)", 31)
+	createActionButton(tab, "Send To Game", 32, function()
 		local cmd = sudoCmdBox.Text or ""
 		if cmd:sub(1, 1) == ";" then cmd = cmd:sub(2) end
-		if cmd == "" then addLog("[SUDO] Enter a command to force", COLORS.error) return end
-		local full = ";sudo " .. target .. " " .. cmd
+		if cmd == "" then addLog("[SUDO] Enter a command", COLORS.error) return end
+		local full = ";" .. cmd
 		local ok = F.sendChat(full)
-		addLog(ok and ("[SUDO] Sent: " .. full) or "[SUDO] Chat send failed", ok and COLORS.success or COLORS.error)
+		addLog(ok and ("[SUDO] Sent to game: " .. full) or "[SUDO] Chat send failed", ok and COLORS.success or COLORS.error)
 	end)
-	createInfoLabel(tab, "Forces the target to run the command. Game admin only - works if YOU are admin. You can also type ;sudo <player> <command> in chat.", 34)
+	createInfoLabel(tab, "The hub grabs every ; command for itself. This sends yours to the GAME instead, so the game's own admin runs it. Same as typing ;sudo <command> in chat.", 33)
 end
 
 F.refreshPlayerList = function()
@@ -3741,7 +3739,7 @@ do
 	themeOrder = themeOrder + 1
 	createSectionLabel(tab, "About", themeOrder)
 	themeOrder = themeOrder + 1
-	createInfoLabel(tab, "Pebbleford Hub v4.4", themeOrder)
+	createInfoLabel(tab, "Pebbleford Hub v4.5", themeOrder)
 	themeOrder = themeOrder + 1
 	createInfoLabel(tab, "50+ features | 10 tabs", themeOrder)
 	themeOrder = themeOrder + 1
@@ -3804,13 +3802,16 @@ commands["killaura"] = function() combatState.killAuraEnabled = true F.startKill
 commands["unkillaura"] = function() combatState.killAuraEnabled = false F.stopKillAura() end
 commands["rejoin"] = function() F.rejoinServer() end
 commands["serverhop"] = function() F.serverHop() end
--- ;sudo <player> <command> is a GAME admin command (forces that player to run
--- a command), not a hub feature. Typed in chat it already reaches the game's
--- admin system, so this just acknowledges it instead of logging "unknown".
--- The Player tab's Sudo box sends it programmatically via F.sendChat.
+-- The hub intercepts every ; command for its own features, so a game's OWN
+-- admin commands (e.g. ;fly in a game where you are admin) never reach the
+-- game. ;sudo <command> forwards ";<command>" straight to the game chat so the
+-- game's admin system handles it - the hub does NOT run it. F.sendChat sets a
+-- suppress flag so the forwarded message is not re-captured as a hub command.
 commands["sudo"] = function(args)
-	if #args == 0 then addLog("[CMD] Usage: ;sudo <player> <command>", COLORS.error) return end
-	addLog("[CMD] sudo -> game admin: " .. table.concat(args, " "), COLORS.success)
+	if #args == 0 then addLog("[CMD] Usage: ;sudo <command>  (runs it on the game, not the hub)", COLORS.error) return end
+	local inner = ";" .. table.concat(args, " ")
+	local ok = F.sendChat(inner)
+	addLog(ok and ("[CMD] sudo -> game: " .. inner) or "[CMD] sudo: chat send failed", ok and COLORS.success or COLORS.error)
 end
 commands["spectate"] = function(args)
 	if not args[1] then addLog("[CMD] Usage: ;spectate <player>", COLORS.error) return end
@@ -3902,7 +3903,7 @@ commands["panic"] = function() pcall(function() screenGui:Destroy() end) end
 commands["unload"] = function() F.unloadScript() end
 
 commands["cmds"] = function()
-	addLog("--- v4.4 Commands ---", COLORS.accent)
+	addLog("--- v4.5 Commands ---", COLORS.accent)
 	addLog("== Combat ==", COLORS.textSecondary)
 	addLog(";aimbot ;triggerbot ;hitbox [sz] ;antifling ;antivoid", COLORS.textSecondary)
 	addLog(";killaura / un- versions to disable", COLORS.textSecondary)
@@ -3926,7 +3927,7 @@ commands["cmds"] = function()
 	addLog(";rejoin ;serverhop ;antiafk ;chatspy ;joinnotify", COLORS.textSecondary)
 	addLog(";autorespawn ;panic ;unload ;cmds", COLORS.textSecondary)
 	addLog("== Game Admin ==", COLORS.textSecondary)
-	addLog(";sudo <player> <command> (forces them to run it - if you are admin)", COLORS.textSecondary)
+	addLog(";sudo <command> -> sends ;<command> to the GAME (bypasses hub)", COLORS.textSecondary)
 	addLog("Prefix un- to disable any toggle (e.g. ;unfly)", COLORS.textSecondary)
 end
 
@@ -3992,6 +3993,9 @@ end
 -- systems receive the ; command). Tries the new TextChatService first, then
 -- falls back to the legacy SayMessageRequest remote.
 F.sendChat = function(text)
+	-- Suppress the chat hooks so a forwarded ; command is not re-run as a hub
+	-- command (otherwise ;sudo fly would flip the hub's own fly).
+	F._suppressChatHook = true
 	local sent = false
 	pcall(function()
 		local TCS = game:GetService("TextChatService")
@@ -4010,6 +4014,7 @@ F.sendChat = function(text)
 			end
 		end)
 	end
+	_spawn(function() _wait(0.4) F._suppressChatHook = false end)
 	return sent
 end
 
@@ -4034,6 +4039,7 @@ end
 -- TextChatService, now the default, so the legacy hook alone did nothing there.
 pcall(function()
 	LocalPlayer.Chatted:Connect(function(msg)
+		if F._suppressChatHook then return end
 		if msg:sub(1, 1) == ";" then F.processCommand(msg) end
 	end)
 end)
@@ -4041,6 +4047,7 @@ pcall(function()
 	local TCS = game:GetService("TextChatService")
 	if TCS and TCS.SendingMessage then
 		TCS.SendingMessage:Connect(function(message)
+			if F._suppressChatHook then return end
 			local msg = message and message.Text
 			if type(msg) == "string" and msg:sub(1, 1) == ";" then
 				F.processCommand(msg)
@@ -4970,8 +4977,8 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ===================== STARTUP =====================
-addLog("Pebbleford Hub v4.4", COLORS.accent)
+addLog("Pebbleford Hub v4.5", COLORS.accent)
 addLog("50+ features loaded across 10 tabs", COLORS.success)
 addLog("Type ;cmds in chat for commands", COLORS.textSecondary)
 addLog("Press Right Shift to toggle window", COLORS.textSecondary)
-print("[Pebbleford Hub] v4.4 loaded")
+print("[Pebbleford Hub] v4.5 loaded")
