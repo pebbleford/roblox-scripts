@@ -15,13 +15,13 @@ end
 if not keySystem or not keySystem.validate("elected") then return end
 
 -- ================================================================
--- Pebbleford Hub - Elected Admin Hub v1.5
+-- Pebbleford Hub - Elected Admin Hub v1.6
 -- Tool-Based Mining | Admin Commands | Building | Sign Editor
 -- Player Control | Teleports | ESP | Anti-Jail | Remote Spy
 -- Game uses Red networking (ReliableRedEvent) + ReplicaService
 -- ================================================================
 
-print("[SX Elected v1.5] Script loaded - EditSign remote discovery")
+print("[SX Elected v1.6] Script loaded - EditSign remote discovery")
 
 -- Cleanup old instance
 pcall(function()
@@ -247,6 +247,9 @@ local fullbrightActive = false
 local autoCommandActive = false
 local chatSpamActive = false
 local signSpamActive = false
+local autoVoteActive = false
+local autoVoteTarget = ""
+local autoVoteLastAt = 0
 
 local flySpeed = 60
 local speedValue = 50
@@ -544,6 +547,92 @@ end
 
 local function stopAutoUpgrade()
 	autoUpgradeActive = false
+end
+
+-- ===================== AUTO VOTE =====================
+-- Votes for a chosen player automatically whenever a voting/ballot UI appears.
+-- Roblox voting screens are TextButtons; the reliable exploit approach (same as
+-- Auto Upgrade above) is to fire the matching button's click signal. We match a
+-- button that (a) lives under a vote/ballot/election container and (b) either
+-- shows the target's name itself or sits next to a label with the target's name.
+
+-- Bounded ancestry path (lowercased) so we can tell if a button is part of a
+-- voting UI without walking the whole DataModel.
+local function _voteContext(inst)
+	local ctx, cur, depth = "", inst, 0
+	while cur and depth < 7 do
+		ctx = ctx .. "/" .. cur.Name:lower()
+		cur = cur.Parent
+		depth = depth + 1
+	end
+	return ctx
+end
+
+-- Does any TextLabel inside `root` mention the target name?
+local function _labelMentions(root, tnLower)
+	for _, lbl in ipairs(root:GetDescendants()) do
+		if (lbl:IsA("TextLabel") or lbl:IsA("TextButton")) and lbl.Text ~= "" then
+			if lbl.Text:lower():find(tnLower, 1, true) then return true end
+		end
+	end
+	return false
+end
+
+local function tryVoteFor(targetName)
+	if not targetName or targetName == "" then return false end
+	local tn = targetName:lower()
+	local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+	if not playerGui then return false end
+
+	for _, gui in ipairs(playerGui:GetDescendants()) do
+		if (gui:IsA("TextButton") or gui:IsA("ImageButton")) and gui.Visible then
+			local ctx = _voteContext(gui)
+			local isVoteUI = ctx:find("vote", 1, true) or ctx:find("ballot", 1, true)
+				or ctx:find("elect", 1, true) or ctx:find("candidate", 1, true)
+				or ctx:find("poll", 1, true)
+			if isVoteUI then
+				local matches = false
+				-- button's own text
+				if gui:IsA("TextButton") and gui.Text ~= "" and gui.Text:lower():find(tn, 1, true) then
+					matches = true
+				end
+				-- a label inside the button, or next to it in the same entry frame
+				if not matches and _labelMentions(gui, tn) then matches = true end
+				if not matches and gui.Parent and _labelMentions(gui.Parent, tn) then matches = true end
+				if matches then
+					pcall(function() firesignal(gui.MouseButton1Click) end)
+					pcall(function() if gui:IsA("TextButton") then firesignal(gui.Activated) end end)
+					return true
+				end
+			end
+		end
+	end
+	return false
+end
+
+local function startAutoVote()
+	autoVoteActive = true
+	task.spawn(function()
+		while autoVoteActive do
+			pcall(function()
+				if autoVoteTarget ~= "" and (tick() - autoVoteLastAt) > 8 then
+					if tryVoteFor(autoVoteTarget) then
+						autoVoteLastAt = tick()
+						notify("Auto Vote", "Voted for " .. autoVoteTarget)
+					end
+				end
+			end)
+			task.wait(1)
+		end
+	end)
+	notify("Auto Vote", autoVoteTarget ~= ""
+		and ("Will vote for " .. autoVoteTarget .. " when voting opens")
+		or "Set a target name first")
+end
+
+local function stopAutoVote()
+	autoVoteActive = false
+	notify("Auto Vote", "Stopped")
 end
 
 -- ===================== ADMIN COMMAND HELPERS =====================
@@ -1914,7 +2003,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "ELECTED HUB v1.5"
+titleLabel.Text = "ELECTED HUB v1.6"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -2670,6 +2759,39 @@ do
 
 	createSpacer(tab, o())
 
+	createSectionLabel(tab, "Auto Vote", o())
+	local voteNameInput = createTextInput(tab, "Name to vote for (or use Target dropdown above)", o())
+	local function resolveVoteName()
+		if voteNameInput.Text ~= "" then return voteNameInput.Text end
+		if elTarget then return elTarget.Name end
+		return ""
+	end
+	createToggle(tab, "Auto Vote for Target Each Round", o(), function(on)
+		if on then
+			autoVoteTarget = resolveVoteName()
+			if autoVoteTarget == "" then
+				notify("Auto Vote", "Pick a target or type a name first")
+			end
+			startAutoVote()
+		else
+			stopAutoVote()
+		end
+	end)
+	-- Keep the target live if the user edits the name while it is running.
+	voteNameInput:GetPropertyChangedSignal("Text"):Connect(function()
+		if autoVoteActive and voteNameInput.Text ~= "" then autoVoteTarget = voteNameInput.Text end
+	end)
+	createButton(tab, "Vote For Target Now", o(), function()
+		local name = resolveVoteName()
+		if name == "" then notify("Auto Vote", "Pick a target or type a name") return end
+		autoVoteTarget = name
+		if tryVoteFor(name) then notify("Vote", "Voted for " .. name)
+		else notify("Vote", "No voting screen found for " .. name) end
+	end)
+	createInfoLabel(tab, "Watches for the voting/ballot screen and clicks the option matching your target. Runs each round while the toggle is on.", o())
+
+	createSpacer(tab, o())
+
 	createSectionLabel(tab, "Protection", o())
 	createToggle(tab, "Anti-Jail (TP back if jailed)", o(), function(on)
 		if on then startAntiJail() else stopAntiJail() end
@@ -2906,12 +3028,12 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ===================== STARTUP =====================
-notify("SX Elected v1.5", "Loaded! Right Shift to toggle")
-print("[SX Elected v1.5] Pebbleford Hub - Elected Admin Hub")
-print("[SX Elected v1.5] Tabs: Mining | Admin | Build | Players | Movement | Visuals | Troll")
-print("[SX Elected v1.5] Red Event: " .. (RedEvent and RedEvent:GetFullName() or "NOT FOUND"))
-print("[SX Elected v1.5] Chat: " .. (ChatRemote and "Legacy Chat" or "TextChatService"))
-print("[SX Elected v1.5] Mining: Tool-based (equip pickaxe + ProximityPrompt)")
-print("[SX Elected v1.5] Building: Tool-based (equip building tool)")
-print("[SX Elected v1.5] Signs: EditSign Red event (direct remote fire)")
-print("[SX Elected v1.5] Right Shift to toggle GUI")
+notify("SX Elected v1.6", "Loaded! Right Shift to toggle")
+print("[SX Elected v1.6] Pebbleford Hub - Elected Admin Hub")
+print("[SX Elected v1.6] Tabs: Mining | Admin | Build | Players | Movement | Visuals | Troll")
+print("[SX Elected v1.6] Red Event: " .. (RedEvent and RedEvent:GetFullName() or "NOT FOUND"))
+print("[SX Elected v1.6] Chat: " .. (ChatRemote and "Legacy Chat" or "TextChatService"))
+print("[SX Elected v1.6] Mining: Tool-based (equip pickaxe + ProximityPrompt)")
+print("[SX Elected v1.6] Building: Tool-based (equip building tool)")
+print("[SX Elected v1.6] Signs: EditSign Red event (direct remote fire)")
+print("[SX Elected v1.6] Right Shift to toggle GUI")
