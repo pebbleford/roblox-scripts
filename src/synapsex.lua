@@ -488,7 +488,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 50, 1, 0)
 versionLabel.Position = UDim2.new(0, 168, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v4.6"
+versionLabel.Text = "v4.7"
 versionLabel.TextColor3 = COLORS.textDim
 versionLabel.Font = Enum.Font.Code
 versionLabel.TextSize = 11
@@ -2915,7 +2915,7 @@ do
 	local tab = tabFrames["Main"]
 
 	createSectionLabel(tab, "Welcome", 1)
-	createInfoLabel(tab, "Pebbleford Hub v4.6", 2)
+	createInfoLabel(tab, "Pebbleford Hub v4.7", 2)
 	createInfoLabel(tab, "Player: " .. LocalPlayer.DisplayName .. " (@" .. LocalPlayer.Name .. ")", 3)
 
 	local spacer = Instance.new("Frame")
@@ -3737,7 +3737,7 @@ do
 	themeOrder = themeOrder + 1
 	createSectionLabel(tab, "About", themeOrder)
 	themeOrder = themeOrder + 1
-	createInfoLabel(tab, "Pebbleford Hub v4.6", themeOrder)
+	createInfoLabel(tab, "Pebbleford Hub v4.7", themeOrder)
 	themeOrder = themeOrder + 1
 	createInfoLabel(tab, "50+ features | 10 tabs", themeOrder)
 	themeOrder = themeOrder + 1
@@ -3897,7 +3897,7 @@ commands["panic"] = function() pcall(function() screenGui:Destroy() end) end
 commands["unload"] = function() F.unloadScript() end
 
 commands["cmds"] = function()
-	addLog("--- v4.6 Commands ---", COLORS.accent)
+	addLog("--- v4.7 Commands ---", COLORS.accent)
 	addLog("== Combat ==", COLORS.textSecondary)
 	addLog(";aimbot ;triggerbot ;hitbox [sz] ;antifling ;antivoid", COLORS.textSecondary)
 	addLog(";killaura / un- versions to disable", COLORS.textSecondary)
@@ -4028,13 +4028,58 @@ F.processCommand = function(input)
 	end
 end
 
--- Chat hook: messages starting with ; are commands. Both chat systems are
--- hooked because LocalPlayer.Chatted does not fire under the new
--- TextChatService, now the default, so the legacy hook alone did nothing there.
+-- Chat commands: messages starting with ; run as hub commands. We want them to
+-- run WITHOUT broadcasting to everyone. The only way to stop the broadcast is to
+-- catch the send before it happens, so the primary path is a __namecall hook on
+-- SendAsync (modern TextChatService) / SayMessageRequest:FireServer (legacy):
+-- when the outgoing text starts with ;, we run the command and DROP the send so
+-- nothing appears in chat. The observe-only Chatted/SendingMessage hooks below
+-- still run the command on executors without hookmetamethod (there the message
+-- is visible - use the Run Command box for a silent option).
+do
+local _lastCmd, _lastCmdAt = "", 0
+local function _runCmdOnce(msg)
+	-- de-dupe: never run the same command twice if two hooks both see it
+	if msg == _lastCmd and (tick() - _lastCmdAt) < 0.5 then return end
+	_lastCmd, _lastCmdAt = msg, tick()
+	F.processCommand(msg)
+end
+
+local _silentChat = false
+pcall(function()
+	if not (hookmetamethod and getnamecallmethod and checkcaller) then return end
+	local old
+	local hook = function(self, ...)
+		local ok, method = pcall(getnamecallmethod)
+		if ok and not checkcaller() then
+			if method == "SendAsync" then
+				local text = (...)
+				if type(text) == "string" and text:sub(1, 1) == ";" then
+					_runCmdOnce(text)
+					return -- swallow: nothing is broadcast
+				end
+			elseif method == "FireServer" then
+				local text = (...)
+				if type(text) == "string" and text:sub(1, 1) == ";"
+					and tostring(self):find("SayMessageRequest") then
+					_runCmdOnce(text)
+					return
+				end
+			end
+		end
+		return old(self, ...)
+	end
+	if newcclosure then hook = newcclosure(hook) end
+	old = hookmetamethod(game, "__namecall", hook)
+	_silentChat = true
+end)
+
+-- Fallback observers (used when the namecall hook is unavailable). They run the
+-- command but cannot stop the message from showing in chat.
 pcall(function()
 	LocalPlayer.Chatted:Connect(function(msg)
 		if F._suppressChatHook then return end
-		if msg:sub(1, 1) == ";" then F.processCommand(msg) end
+		if msg:sub(1, 1) == ";" then _runCmdOnce(msg) end
 	end)
 end)
 pcall(function()
@@ -4044,11 +4089,17 @@ pcall(function()
 			if F._suppressChatHook then return end
 			local msg = message and message.Text
 			if type(msg) == "string" and msg:sub(1, 1) == ";" then
-				F.processCommand(msg)
+				_runCmdOnce(msg)
 			end
 		end)
 	end
 end)
+pcall(function()
+	addLog(_silentChat and "[CMD] Silent chat commands active (; hidden from chat)"
+		or "[CMD] Chat commands active (visible - use Run Command box to hide)",
+		_silentChat and COLORS.success or COLORS.textSecondary)
+end)
+end
 
 -- ===================== KEYBOARD SHORTCUT =====================
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
@@ -4971,8 +5022,8 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ===================== STARTUP =====================
-addLog("Pebbleford Hub v4.6", COLORS.accent)
+addLog("Pebbleford Hub v4.7", COLORS.accent)
 addLog("50+ features loaded across 10 tabs", COLORS.success)
 addLog("Type ;cmds in chat for commands", COLORS.textSecondary)
 addLog("Press Right Shift to toggle window", COLORS.textSecondary)
-print("[Pebbleford Hub] v4.6 loaded")
+print("[Pebbleford Hub] v4.7 loaded")
