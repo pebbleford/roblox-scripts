@@ -15,13 +15,13 @@ end
 if not keySystem or not keySystem.validate("elected") then return end
 
 -- ================================================================
--- Pebbleford Hub - Elected Admin Hub v1.3
+-- Pebbleford Hub - Elected Admin Hub v1.4
 -- Tool-Based Mining | Admin Commands | Building | Sign Editor
 -- Player Control | Teleports | ESP | Anti-Jail | Remote Spy
 -- Game uses Red networking (ReliableRedEvent) + ReplicaService
 -- ================================================================
 
-print("[SX Elected v1.3] Script loaded - EditSign remote discovery")
+print("[SX Elected v1.4] Script loaded - EditSign remote discovery")
 
 -- Cleanup old instance
 pcall(function()
@@ -1905,7 +1905,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "ELECTED HUB"
+titleLabel.Text = "ELECTED HUB v1.4"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -2297,6 +2297,12 @@ local function createSpacer(parent, order)
 	s.LayoutOrder = _nextOrd()
 	s.Parent = parent
 end
+
+-- Name aliases the tab-build code below uses. Without these the first
+-- createButton() call (Mining tab) hit a nil global and aborted the whole
+-- build, leaving every tab empty ("nothing in it").
+local createButton = createActionButton
+local createTextInput = createInput
 
 
 -- ===================== BUILD MINING TAB =====================
@@ -2873,12 +2879,12 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ===================== STARTUP =====================
-notify("SX Elected v1.3", "Loaded! Right Shift to toggle")
-print("[SX Elected v1.3] Pebbleford Hub - Elected Admin Hub")
-print("[SX Elected v1.3] Tabs: Mining | Admin | Build | Players | Movement | Visuals | Troll")
-print("[SX Elected v1.3] Red Event: " .. (RedEvent and RedEvent:GetFullName() or "NOT FOUND"))
-print("[SX Elected v1.3] Chat: " .. (ChatRemote and "Legacy Chat" or "TextChatService"))
-print("[SX Elected v1.3] Mining: Tool-based (equip pickaxe + ProximityPrompt)")
-print("[SX Elected v1.3] Building: Tool-based (equip building tool)")
-print("[SX Elected v1.3] Signs: EditSign Red event (direct remote fire)")
-print("[SX Elected v1.3] Right Shift to toggle GUI")
+notify("SX Elected v1.4", "Loaded! Right Shift to toggle")
+print("[SX Elected v1.4] Pebbleford Hub - Elected Admin Hub")
+print("[SX Elected v1.4] Tabs: Mining | Admin | Build | Players | Movement | Visuals | Troll")
+print("[SX Elected v1.4] Red Event: " .. (RedEvent and RedEvent:GetFullName() or "NOT FOUND"))
+print("[SX Elected v1.4] Chat: " .. (ChatRemote and "Legacy Chat" or "TextChatService"))
+print("[SX Elected v1.4] Mining: Tool-based (equip pickaxe + ProximityPrompt)")
+print("[SX Elected v1.4] Building: Tool-based (equip building tool)")
+print("[SX Elected v1.4] Signs: EditSign Red event (direct remote fire)")
+print("[SX Elected v1.4] Right Shift to toggle GUI")
