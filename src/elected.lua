@@ -15,13 +15,13 @@ end
 if not keySystem or not keySystem.validate("elected") then return end
 
 -- ================================================================
--- Pebbleford Hub - Elected Admin Hub v1.4
+-- Pebbleford Hub - Elected Admin Hub v1.5
 -- Tool-Based Mining | Admin Commands | Building | Sign Editor
 -- Player Control | Teleports | ESP | Anti-Jail | Remote Spy
 -- Game uses Red networking (ReliableRedEvent) + ReplicaService
 -- ================================================================
 
-print("[SX Elected v1.4] Script loaded - EditSign remote discovery")
+print("[SX Elected v1.5] Script loaded - EditSign remote discovery")
 
 -- Cleanup old instance
 pcall(function()
@@ -571,6 +571,15 @@ local function adminMute(target) sendAdminCmd(";mute " .. target) end
 local function adminCar(target) sendAdminCmd(";car " .. target) end
 local function adminPlane(target) sendAdminCmd(";plane " .. target) end
 local function adminDrone(target) sendAdminCmd(";drone " .. target) end
+
+-- ;sudo <player> <command> forces that player to run a command as if they typed
+-- it. Strip a leading ; off the inner command so ";sudo bob ;kill all" and
+-- ";sudo bob kill all" both work.
+local function adminSudo(target, command)
+	command = tostring(command or ""):gsub("^%s+", "")
+	if command:sub(1, 1) == ";" then command = command:sub(2) end
+	sendAdminCmd(";sudo " .. tostring(target) .. " " .. command)
+end
 
 -- ===================== SIGN EDITOR =====================
 -- Signs in Elected use the Red networking library
@@ -1905,7 +1914,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "ELECTED HUB v1.4"
+titleLabel.Text = "ELECTED HUB v1.5"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -2455,6 +2464,24 @@ do
 			notify("Command", "Sent: " .. cmdInput.Text)
 		end
 	end)
+
+	createSpacer(tab, o())
+
+	createSectionLabel(tab, "Sudo (Force Player To Run Command)", o())
+	local sudoTargetInput = createTextInput(tab, "Target player (name or all)", o())
+	local sudoCmdInput = createTextInput(tab, "Command to force (e.g. kill all)", o())
+	createButton(tab, "Send Sudo", o(), function()
+		local target = sudoTargetInput.Text ~= "" and sudoTargetInput.Text or "all"
+		if sudoCmdInput.Text ~= "" then
+			adminSudo(target, sudoCmdInput.Text)
+			notify("Sudo", ";sudo " .. target .. " " .. sudoCmdInput.Text)
+		else
+			notify("Sudo", "Enter a command to force")
+		end
+	end)
+	createButton(tab, ";sudo all respawn", o(), function() adminSudo("all", "respawn") end)
+	createButton(tab, ";sudo all rejoin", o(), function() adminSudo("all", "rejoin") end)
+	createInfoLabel(tab, ";sudo makes the target run the command as if they typed it. Only works if YOU are admin.", o())
 end
 
 -- ===================== BUILD BUILD TAB =====================
@@ -2879,12 +2906,12 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ===================== STARTUP =====================
-notify("SX Elected v1.4", "Loaded! Right Shift to toggle")
-print("[SX Elected v1.4] Pebbleford Hub - Elected Admin Hub")
-print("[SX Elected v1.4] Tabs: Mining | Admin | Build | Players | Movement | Visuals | Troll")
-print("[SX Elected v1.4] Red Event: " .. (RedEvent and RedEvent:GetFullName() or "NOT FOUND"))
-print("[SX Elected v1.4] Chat: " .. (ChatRemote and "Legacy Chat" or "TextChatService"))
-print("[SX Elected v1.4] Mining: Tool-based (equip pickaxe + ProximityPrompt)")
-print("[SX Elected v1.4] Building: Tool-based (equip building tool)")
-print("[SX Elected v1.4] Signs: EditSign Red event (direct remote fire)")
-print("[SX Elected v1.4] Right Shift to toggle GUI")
+notify("SX Elected v1.5", "Loaded! Right Shift to toggle")
+print("[SX Elected v1.5] Pebbleford Hub - Elected Admin Hub")
+print("[SX Elected v1.5] Tabs: Mining | Admin | Build | Players | Movement | Visuals | Troll")
+print("[SX Elected v1.5] Red Event: " .. (RedEvent and RedEvent:GetFullName() or "NOT FOUND"))
+print("[SX Elected v1.5] Chat: " .. (ChatRemote and "Legacy Chat" or "TextChatService"))
+print("[SX Elected v1.5] Mining: Tool-based (equip pickaxe + ProximityPrompt)")
+print("[SX Elected v1.5] Building: Tool-based (equip building tool)")
+print("[SX Elected v1.5] Signs: EditSign Red event (direct remote fire)")
+print("[SX Elected v1.5] Right Shift to toggle GUI")
