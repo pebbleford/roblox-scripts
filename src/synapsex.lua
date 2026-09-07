@@ -488,7 +488,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 50, 1, 0)
 versionLabel.Position = UDim2.new(0, 168, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v4.2"
+versionLabel.Text = "v4.4"
 versionLabel.TextColor3 = COLORS.textDim
 versionLabel.Font = Enum.Font.Code
 versionLabel.TextSize = 11
@@ -909,6 +909,27 @@ local function createSpacer(parent, order)
 	spacer.BackgroundTransparency = 1
 	spacer.LayoutOrder = order or 0
 	spacer.Parent = parent
+end
+
+local function createInput(parent, placeholder, order)
+	local box = Instance.new("TextBox")
+	box.Size = UDim2.new(1, 0, 0, 28)
+	box.BackgroundColor3 = COLORS.bgSecondary
+	box.Text = ""
+	box.PlaceholderText = placeholder or ""
+	box.PlaceholderColor3 = COLORS.textDim
+	box.TextColor3 = COLORS.textPrimary
+	box.Font = Enum.Font.Code
+	box.TextSize = 12
+	box.TextXAlignment = Enum.TextXAlignment.Left
+	box.ClearTextOnFocus = false
+	box.LayoutOrder = order or 0
+	box.Parent = parent
+	addCorner(box, 5)
+	local pad = Instance.new("UIPadding")
+	pad.PaddingLeft = UDim.new(0, 8)
+	pad.Parent = box
+	return box
 end
 
 -- ===================== LOG SYSTEM =====================
@@ -2894,7 +2915,7 @@ do
 	local tab = tabFrames["Main"]
 
 	createSectionLabel(tab, "Welcome", 1)
-	createInfoLabel(tab, "Pebbleford Hub v3.0", 2)
+	createInfoLabel(tab, "Pebbleford Hub v4.4", 2)
 	createInfoLabel(tab, "Player: " .. LocalPlayer.DisplayName .. " (@" .. LocalPlayer.Name .. ")", 3)
 
 	local spacer = Instance.new("Frame")
@@ -3093,6 +3114,21 @@ do
 	playerListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	playerListLayout.Padding = UDim.new(0, 3)
 	playerListLayout.Parent = playerListFrame
+
+	createSpacer(tab, 29)
+	createSectionLabel(tab, "Admin Sudo (Game Admin)", 30)
+	local sudoTargetBox = createInput(tab, "Target player (name or all)", 31)
+	local sudoCmdBox = createInput(tab, "Command (e.g. kill all)", 32)
+	createActionButton(tab, "Send ;sudo", 33, function()
+		local target = (sudoTargetBox.Text ~= "" and sudoTargetBox.Text) or "all"
+		local cmd = sudoCmdBox.Text or ""
+		if cmd:sub(1, 1) == ";" then cmd = cmd:sub(2) end
+		if cmd == "" then addLog("[SUDO] Enter a command to force", COLORS.error) return end
+		local full = ";sudo " .. target .. " " .. cmd
+		local ok = F.sendChat(full)
+		addLog(ok and ("[SUDO] Sent: " .. full) or "[SUDO] Chat send failed", ok and COLORS.success or COLORS.error)
+	end)
+	createInfoLabel(tab, "Forces the target to run the command. Game admin only - works if YOU are admin. You can also type ;sudo <player> <command> in chat.", 34)
 end
 
 F.refreshPlayerList = function()
@@ -3705,7 +3741,7 @@ do
 	themeOrder = themeOrder + 1
 	createSectionLabel(tab, "About", themeOrder)
 	themeOrder = themeOrder + 1
-	createInfoLabel(tab, "Pebbleford Hub v3.0", themeOrder)
+	createInfoLabel(tab, "Pebbleford Hub v4.4", themeOrder)
 	themeOrder = themeOrder + 1
 	createInfoLabel(tab, "50+ features | 10 tabs", themeOrder)
 	themeOrder = themeOrder + 1
@@ -3768,6 +3804,14 @@ commands["killaura"] = function() combatState.killAuraEnabled = true F.startKill
 commands["unkillaura"] = function() combatState.killAuraEnabled = false F.stopKillAura() end
 commands["rejoin"] = function() F.rejoinServer() end
 commands["serverhop"] = function() F.serverHop() end
+-- ;sudo <player> <command> is a GAME admin command (forces that player to run
+-- a command), not a hub feature. Typed in chat it already reaches the game's
+-- admin system, so this just acknowledges it instead of logging "unknown".
+-- The Player tab's Sudo box sends it programmatically via F.sendChat.
+commands["sudo"] = function(args)
+	if #args == 0 then addLog("[CMD] Usage: ;sudo <player> <command>", COLORS.error) return end
+	addLog("[CMD] sudo -> game admin: " .. table.concat(args, " "), COLORS.success)
+end
 commands["spectate"] = function(args)
 	if not args[1] then addLog("[CMD] Usage: ;spectate <player>", COLORS.error) return end
 	local target = F.findPlayer(args[1])
@@ -3858,7 +3902,7 @@ commands["panic"] = function() pcall(function() screenGui:Destroy() end) end
 commands["unload"] = function() F.unloadScript() end
 
 commands["cmds"] = function()
-	addLog("--- v3.0 Commands (90+) ---", COLORS.accent)
+	addLog("--- v4.4 Commands ---", COLORS.accent)
 	addLog("== Combat ==", COLORS.textSecondary)
 	addLog(";aimbot ;triggerbot ;hitbox [sz] ;antifling ;antivoid", COLORS.textSecondary)
 	addLog(";killaura / un- versions to disable", COLORS.textSecondary)
@@ -3881,6 +3925,8 @@ commands["cmds"] = function()
 	addLog("== Server ==", COLORS.textSecondary)
 	addLog(";rejoin ;serverhop ;antiafk ;chatspy ;joinnotify", COLORS.textSecondary)
 	addLog(";autorespawn ;panic ;unload ;cmds", COLORS.textSecondary)
+	addLog("== Game Admin ==", COLORS.textSecondary)
+	addLog(";sudo <player> <command> (forces them to run it - if you are admin)", COLORS.textSecondary)
 	addLog("Prefix un- to disable any toggle (e.g. ;unfly)", COLORS.textSecondary)
 end
 
@@ -3940,6 +3986,31 @@ local function showCommandIndicator(text)
 			end
 		end)
 	end)
+end
+
+-- Sends a real chat message to the game (used by the Sudo box so game admin
+-- systems receive the ; command). Tries the new TextChatService first, then
+-- falls back to the legacy SayMessageRequest remote.
+F.sendChat = function(text)
+	local sent = false
+	pcall(function()
+		local TCS = game:GetService("TextChatService")
+		local channels = TCS:FindFirstChild("TextChannels")
+		if channels then
+			local ch = channels:FindFirstChild("RBXGeneral") or channels:FindFirstChildWhichIsA("TextChannel")
+			if ch then ch:SendAsync(text) sent = true end
+		end
+	end)
+	if not sent then
+		pcall(function()
+			local evs = game:GetService("ReplicatedStorage"):FindFirstChild("DefaultChatSystemChatEvents")
+			if evs then
+				local req = evs:FindFirstChild("SayMessageRequest")
+				if req then req:FireServer(text, "All") sent = true end
+			end
+		end)
+	end
+	return sent
 end
 
 F.processCommand = function(input)
@@ -4899,8 +4970,8 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ===================== STARTUP =====================
-addLog("Pebbleford Hub v3.0", COLORS.accent)
+addLog("Pebbleford Hub v4.4", COLORS.accent)
 addLog("50+ features loaded across 10 tabs", COLORS.success)
 addLog("Type ;cmds in chat for commands", COLORS.textSecondary)
 addLog("Press Right Shift to toggle window", COLORS.textSecondary)
-print("[Pebbleford Hub] v3.0 loaded")
+print("[Pebbleford Hub] v4.4 loaded")
