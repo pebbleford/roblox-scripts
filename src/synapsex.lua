@@ -488,7 +488,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 50, 1, 0)
 versionLabel.Position = UDim2.new(0, 168, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v4.9"
+versionLabel.Text = "v5.0"
 versionLabel.TextColor3 = COLORS.textDim
 versionLabel.Font = Enum.Font.Code
 versionLabel.TextSize = 11
@@ -2164,56 +2164,32 @@ F.startFling = function()
 		local root = character:FindFirstChild("HumanoidRootPart")
 		if not root then return end
 
-		-- Step 1: density 100 on all parts
+		-- Heavy parts carry more momentum on contact. Collision MUST stay on -
+		-- the old version set CanCollide=false + noclip, so nothing could ever
+		-- be flung (you just spun touching nothing). Keep collision, spin fast.
 		flingState.savedPhysProps = {}
+		flingState.savedCanCollide = {}
 		for _, part in ipairs(character:GetDescendants()) do
 			if part:IsA("BasePart") then
 				flingState.savedPhysProps[part] = part.CustomPhysicalProperties
-				part.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
+				part.CustomPhysicalProperties = PhysicalProperties.new(20, 0.3, 0.5, 1, 1)
 			end
 		end
 
-		-- Step 2: enable noclip
-		if not moveState.noclipEnabled then
-			moveState.noclipEnabled = true
-			F.startNoclip()
-			flingState.flingAutoNoclip = true
-		end
-		wait(0.1)
-
-		-- Step 3: BodyAngularVelocity Y-axis spin
-		local bav = Instance.new("BodyAngularVelocity")
-		bav.AngularVelocity = Vector3.new(0, flingState.flingPower, 0)
-		bav.MaxTorque = Vector3.new(0, math.huge, 0)
-		bav.P = math.huge
-		bav.Parent = root
-		flingState.flingBAV = bav
-
-		-- Step 4: massless + no collide + zero velocity on all parts
-		for _, part in ipairs(character:GetChildren()) do
-			if part:IsA("BasePart") then
-				part.CanCollide = false
-				part.Massless = true
-				part.Velocity = Vector3.new(0, 0, 0)
-			end
-		end
-
-		-- Step 5: pulse spin on/off (creates repeated impulse spikes)
 		flingState.flingEnabled = true
-		spawn(function()
-			while flingState.flingEnabled do
-				if flingState.flingBAV and flingState.flingBAV.Parent then
-					flingState.flingBAV.AngularVelocity = Vector3.new(0, flingState.flingPower, 0)
-				end
-				wait(0.2)
-				if flingState.flingBAV and flingState.flingBAV.Parent then
-					flingState.flingBAV.AngularVelocity = Vector3.new(0, 0, 0)
-				end
-				wait(0.1)
+		-- Continuous Y-axis spin via AssemblyAngularVelocity. Because you own the
+		-- network physics of your OWN character, the server accepts this, so the
+		-- spin persists and transfers to anyone you touch (if the game lets
+		-- players collide). Re-applied every frame so the server can't damp it.
+		flingState.flingConn = RunService.Heartbeat:Connect(function()
+			local c = LocalPlayer.Character
+			local r = c and c:FindFirstChild("HumanoidRootPart")
+			if r then
+				r.AssemblyAngularVelocity = Vector3.new(0, flingState.flingPower, 0)
 			end
 		end)
 
-		addLog("[SPIN FLING] ON - Players near you get flung!", COLORS.success)
+		addLog("[SPIN FLING] ON - Touch players to fling them", COLORS.success)
 	end)
 	if not ok then
 		addLog("[SPIN FLING] Error: " .. tostring(err), COLORS.error)
@@ -2222,18 +2198,14 @@ end
 
 F.stopFling = function()
 	flingState.flingEnabled = false
+	if flingState.flingConn then pcall(function() flingState.flingConn:Disconnect() end) flingState.flingConn = nil end
 	if flingState.flingBAV then pcall(function() flingState.flingBAV:Destroy() end) flingState.flingBAV = nil end
-
-	-- Disable auto-noclip if we enabled it
-	if flingState.flingAutoNoclip then
-		moveState.noclipEnabled = false
-		F.stopNoclip()
-		flingState.flingAutoNoclip = false
-	end
 
 	pcall(function()
 		local character = LocalPlayer.Character
 		if character then
+			local r = character:FindFirstChild("HumanoidRootPart")
+			if r then r.AssemblyAngularVelocity = Vector3.new(0, 0, 0) end
 			for _, part in ipairs(character:GetDescendants()) do
 				if part:IsA("BasePart") then
 					if flingState.savedPhysProps[part] then
@@ -2242,7 +2214,6 @@ F.stopFling = function()
 						part.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
 					end
 					part.Massless = false
-					part.Velocity = Vector3.new(0, 0, 0)
 				end
 			end
 		end
@@ -2910,7 +2881,7 @@ do
 	local tab = tabFrames["Main"]
 
 	createSectionLabel(tab, "Welcome", 1)
-	createInfoLabel(tab, "Pebbleford Hub v4.9", 2)
+	createInfoLabel(tab, "Pebbleford Hub v5.0", 2)
 	createInfoLabel(tab, "Player: " .. LocalPlayer.DisplayName .. " (@" .. LocalPlayer.Name .. ")", 3)
 
 	local spacer = Instance.new("Frame")
@@ -3732,7 +3703,7 @@ do
 	themeOrder = themeOrder + 1
 	createSectionLabel(tab, "About", themeOrder)
 	themeOrder = themeOrder + 1
-	createInfoLabel(tab, "Pebbleford Hub v4.9", themeOrder)
+	createInfoLabel(tab, "Pebbleford Hub v5.0", themeOrder)
 	themeOrder = themeOrder + 1
 	createInfoLabel(tab, "50+ features | 10 tabs", themeOrder)
 	themeOrder = themeOrder + 1
@@ -3892,7 +3863,7 @@ commands["panic"] = function() pcall(function() screenGui:Destroy() end) end
 commands["unload"] = function() F.unloadScript() end
 
 commands["cmds"] = function()
-	addLog("--- v4.9 Commands ---", COLORS.accent)
+	addLog("--- v5.0 Commands ---", COLORS.accent)
 	addLog("== Combat ==", COLORS.textSecondary)
 	addLog(";aimbot ;triggerbot ;hitbox [sz] ;antifling ;antivoid", COLORS.textSecondary)
 	addLog(";killaura / un- versions to disable", COLORS.textSecondary)
@@ -5017,8 +4988,8 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ===================== STARTUP =====================
-addLog("Pebbleford Hub v4.9", COLORS.accent)
+addLog("Pebbleford Hub v5.0", COLORS.accent)
 addLog("50+ features loaded across 10 tabs", COLORS.success)
 addLog("Type ;cmds in chat for commands", COLORS.textSecondary)
 addLog("Press Right Shift to toggle window", COLORS.textSecondary)
-print("[Pebbleford Hub] v4.9 loaded")
+print("[Pebbleford Hub] v5.0 loaded")
