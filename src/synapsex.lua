@@ -488,7 +488,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 50, 1, 0)
 versionLabel.Position = UDim2.new(0, 168, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v5.0"
+versionLabel.Text = "v5.1"
 versionLabel.TextColor3 = COLORS.textDim
 versionLabel.Font = Enum.Font.Code
 versionLabel.TextSize = 11
@@ -2633,6 +2633,29 @@ F.stopEmote = function()
 	funState.emoteTracks = {}
 end
 
+-- Humanoid:LoadAnimation is deprecated and now fails in many places; load
+-- through the Animator instead (creating one if the character lacks it).
+local function getAnimator(hum)
+	local animator = hum:FindFirstChildOfClass("Animator")
+	if not animator then
+		animator = Instance.new("Animator")
+		animator.Parent = hum
+	end
+	return animator
+end
+
+local function loadAnim(hum, animId)
+	local anim = Instance.new("Animation")
+	anim.AnimationId = "rbxassetid://" .. tostring(animId)
+	local animator = getAnimator(hum)
+	local track
+	local ok = pcall(function() track = animator:LoadAnimation(anim) end)
+	if not ok or not track then
+		pcall(function() track = hum:LoadAnimation(anim) end)
+	end
+	return track
+end
+
 F.playEmote = function(animId, speed, duration)
 	F.stopEmote()
 	pcall(function()
@@ -2640,9 +2663,8 @@ F.playEmote = function(animId, speed, duration)
 		if not character then return end
 		local hum = character:FindFirstChildOfClass("Humanoid")
 		if not hum then return end
-		local anim = Instance.new("Animation")
-		anim.AnimationId = "rbxassetid://" .. tostring(animId)
-		local track = hum:LoadAnimation(anim)
+		local track = loadAnim(hum, animId)
+		if not track then addLog("[EMOTE] Failed to load animation", COLORS.error) return end
 		track:Play()
 		if speed then track:AdjustSpeed(speed) end
 		table.insert(funState.emoteTracks, track)
@@ -2668,12 +2690,9 @@ F.playJerkEmote = function()
 
 		if isR6 then
 			-- R6: dual animation loop
-			local anim1 = Instance.new("Animation")
-			anim1.AnimationId = "rbxassetid://4689362868"
-			local anim2 = Instance.new("Animation")
-			anim2.AnimationId = "rbxassetid://168086975"
-			local track1 = hum:LoadAnimation(anim1)
-			local track2 = hum:LoadAnimation(anim2)
+			local track1 = loadAnim(hum, 4689362868)
+			local track2 = loadAnim(hum, 168086975)
+			if not (track1 and track2) then addLog("[EMOTE] Failed to load animation", COLORS.error) return end
 			track1:Play()
 			track2:Play()
 			track1:AdjustSpeed(2)
@@ -2697,9 +2716,8 @@ F.playJerkEmote = function()
 			end)
 		else
 			-- R15 fallback: Bug Net swing looped at suggestive time range
-			local anim = Instance.new("Animation")
-			anim.AnimationId = "rbxassetid://698251653"
-			local track = hum:LoadAnimation(anim)
+			local track = loadAnim(hum, 698251653)
+			if not track then addLog("[EMOTE] Failed to load animation", COLORS.error) return end
 			track:Play()
 			track:AdjustSpeed(0.4)
 			table.insert(funState.emoteTracks, track)
@@ -2881,7 +2899,7 @@ do
 	local tab = tabFrames["Main"]
 
 	createSectionLabel(tab, "Welcome", 1)
-	createInfoLabel(tab, "Pebbleford Hub v5.0", 2)
+	createInfoLabel(tab, "Pebbleford Hub v5.1", 2)
 	createInfoLabel(tab, "Player: " .. LocalPlayer.DisplayName .. " (@" .. LocalPlayer.Name .. ")", 3)
 
 	local spacer = Instance.new("Frame")
@@ -3703,7 +3721,7 @@ do
 	themeOrder = themeOrder + 1
 	createSectionLabel(tab, "About", themeOrder)
 	themeOrder = themeOrder + 1
-	createInfoLabel(tab, "Pebbleford Hub v5.0", themeOrder)
+	createInfoLabel(tab, "Pebbleford Hub v5.1", themeOrder)
 	themeOrder = themeOrder + 1
 	createInfoLabel(tab, "50+ features | 10 tabs", themeOrder)
 	themeOrder = themeOrder + 1
@@ -3863,7 +3881,7 @@ commands["panic"] = function() pcall(function() screenGui:Destroy() end) end
 commands["unload"] = function() F.unloadScript() end
 
 commands["cmds"] = function()
-	addLog("--- v5.0 Commands ---", COLORS.accent)
+	addLog("--- v5.1 Commands ---", COLORS.accent)
 	addLog("== Combat ==", COLORS.textSecondary)
 	addLog(";aimbot ;triggerbot ;hitbox [sz] ;antifling ;antivoid", COLORS.textSecondary)
 	addLog(";killaura / un- versions to disable", COLORS.textSecondary)
@@ -4988,8 +5006,8 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ===================== STARTUP =====================
-addLog("Pebbleford Hub v5.0", COLORS.accent)
+addLog("Pebbleford Hub v5.1", COLORS.accent)
 addLog("50+ features loaded across 10 tabs", COLORS.success)
 addLog("Type ;cmds in chat for commands", COLORS.textSecondary)
 addLog("Press Right Shift to toggle window", COLORS.textSecondary)
-print("[Pebbleford Hub] v5.0 loaded")
+print("[Pebbleford Hub] v5.1 loaded")
