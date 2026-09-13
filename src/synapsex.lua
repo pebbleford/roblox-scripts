@@ -488,7 +488,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 50, 1, 0)
 versionLabel.Position = UDim2.new(0, 168, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v4.8"
+versionLabel.Text = "v4.9"
 versionLabel.TextColor3 = COLORS.textDim
 versionLabel.Font = Enum.Font.Code
 versionLabel.TextSize = 11
@@ -2344,17 +2344,13 @@ F.startWalkFling = function()
 		local root = character:FindFirstChild("HumanoidRootPart")
 		if not root then return end
 
-		-- Enable noclip
-		if not moveState.noclipEnabled then
-			moveState.noclipEnabled = true
-			F.startNoclip()
-			flingState.walkFlingAutoNoclip = true
-		end
-
+		-- NOTE: no noclip here. Noclip turns off collision, so there is no floor
+		-- to stand on and gravity drags you through the ground (the "sinking").
+		-- Flinging also needs collision to work, so we keep it on and let the
+		-- humanoid stand on the ground normally. We only spike the HORIZONTAL
+		-- velocity for one frame, then restore it fully so you stay grounded.
 		flingState.walkFlingEnabled = true
-		local movel = 0.1
 
-		-- Velocity spike loop (runs across Heartbeat/RenderStepped/Stepped)
 		spawn(function()
 			while flingState.walkFlingEnabled do
 				local char = LocalPlayer.Character
@@ -2362,23 +2358,14 @@ F.startWalkFling = function()
 				if not (char and char.Parent and rt and rt.Parent) then
 					RunService.Heartbeat:Wait()
 				else
-					-- Save current velocity, spike horizontal only (no Y = no flying up)
 					local vel = rt.Velocity
-					local spiked = Vector3.new(vel.X * 10000, vel.Y, vel.Z * 10000)
-					rt.Velocity = spiked
-
+					-- Spike horizontal only (keep Y so gravity/standing is normal).
+					rt.Velocity = Vector3.new(vel.X * 10000, vel.Y, vel.Z * 10000)
 					RunService.RenderStepped:Wait()
-					-- Restore original velocity
 					if char and char.Parent and rt and rt.Parent then
 						rt.Velocity = vel
 					end
-
 					RunService.Stepped:Wait()
-					-- Tiny Y oscillation to maintain ground contact
-					if char and char.Parent and rt and rt.Parent then
-						rt.Velocity = vel + Vector3.new(0, movel, 0)
-						movel = movel * -1
-					end
 				end
 			end
 		end)
@@ -2923,7 +2910,7 @@ do
 	local tab = tabFrames["Main"]
 
 	createSectionLabel(tab, "Welcome", 1)
-	createInfoLabel(tab, "Pebbleford Hub v4.8", 2)
+	createInfoLabel(tab, "Pebbleford Hub v4.9", 2)
 	createInfoLabel(tab, "Player: " .. LocalPlayer.DisplayName .. " (@" .. LocalPlayer.Name .. ")", 3)
 
 	local spacer = Instance.new("Frame")
@@ -3745,7 +3732,7 @@ do
 	themeOrder = themeOrder + 1
 	createSectionLabel(tab, "About", themeOrder)
 	themeOrder = themeOrder + 1
-	createInfoLabel(tab, "Pebbleford Hub v4.8", themeOrder)
+	createInfoLabel(tab, "Pebbleford Hub v4.9", themeOrder)
 	themeOrder = themeOrder + 1
 	createInfoLabel(tab, "50+ features | 10 tabs", themeOrder)
 	themeOrder = themeOrder + 1
@@ -3905,7 +3892,7 @@ commands["panic"] = function() pcall(function() screenGui:Destroy() end) end
 commands["unload"] = function() F.unloadScript() end
 
 commands["cmds"] = function()
-	addLog("--- v4.8 Commands ---", COLORS.accent)
+	addLog("--- v4.9 Commands ---", COLORS.accent)
 	addLog("== Combat ==", COLORS.textSecondary)
 	addLog(";aimbot ;triggerbot ;hitbox [sz] ;antifling ;antivoid", COLORS.textSecondary)
 	addLog(";killaura / un- versions to disable", COLORS.textSecondary)
@@ -5030,8 +5017,8 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ===================== STARTUP =====================
-addLog("Pebbleford Hub v4.8", COLORS.accent)
+addLog("Pebbleford Hub v4.9", COLORS.accent)
 addLog("50+ features loaded across 10 tabs", COLORS.success)
 addLog("Type ;cmds in chat for commands", COLORS.textSecondary)
 addLog("Press Right Shift to toggle window", COLORS.textSecondary)
-print("[Pebbleford Hub] v4.8 loaded")
+print("[Pebbleford Hub] v4.9 loaded")
