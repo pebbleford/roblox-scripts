@@ -488,7 +488,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 50, 1, 0)
 versionLabel.Position = UDim2.new(0, 168, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v5.1"
+versionLabel.Text = "v5.2"
 versionLabel.TextColor3 = COLORS.textDim
 versionLabel.Font = Enum.Font.Code
 versionLabel.TextSize = 11
@@ -2899,7 +2899,7 @@ do
 	local tab = tabFrames["Main"]
 
 	createSectionLabel(tab, "Welcome", 1)
-	createInfoLabel(tab, "Pebbleford Hub v5.1", 2)
+	createInfoLabel(tab, "Pebbleford Hub v5.2", 2)
 	createInfoLabel(tab, "Player: " .. LocalPlayer.DisplayName .. " (@" .. LocalPlayer.Name .. ")", 3)
 
 	local spacer = Instance.new("Frame")
@@ -3616,6 +3616,17 @@ do
 	createInfoLabel(tab, "Ctrl+Click = ClickTP (when on)", 4)
 	createInfoLabel(tab, "Hold RMB/Q = Aimbot (when on)", 5)
 
+	createSectionLabel(tab, "Chat Commands", 6)
+	createToggle(tab, "Silent Chat (hide ; from chat) - MAY CAUSE KICKS", 6, function(on)
+		if on then
+			local ok = F.enableSilentChat and F.enableSilentChat()
+			if not ok then addLog("[CMD] Silent chat could not be enabled", COLORS.error) end
+		else
+			addLog("[CMD] Silent chat stays until you rejoin (hook cannot be removed live)", COLORS.textSecondary)
+		end
+	end)
+	createInfoLabel(tab, "OFF by default. Some games detect the hook and kick you (namecall error). Leave OFF there and use the Run Command box on the Player tab for silent commands.", 6)
+
 	createSpacer(tab, 6)
 	createSectionLabel(tab, "Theme", 7)
 	local themeOrder = 8
@@ -3721,7 +3732,7 @@ do
 	themeOrder = themeOrder + 1
 	createSectionLabel(tab, "About", themeOrder)
 	themeOrder = themeOrder + 1
-	createInfoLabel(tab, "Pebbleford Hub v5.1", themeOrder)
+	createInfoLabel(tab, "Pebbleford Hub v5.2", themeOrder)
 	themeOrder = themeOrder + 1
 	createInfoLabel(tab, "50+ features | 10 tabs", themeOrder)
 	themeOrder = themeOrder + 1
@@ -3881,7 +3892,7 @@ commands["panic"] = function() pcall(function() screenGui:Destroy() end) end
 commands["unload"] = function() F.unloadScript() end
 
 commands["cmds"] = function()
-	addLog("--- v5.1 Commands ---", COLORS.accent)
+	addLog("--- v5.2 Commands ---", COLORS.accent)
 	addLog("== Combat ==", COLORS.textSecondary)
 	addLog(";aimbot ;triggerbot ;hitbox [sz] ;antifling ;antivoid", COLORS.textSecondary)
 	addLog(";killaura / un- versions to disable", COLORS.textSecondary)
@@ -4012,14 +4023,13 @@ F.processCommand = function(input)
 	end
 end
 
--- Chat commands: messages starting with ; run as hub commands. We want them to
--- run WITHOUT broadcasting to everyone. The only way to stop the broadcast is to
--- catch the send before it happens, so the primary path is a __namecall hook on
--- SendAsync (modern TextChatService) / SayMessageRequest:FireServer (legacy):
--- when the outgoing text starts with ;, we run the command and DROP the send so
--- nothing appears in chat. The observe-only Chatted/SendingMessage hooks below
--- still run the command on executors without hookmetamethod (there the message
--- is visible - use the Run Command box for a silent option).
+-- Chat commands: messages starting with ; run as hub commands.
+--
+-- Two layers. The OBSERVE-ONLY hooks (Chatted / SendingMessage) just watch chat
+-- and run ; commands - they never touch metamethods, so they are always safe.
+-- Hiding the ; text from chat needs a __namecall hook, but SOME games' anti-cheat
+-- detects any __namecall hook and KICKS you ("namecall error"). So that layer is
+-- OPT-IN and OFF by default; enable it from Settings only where it is safe.
 do
 local _lastCmd, _lastCmdAt = "", 0
 local function _runCmdOnce(msg)
@@ -4029,37 +4039,7 @@ local function _runCmdOnce(msg)
 	F.processCommand(msg)
 end
 
-local _silentChat = false
-pcall(function()
-	if not (hookmetamethod and getnamecallmethod and checkcaller) then return end
-	local old
-	local hook = function(self, ...)
-		local ok, method = pcall(getnamecallmethod)
-		if ok and not checkcaller() then
-			if method == "SendAsync" then
-				local text = (...)
-				if type(text) == "string" and text:sub(1, 1) == ";" then
-					_runCmdOnce(text)
-					return -- swallow: nothing is broadcast
-				end
-			elseif method == "FireServer" then
-				local text = (...)
-				if type(text) == "string" and text:sub(1, 1) == ";"
-					and tostring(self):find("SayMessageRequest") then
-					_runCmdOnce(text)
-					return
-				end
-			end
-		end
-		return old(self, ...)
-	end
-	if newcclosure then hook = newcclosure(hook) end
-	old = hookmetamethod(game, "__namecall", hook)
-	_silentChat = true
-end)
-
--- Fallback observers (used when the namecall hook is unavailable). They run the
--- command but cannot stop the message from showing in chat.
+-- Always-on, always-safe observers. They run ; commands but cannot hide them.
 pcall(function()
 	LocalPlayer.Chatted:Connect(function(msg)
 		if F._suppressChatHook then return end
@@ -4078,12 +4058,46 @@ pcall(function()
 		end)
 	end
 end)
-pcall(function()
-	addLog(_silentChat and "[CMD] Silent chat commands active (; hidden from chat)"
-		or "[CMD] Chat commands active (visible - use Run Command box to hide)",
-		_silentChat and COLORS.success or COLORS.textSecondary)
-end)
+
+-- Opt-in silent mode. Installs the __namecall hook on demand (one-way for the
+-- session). Off by default so no game can kick you for it unless you ask.
+F._silentInstalled = false
+F.enableSilentChat = function()
+	if F._silentInstalled then return true end
+	local okInstall = pcall(function()
+		if not (hookmetamethod and getnamecallmethod and checkcaller) then error("no hookmetamethod") end
+		local old
+		local hook = function(self, ...)
+			local ok, method = pcall(getnamecallmethod)
+			if ok and not checkcaller() then
+				if method == "SendAsync" then
+					local text = (...)
+					if type(text) == "string" and text:sub(1, 1) == ";" then _runCmdOnce(text) return end
+				elseif method == "FireServer" then
+					local text = (...)
+					if type(text) == "string" and text:sub(1, 1) == ";"
+						and tostring(self):find("SayMessageRequest") then _runCmdOnce(text) return end
+				end
+			end
+			return old(self, ...)
+		end
+		if newcclosure then hook = newcclosure(hook) end
+		old = hookmetamethod(game, "__namecall", hook)
+	end)
+	F._silentInstalled = okInstall
+	pcall(function()
+		addLog(okInstall and "[CMD] Silent chat ON (; hidden). Turn OFF if a game kicks you."
+			or "[CMD] Silent chat not supported on this executor",
+			okInstall and COLORS.success or COLORS.error)
+	end)
+	return okInstall
 end
+end
+
+pcall(function()
+	addLog("[CMD] Chat commands active - ;cmds for the list", COLORS.textSecondary)
+	addLog("[CMD] To hide ; from chat: Settings > Silent Chat (may cause kicks)", COLORS.textDim)
+end)
 
 -- ===================== KEYBOARD SHORTCUT =====================
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
@@ -5006,8 +5020,8 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ===================== STARTUP =====================
-addLog("Pebbleford Hub v5.1", COLORS.accent)
+addLog("Pebbleford Hub v5.2", COLORS.accent)
 addLog("50+ features loaded across 10 tabs", COLORS.success)
 addLog("Type ;cmds in chat for commands", COLORS.textSecondary)
 addLog("Press Right Shift to toggle window", COLORS.textSecondary)
-print("[Pebbleford Hub] v5.1 loaded")
+print("[Pebbleford Hub] v5.2 loaded")
