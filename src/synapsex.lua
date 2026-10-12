@@ -488,7 +488,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 50, 1, 0)
 versionLabel.Position = UDim2.new(0, 168, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v5.3"
+versionLabel.Text = "v5.4"
 versionLabel.TextColor3 = COLORS.textDim
 versionLabel.Font = Enum.Font.Code
 versionLabel.TextSize = 11
@@ -2631,6 +2631,20 @@ F.stopEmote = function()
 		pcall(function() track:Stop() end)
 	end
 	funState.emoteTracks = {}
+	-- Restore a scripted-emote root joint and re-enable the Animate script.
+	if funState.emoteJoint and funState.emoteJointBase then
+		pcall(function() funState.emoteJoint.C0 = funState.emoteJointBase end)
+	end
+	funState.emoteJoint = nil
+	funState.emoteJointBase = nil
+	if funState.emoteAnimateDisabled then
+		pcall(function()
+			local char = LocalPlayer.Character
+			local a = char and char:FindFirstChild("Animate")
+			if a then a.Disabled = false end
+		end)
+		funState.emoteAnimateDisabled = false
+	end
 end
 
 -- Humanoid:LoadAnimation is deprecated and now fails in many places; load
@@ -2706,57 +2720,52 @@ F.playJerkEmote = function()
 		local character = LocalPlayer.Character
 		if not character then return end
 		local hum = character:FindFirstChildOfClass("Humanoid")
-		if not hum then return end
-		funState.emoteActive = true
+		local root = character:FindFirstChild("HumanoidRootPart")
+		if not hum or not root then return end
 
-		local isR6 = character:FindFirstChild("Torso") ~= nil
-
-		if isR6 then
-			-- R6: dual animation loop
-			local track1 = loadAnim(hum, 4689362868)
-			local track2 = loadAnim(hum, 168086975)
-			if not (track1 and track2) then addLog("[EMOTE] Failed to load animation", COLORS.error) return end
-			primeEmoteTrack(track1, true)
-			primeEmoteTrack(track2, true)
-			track1:Play()
-			track2:Play()
-			track1:AdjustSpeed(2)
-			track2:AdjustSpeed(2)
-			table.insert(funState.emoteTracks, track1)
-			table.insert(funState.emoteTracks, track2)
-
-			-- Loop by replaying when tracks finish
-			funState.emoteConnection = RunService.Heartbeat:Connect(function()
-				if not funState.emoteActive then return end
-				pcall(function()
-					if track1.IsPlaying == false then
-						track1:Play()
-						track1:AdjustSpeed(2)
-					end
-					if track2.IsPlaying == false then
-						track2:Play()
-						track2:AdjustSpeed(2)
-					end
-				end)
-			end)
-		else
-			-- R15 fallback: Bug Net swing looped at suggestive time range
-			local track = loadAnim(hum, 698251653)
-			if not track then addLog("[EMOTE] Failed to load animation", COLORS.error) return end
-			primeEmoteTrack(track, true)
-			track:Play()
-			track:AdjustSpeed(0.4)
-			table.insert(funState.emoteTracks, track)
-
-			funState.emoteConnection = RunService.Heartbeat:Connect(function()
-				if not funState.emoteActive then return end
-				pcall(function()
-					if track.TimePosition > 0.72 then
-						track.TimePosition = 0.579
-					end
-				end)
-			end)
+		-- Scripted motion instead of an animation asset. Animation IDs break on
+		-- rig mismatch (R6 ids on an R15 avatar = the collapsed pose you saw) and
+		-- can be ownership-blocked. Oscillating the root joint works on ANY rig
+		-- and can't be moderated. We disable the Animate script so its idle/walk
+		-- doesn't fight the motion, then rock the joint back and forth.
+		local joint = root:FindFirstChild("RootJoint")
+		if not joint then
+			for _, d in ipairs(character:GetDescendants()) do
+				if d:IsA("Motor6D") and d.Name == "RootJoint" then joint = d break end
+			end
 		end
+		-- R15 can also use the Waist for a clearer motion if RootJoint is missing.
+		if not joint then
+			local lt = character:FindFirstChild("LowerTorso")
+			if lt then joint = lt:FindFirstChild("Waist") end
+		end
+		if not joint then addLog("[EMOTE] No root joint found", COLORS.error) return end
+
+		pcall(function()
+			local a = character:FindFirstChild("Animate")
+			if a then a.Disabled = true funState.emoteAnimateDisabled = true end
+		end)
+		-- Stop the humanoid's current idle track so it doesn't hold a pose.
+		pcall(function()
+			local animator = hum:FindFirstChildOfClass("Animator")
+			if animator then
+				for _, t in ipairs(animator:GetPlayingAnimationTracks()) do pcall(function() t:Stop(0) end) end
+			end
+		end)
+
+		funState.emoteActive = true
+		funState.emoteJoint = joint
+		funState.emoteJointBase = joint.C0
+
+		local t = 0
+		funState.emoteConnection = RunService.Heartbeat:Connect(function(dt)
+			if not funState.emoteActive then return end
+			t = t + (dt or 1/60) * 16 -- speed
+			local ang = math.sin(t) * 0.55 -- amplitude (radians)
+			pcall(function()
+				joint.C0 = funState.emoteJointBase * CFrame.Angles(ang, 0, 0)
+			end)
+		end)
 
 		addLog("[EMOTE] Playing...", COLORS.success)
 	end)
@@ -2925,7 +2934,7 @@ do
 	local tab = tabFrames["Main"]
 
 	createSectionLabel(tab, "Welcome", 1)
-	createInfoLabel(tab, "Pebbleford Hub v5.3", 2)
+	createInfoLabel(tab, "Pebbleford Hub v5.4", 2)
 	createInfoLabel(tab, "Player: " .. LocalPlayer.DisplayName .. " (@" .. LocalPlayer.Name .. ")", 3)
 
 	local spacer = Instance.new("Frame")
@@ -3758,7 +3767,7 @@ do
 	themeOrder = themeOrder + 1
 	createSectionLabel(tab, "About", themeOrder)
 	themeOrder = themeOrder + 1
-	createInfoLabel(tab, "Pebbleford Hub v5.3", themeOrder)
+	createInfoLabel(tab, "Pebbleford Hub v5.4", themeOrder)
 	themeOrder = themeOrder + 1
 	createInfoLabel(tab, "50+ features | 10 tabs", themeOrder)
 	themeOrder = themeOrder + 1
@@ -3918,7 +3927,7 @@ commands["panic"] = function() pcall(function() screenGui:Destroy() end) end
 commands["unload"] = function() F.unloadScript() end
 
 commands["cmds"] = function()
-	addLog("--- v5.3 Commands ---", COLORS.accent)
+	addLog("--- v5.4 Commands ---", COLORS.accent)
 	addLog("== Combat ==", COLORS.textSecondary)
 	addLog(";aimbot ;triggerbot ;hitbox [sz] ;antifling ;antivoid", COLORS.textSecondary)
 	addLog(";killaura / un- versions to disable", COLORS.textSecondary)
@@ -5046,8 +5055,8 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ===================== STARTUP =====================
-addLog("Pebbleford Hub v5.3", COLORS.accent)
+addLog("Pebbleford Hub v5.4", COLORS.accent)
 addLog("50+ features loaded across 10 tabs", COLORS.success)
 addLog("Type ;cmds in chat for commands", COLORS.textSecondary)
 addLog("Press Right Shift to toggle window", COLORS.textSecondary)
-print("[Pebbleford Hub] v5.3 loaded")
+print("[Pebbleford Hub] v5.4 loaded")
