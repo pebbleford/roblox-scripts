@@ -488,7 +488,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 50, 1, 0)
 versionLabel.Position = UDim2.new(0, 168, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v5.2"
+versionLabel.Text = "v5.3"
 versionLabel.TextColor3 = COLORS.textDim
 versionLabel.Font = Enum.Font.Code
 versionLabel.TextSize = 11
@@ -2656,6 +2656,15 @@ local function loadAnim(hum, animId)
 	return track
 end
 
+-- Give an emote track top priority and keep it looping so the game's default
+-- Animate script (which constantly plays idle/walk) can't stamp over it - that
+-- override is why "most emotes don't work": they load, then get replaced a frame
+-- later by the walk animation.
+local function primeEmoteTrack(track, loop)
+	pcall(function() track.Looped = loop and true or false end)
+	pcall(function() track.Priority = Enum.AnimationPriority.Action4 end)
+end
+
 F.playEmote = function(animId, speed, duration)
 	F.stopEmote()
 	pcall(function()
@@ -2665,10 +2674,24 @@ F.playEmote = function(animId, speed, duration)
 		if not hum then return end
 		local track = loadAnim(hum, animId)
 		if not track then addLog("[EMOTE] Failed to load animation", COLORS.error) return end
-		track:Play()
+		-- Loop unless it's a short timed emote (keeps poses held).
+		primeEmoteTrack(track, true)
+		track:Play(0.1)
+		track.Priority = Enum.AnimationPriority.Action4
 		if speed then track:AdjustSpeed(speed) end
 		table.insert(funState.emoteTracks, track)
 		funState.emoteActive = true
+		-- Re-assert priority briefly in case the Animate script fights it on spawn.
+		task.spawn(function()
+			for _ = 1, 10 do
+				if not funState.emoteActive then break end
+				pcall(function()
+					if not track.IsPlaying then track:Play(0.1) end
+					track.Priority = Enum.AnimationPriority.Action4
+				end)
+				task.wait(0.1)
+			end
+		end)
 		if duration then
 			task.delay(duration, function()
 				if funState.emoteActive then F.stopEmote() end
@@ -2693,6 +2716,8 @@ F.playJerkEmote = function()
 			local track1 = loadAnim(hum, 4689362868)
 			local track2 = loadAnim(hum, 168086975)
 			if not (track1 and track2) then addLog("[EMOTE] Failed to load animation", COLORS.error) return end
+			primeEmoteTrack(track1, true)
+			primeEmoteTrack(track2, true)
 			track1:Play()
 			track2:Play()
 			track1:AdjustSpeed(2)
@@ -2718,6 +2743,7 @@ F.playJerkEmote = function()
 			-- R15 fallback: Bug Net swing looped at suggestive time range
 			local track = loadAnim(hum, 698251653)
 			if not track then addLog("[EMOTE] Failed to load animation", COLORS.error) return end
+			primeEmoteTrack(track, true)
 			track:Play()
 			track:AdjustSpeed(0.4)
 			table.insert(funState.emoteTracks, track)
@@ -2899,7 +2925,7 @@ do
 	local tab = tabFrames["Main"]
 
 	createSectionLabel(tab, "Welcome", 1)
-	createInfoLabel(tab, "Pebbleford Hub v5.2", 2)
+	createInfoLabel(tab, "Pebbleford Hub v5.3", 2)
 	createInfoLabel(tab, "Player: " .. LocalPlayer.DisplayName .. " (@" .. LocalPlayer.Name .. ")", 3)
 
 	local spacer = Instance.new("Frame")
@@ -3732,7 +3758,7 @@ do
 	themeOrder = themeOrder + 1
 	createSectionLabel(tab, "About", themeOrder)
 	themeOrder = themeOrder + 1
-	createInfoLabel(tab, "Pebbleford Hub v5.2", themeOrder)
+	createInfoLabel(tab, "Pebbleford Hub v5.3", themeOrder)
 	themeOrder = themeOrder + 1
 	createInfoLabel(tab, "50+ features | 10 tabs", themeOrder)
 	themeOrder = themeOrder + 1
@@ -3892,7 +3918,7 @@ commands["panic"] = function() pcall(function() screenGui:Destroy() end) end
 commands["unload"] = function() F.unloadScript() end
 
 commands["cmds"] = function()
-	addLog("--- v5.2 Commands ---", COLORS.accent)
+	addLog("--- v5.3 Commands ---", COLORS.accent)
 	addLog("== Combat ==", COLORS.textSecondary)
 	addLog(";aimbot ;triggerbot ;hitbox [sz] ;antifling ;antivoid", COLORS.textSecondary)
 	addLog(";killaura / un- versions to disable", COLORS.textSecondary)
@@ -5020,8 +5046,8 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ===================== STARTUP =====================
-addLog("Pebbleford Hub v5.2", COLORS.accent)
+addLog("Pebbleford Hub v5.3", COLORS.accent)
 addLog("50+ features loaded across 10 tabs", COLORS.success)
 addLog("Type ;cmds in chat for commands", COLORS.textSecondary)
 addLog("Press Right Shift to toggle window", COLORS.textSecondary)
-print("[Pebbleford Hub] v5.2 loaded")
+print("[Pebbleford Hub] v5.3 loaded")
