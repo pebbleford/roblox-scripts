@@ -17,7 +17,7 @@ if not keySystem or not keySystem.validate("slapbattles") then return end
 -- ================================================================
 -- Pebbleford Hub - Slap Battles Hub
 -- Dedicated hub for Slap Battles
--- v1.1
+-- v1.2
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -181,7 +181,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "SLAP BATTLES v1.1"
+titleLabel.Text = "SLAP BATTLES v1.2"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -1090,6 +1090,85 @@ F.tpToPos = function(pos)
 	return false
 end
 
+-- ----- GLOVE PORTALS -----
+-- Brazil and the other glove areas are not separate places - they are in-game
+-- portals you normally have to touch (fly up to the purple Brazil portal, etc.).
+-- So instead of a PlaceId jump we find the portal and FIRE its touch, which
+-- runs the game's own teleport. We detect portals by name and by ProximityPrompt.
+local PORTAL_NAMES = {
+	"portal", "brazil", "teleport", "warp", "null", "backrooms", "void",
+	"space", "forest", "obby", "secret", "gate", "badge", "realm", "glove",
+	"egg", "dimension", "cannon", "beam", "pad", "entrance", "door",
+}
+
+local function portalNameHit(name)
+	local nl = name:lower()
+	for _, kw in ipairs(PORTAL_NAMES) do if nl:find(kw, 1, true) then return kw end end
+	return nil
+end
+
+F.scanPortals = function()
+	local found, seen = {}, {}
+	local scanned = 0
+	pcall(function()
+		for _, obj in ipairs(workspace:GetDescendants()) do
+			scanned = scanned + 1
+			if scanned > 60000 then break end
+			-- A ProximityPrompt is almost always an interaction/teleport point.
+			if obj:IsA("ProximityPrompt") then
+				local host = obj.Parent
+				if host and not seen[obj] then
+					seen[obj] = true
+					local label = (obj.ActionText ~= "" and obj.ActionText) or host.Name
+					local pos
+					pcall(function()
+						if host:IsA("BasePart") then pos = host.Position
+						elseif host:IsA("Model") then local p = host.PrimaryPart or host:FindFirstChildWhichIsA("BasePart") if p then pos = p.Position end end
+					end)
+					table.insert(found, {name = "[Prompt] " .. label, prompt = obj, part = (host:IsA("BasePart") and host or nil), pos = pos})
+				end
+			-- A part whose name looks like a portal/teleporter.
+			elseif obj:IsA("BasePart") then
+				local hit = portalNameHit(obj.Name)
+				if hit and not seen[obj] then
+					seen[obj] = true
+					table.insert(found, {name = "[" .. hit .. "] " .. obj.Name, part = obj, pos = obj.Position})
+				end
+			end
+		end
+	end)
+	table.sort(found, function(a, b) return a.name < b.name end)
+	return found, scanned
+end
+
+-- Activate a portal entry: walk you onto it, fire its touch interest, and fire
+-- its ProximityPrompt - whichever the game actually uses then triggers.
+F.activatePortal = function(entry)
+	if not entry then return false end
+	local root = getRoot()
+	local ok = false
+	-- 1) teleport onto it so a natural Touched fires
+	if root and entry.pos then
+		pcall(function() root.CFrame = CFrame.new(entry.pos + Vector3.new(0, 3, 0)) root.AssemblyLinearVelocity = Vector3.zero end)
+		ok = true
+	end
+	-- 2) simulate the touch directly (works even without standing exactly right)
+	if root and entry.part and firetouchinterest then
+		pcall(function()
+			firetouchinterest(root, entry.part, 0)
+			task.wait(0.05)
+			firetouchinterest(root, entry.part, 1)
+		end)
+		ok = true
+	end
+	-- 3) fire the ProximityPrompt if there is one
+	if entry.prompt and fireproximityprompt then
+		pcall(function() fireproximityprompt(entry.prompt) end)
+		ok = true
+	end
+	return ok
+end
+
 -- ================================================================
 -- RESPAWN HOOK: re-apply active features after death
 -- ================================================================
@@ -1196,6 +1275,40 @@ do
 		else notify("Places", "Teleport failed (no character?)") end
 	end)
 	UI.info(tab, "Some areas (like Brazil) are normally reached with a glove - this drops you there directly. If one is empty, re-scan after you've been near it once.")
+
+	UI.spacer(tab)
+	UI.section(tab, "Glove Portals (Brazil etc.)")
+	UI.info(tab, "Brazil and the glove areas are in-game portals, not separate games. This finds portals and FIRES them so the game teleports you.")
+	local portals = {}
+	local pchosen = nil
+	local pdd
+	local pstatus = UI.dyn(tab, "Press SCAN PORTALS to find teleporters.")
+	local function plabels()
+		local n = {}
+		for _, pl in ipairs(portals) do table.insert(n, pl.name) end
+		if #n == 0 then n = {"(scan first)"} end
+		return n
+	end
+	UI.button(tab, "SCAN PORTALS", function()
+		local sc
+		portals, sc = F.scanPortals()
+		pchosen = nil
+		if pdd then pdd:SetValues(plabels()) end
+		pstatus.Text = (#portals > 0) and ("Found " .. #portals .. " portal(s)/prompt(s).") or "No portals found. Move near one and re-scan."
+		pstatus.TextColor3 = (#portals > 0) and COLORS.success or COLORS.textDim
+		print("[SX SLAP] Portal scan: " .. #portals .. " found (" .. tostring(sc) .. " objects)")
+		for _, pl in ipairs(portals) do print("  " .. pl.name) end
+		notify("Portals", #portals .. " found - full list in F9")
+	end)
+	pdd = UI.dropdown(tab, "Portal", plabels(), "Pick", function(choice)
+		for _, pl in ipairs(portals) do if pl.name == choice then pchosen = pl break end end
+	end)
+	UI.button(tab, "ACTIVATE PORTAL", function()
+		if not pchosen then notify("Portals", "Scan and pick a portal first") return end
+		if F.activatePortal(pchosen) then notify("Portals", "Activated: " .. pchosen.name)
+		else notify("Portals", "Could not activate (executor may lack firetouchinterest)") end
+	end)
+	UI.info(tab, "If nothing happens, the portal may need a specific glove equipped first, or your executor lacks firetouchinterest. Check F9 for the full portal list.")
 end
 
 -- ===== PLAYER =====
@@ -1260,10 +1373,10 @@ do
 	task.spawn(function()
 		while task.wait(3) do pcall(function() plLabel.Text = "Players: " .. #Players:GetPlayers() end) end
 	end)
-	UI.info(tab, "Right Shift toggles the menu. v1.1")
+	UI.info(tab, "Right Shift toggles the menu. v1.2")
 end
 
-notify("Slap Battles v1.1", "Loaded! Right Shift to toggle")
-print("[SX SLAP v1.1] Pebbleford Hub - Slap Battles Hub")
-print("[SX SLAP v1.1] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
-print("[SX SLAP v1.1] Reach + Auto Slap + Slap Aura + Place TP + Anti-Void")
+notify("Slap Battles v1.2", "Loaded! Right Shift to toggle")
+print("[SX SLAP v1.2] Pebbleford Hub - Slap Battles Hub")
+print("[SX SLAP v1.2] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
+print("[SX SLAP v1.2] Reach + Auto Slap + Slap Aura + Place TP + Anti-Void")
