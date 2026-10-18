@@ -17,7 +17,7 @@ if not keySystem or not keySystem.validate("slapbattles") then return end
 -- ================================================================
 -- Pebbleford Hub - Slap Battles Hub
 -- Dedicated hub for Slap Battles
--- v2.9
+-- v3.0
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -47,7 +47,7 @@ local S = {
 	reachEnabled = false, autoSlapEnabled = false, slapAuraEnabled = false,
 	reachSize = 18, slapAuraRange = 60, autoSlapDelay = 0.1,
 	smartFarmEnabled = false, farmRange = 300, slapsPerTarget = 3,
-	farmReturnSafe = true, farmUseReach = true,
+	farmReturnSafe = true, farmUseReach = true, farmPreferSafe = true, farmJump = true,
 	autoBestGlove = false, autoArenaEnabled = false,
 	-- movement
 	speedEnabled = false, flyEnabled = false, noclipEnabled = false, infJumpEnabled = false,
@@ -61,7 +61,7 @@ local S = {
 local C = {
 	reachConn = nil, reachOrigSize = nil, reachPart = nil,
 	autoSlapThread = nil, slapAuraThread = nil,
-	smartFarmThread = nil, farmHome = nil,
+	smartFarmThread = nil, farmHome = nil, farmLastPos = nil,
 	flyConn = nil, flyBV = nil, flyBG = nil, flyUpBtn = nil, flyDownBtn = nil,
 	noclipConn = nil, infJumpConn = nil, speedConn = nil,
 	antiVoidConn = nil, antiVoidSafe = nil, antiFlingConn = nil,
@@ -185,7 +185,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "SLAP BATTLES v2.9"
+titleLabel.Text = "SLAP BATTLES v3.0"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -799,18 +799,50 @@ local function farmTargets(root)
 	return list
 end
 
+-- Read a target's equipped glove (best effort) and rate how dangerous it is to
+-- approach. Gloves aren't Tools, so we check attributes and string values on the
+-- character, then any descendant named like a known glove.
+local DANGER_GLOVES = {
+	"killstreak", "diddy", "bob", "rocket", "ghost", "spring", "error",
+	"reverse", "custom", "orbit", "blackhole", "magma", "boxer",
+}
+
+local function getPlayerGlove(p)
+	local ch = p.Character
+	if not ch then return nil end
+	local a = ch:GetAttribute("Glove") or ch:GetAttribute("EquippedGlove") or ch:GetAttribute("CurrentGlove")
+	if a then return tostring(a) end
+	for _, d in ipairs(ch:GetChildren()) do
+		if d:IsA("StringValue") and d.Name:lower():find("glove", 1, true) then return d.Value end
+		if d:IsA("Tool") then return d.Name end
+	end
+	return nil
+end
+
+local function gloveDanger(name)
+	if not name then return 0 end
+	name = name:lower()
+	for _, g in ipairs(DANGER_GLOVES) do if name:find(g, 1, true) then return 1 end end
+	return 0
+end
+
 F.startSmartFarm = function()
 	S.smartFarmEnabled = true
-	-- reach lets the slap connect from a bit further so you don't have to body
-	-- them, which also looks more natural than standing on top of people
 	if S.farmUseReach and not S.reachEnabled then S.reachEnabled = true F.startReach() C._farmStartedReach = true end
+	C.farmLastPos = nil
 
 	C.smartFarmThread = _spawn(function()
 		while S.smartFarmEnabled do
-			local root, hum = getRoot(), getHum()
-			if root and hum and hum.Health > 0 then
-				-- nearest alive, non-spawn-protected target
-				local best, bestD, bestR
+			-- Whole body is pcall'd so a transient error (dead character, a nil
+			-- part mid-respawn, etc.) can't kill the thread and silently stop the
+			-- farm - that was the "auto turns off" bug.
+			pcall(function()
+				local root, hum = getRoot(), getHum()
+				if not (root and hum and hum.Health > 0) then return end
+
+				-- Build candidate list with each target's glove + danger, so we can
+				-- prefer safe kills and be wary of gloves that can kill us.
+				local cands = {}
 				for _, p in ipairs(Players:GetPlayers()) do
 					if p ~= LocalPlayer and isAlive(p) then
 						local ch = p.Character
@@ -818,28 +850,59 @@ F.startSmartFarm = function()
 						local ff = ch and ch:FindFirstChildWhichIsA("ForceField")
 						if r and not ff then
 							local d = (r.Position - root.Position).Magnitude
-							if d <= S.farmRange and (not bestD or d < bestD) then best, bestD, bestR = p, d, r end
+							if d <= S.farmRange then
+								local g = getPlayerGlove(p)
+								table.insert(cands, {p = p, r = r, d = d, danger = gloveDanger(g)})
+							end
 						end
 					end
 				end
-				if bestR then
-					-- WALK toward the target like a real player (MoveTo also turns
-					-- you to face them). No teleporting, so nothing to flag.
-					pcall(function() hum:MoveTo(bestR.Position) end)
-					local slapRange = (S.reachEnabled and S.reachSize or 7) + 5
-					if bestD <= slapRange then
-						for _ = 1, math.max(1, S.slapsPerTarget) do
-							if not S.smartFarmEnabled or not isAlive(best) then break end
-							doSlap()
-							task.wait(0.12)
-						end
+				if #cands == 0 then C.farmLastPos = root.Position return end
+
+				-- Prefer safe (low-danger) targets, then nearest.
+				table.sort(cands, function(a, b)
+					if S.farmPreferSafe and a.danger ~= b.danger then return a.danger < b.danger end
+					return a.d < b.d
+				end)
+				local t = cands[1]
+				local bestR, bestD = t.r, t.d
+
+				-- Against a dangerous glove, hang back at reach distance and poke;
+				-- against safe ones, close in normally.
+				local reach = (S.reachEnabled and S.reachSize or 7)
+				local slapRange = reach + 5
+				local approach = bestR.Position
+				if t.danger > 0 then
+					-- stop ~reach studs short so we don't walk into their hitbox
+					local dir = (bestR.Position - root.Position)
+					if dir.Magnitude > 0 then
+						approach = bestR.Position - dir.Unit * (reach - 1)
 					end
 				end
-			end
+
+				pcall(function() hum:MoveTo(approach) end)
+
+				-- Anti-stuck: if we barely moved but aren't in range yet, jump to
+				-- clear a corner / ledge / another player in the way.
+				if S.farmJump and bestD > slapRange and C.farmLastPos then
+					if (root.Position - C.farmLastPos).Magnitude < 1.5 then
+						pcall(function() hum.Jump = true end)
+					end
+				end
+				C.farmLastPos = root.Position
+
+				if bestD <= slapRange then
+					for _ = 1, math.max(1, S.slapsPerTarget) do
+						if not S.smartFarmEnabled or not isAlive(t.p) then break end
+						doSlap()
+						task.wait(0.12)
+					end
+				end
+			end)
 			task.wait(0.15)
 		end
 	end)
-	notify("Smart Farm", "Walking to targets and slapping (no teleport)")
+	notify("Smart Farm", "Walking + jumping to targets, picking safe kills")
 end
 
 F.stopSmartFarm = function()
@@ -1535,6 +1598,8 @@ do
 	UI.slider(tab, "Farm Range (studs)", 50, 500, S.farmRange, function(v) S.farmRange = v end)
 	UI.slider(tab, "Slaps Per Target", 1, 8, S.slapsPerTarget, function(v) S.slapsPerTarget = v end)
 	UI.toggle(tab, "Auto Reach While Farming", function(on) S.farmUseReach = on end).setVisualState(S.farmUseReach)
+	UI.toggle(tab, "Jump Over Obstacles When Stuck", function(on) S.farmJump = on end).setVisualState(S.farmJump)
+	UI.toggle(tab, "Prefer Safe Targets (dodge deadly gloves)", function(on) S.farmPreferSafe = on end).setVisualState(S.farmPreferSafe)
 	UI.toggle(tab, "Rejoin Regular Arena On Death", function(on) S.autoArenaEnabled = on end)
 	UI.toggle(tab, "Auto Best Glove", function(on)
 		S.autoBestGlove = on
@@ -1728,10 +1793,10 @@ do
 	task.spawn(function()
 		while task.wait(3) do pcall(function() plLabel.Text = "Players: " .. #Players:GetPlayers() end) end
 	end)
-	UI.info(tab, "Right Shift toggles the menu. v2.9")
+	UI.info(tab, "Right Shift toggles the menu. v3.0")
 end
 
-notify("Slap Battles v2.9", "Loaded! Right Shift to toggle")
-print("[SX SLAP v2.9] Pebbleford Hub - Slap Battles Hub")
-print("[SX SLAP v2.9] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
-print("[SX SLAP v2.9] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
+notify("Slap Battles v3.0", "Loaded! Right Shift to toggle")
+print("[SX SLAP v3.0] Pebbleford Hub - Slap Battles Hub")
+print("[SX SLAP v3.0] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
+print("[SX SLAP v3.0] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
