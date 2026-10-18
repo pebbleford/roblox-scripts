@@ -17,7 +17,7 @@ if not keySystem or not keySystem.validate("slapbattles") then return end
 -- ================================================================
 -- Pebbleford Hub - Slap Battles Hub
 -- Dedicated hub for Slap Battles
--- v1.0
+-- v1.1
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -144,7 +144,7 @@ do
 local _uiOrd = 0
 local function _nextOrd() _uiOrd = _uiOrd + 1 return _uiOrd end
 
-local tabNames = {"Combat", "Movement", "Player", "Visuals", "Misc"}
+local tabNames = {"Combat", "Movement", "Places", "Player", "Visuals", "Misc"}
 uiState = uiState or {activeTab = tabNames[1]}
 
 local _TUIS = UserInputService
@@ -181,7 +181,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "SLAP BATTLES v1.0"
+titleLabel.Text = "SLAP BATTLES v1.1"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -1020,6 +1020,76 @@ F.resetChar = function()
 	if h then h.Health = 0 notify("Reset", "Respawning") end
 end
 
+-- ----- PLACE TELEPORTER -----
+-- Slap Battles' areas are locations in the same server (arena, Brazil,
+-- Backrooms, the void/secret spots, glove-unlock pads, etc). We find them by
+-- scanning the workspace for named Models/Parts and all SpawnLocations, then
+-- teleport by CFrame. Works regardless of map version since it searches names.
+local PLACE_NAMES = {
+	"Brazil", "Backrooms", "Lobby", "Arena", "Void", "Island", "Shop",
+	"Statue", "Recall", "Secret", "Minigame", "Space", "Moon", "Hell",
+	"Heaven", "Office", "Pot", "Cannon", "Portal", "Teleport", "Pad",
+	"Area", "Stage", "Ring", "Badge", "Obby", "Tower", "Cave", "Beach",
+	"Desert", "Snow", "Sky", "Gym", "Boss", "Diddy", "Gojo", "Error",
+	"Platform", "Bridge", "House", "Room", "Zone", "Spawn", "Map",
+}
+
+local function placePos(obj)
+	if obj:IsA("Model") then
+		local pp = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+		if pp then return pp.Position + Vector3.new(0, 4, 0) end
+	elseif obj:IsA("BasePart") then
+		return obj.Position + Vector3.new(0, 4, 0)
+	end
+	return nil
+end
+
+F.scanPlaces = function()
+	local found, seen = {}, {}
+	local function add(obj, label)
+		if seen[obj] then return end
+		local pos = placePos(obj)
+		if pos then seen[obj] = true table.insert(found, {name = label or obj.Name, pos = pos}) end
+	end
+	local function matches(name)
+		local nl = name:lower()
+		for _, kw in ipairs(PLACE_NAMES) do if nl:find(kw:lower(), 1, true) then return true end end
+		return false
+	end
+	-- Named Models/Parts, top 2 levels (fast, avoids a full-tree walk).
+	for _, obj in ipairs(workspace:GetChildren()) do
+		if matches(obj.Name) then add(obj) end
+		if obj:IsA("Model") or obj:IsA("Folder") then
+			pcall(function()
+				for _, ch in ipairs(obj:GetChildren()) do
+					if matches(ch.Name) then add(ch, ch.Name) end
+				end
+			end)
+		end
+	end
+	-- Every SpawnLocation is a reachable spot too.
+	pcall(function()
+		for _, obj in ipairs(workspace:GetDescendants()) do
+			if obj:IsA("SpawnLocation") and not seen[obj] then
+				seen[obj] = true
+				table.insert(found, {name = "Spawn: " .. obj.Name, pos = obj.Position + Vector3.new(0, 4, 0)})
+			end
+		end
+	end)
+	table.sort(found, function(a, b) return a.name < b.name end)
+	return found
+end
+
+F.tpToPos = function(pos)
+	local root = getRoot()
+	if root and pos then
+		root.CFrame = CFrame.new(pos)
+		root.AssemblyLinearVelocity = Vector3.zero
+		return true
+	end
+	return false
+end
+
 -- ================================================================
 -- RESPAWN HOOK: re-apply active features after death
 -- ================================================================
@@ -1089,9 +1159,46 @@ do
 	UI.info(tab, "Anti-Void TPs you back when slapped off. Anti-Fling clamps the launch.")
 end
 
--- ===== PLAYER =====
+-- ===== PLACES =====
 do
-	local tab = tabFrames["Player"]
+	local tab = tabFrames["Places"]
+	UI.section(tab, "Place Teleporter")
+	UI.info(tab, "Scan finds reachable areas in the server (arena, Brazil, Backrooms, pads, spawns...).")
+	local places = {}
+	local chosen = nil
+	local dd
+	local status = UI.dyn(tab, "Press SCAN to find places.")
+	local function labels()
+		local n = {}
+		for _, pl in ipairs(places) do table.insert(n, pl.name) end
+		if #n == 0 then n = {"(scan first)"} end
+		return n
+	end
+	UI.button(tab, "SCAN PLACES", function()
+		places = F.scanPlaces()
+		chosen = nil
+		if dd then dd:SetValues(labels()) end
+		if #places == 0 then
+			status.Text = "No named places found. Try moving to a new area and scan again."
+			status.TextColor3 = COLORS.textDim
+		else
+			status.Text = "Found " .. #places .. " place(s). Pick one, then Teleport."
+			status.TextColor3 = COLORS.success
+		end
+		notify("Places", #places .. " found")
+	end)
+	dd = UI.dropdown(tab, "Place", labels(), "Pick", function(choice)
+		for _, pl in ipairs(places) do if pl.name == choice then chosen = pl break end end
+	end)
+	UI.button(tab, "TELEPORT TO PLACE", function()
+		if not chosen then notify("Places", "Scan and pick a place first") return end
+		if F.tpToPos(chosen.pos) then notify("Places", "Teleported to " .. chosen.name)
+		else notify("Places", "Teleport failed (no character?)") end
+	end)
+	UI.info(tab, "Some areas (like Brazil) are normally reached with a glove - this drops you there directly. If one is empty, re-scan after you've been near it once.")
+end
+
+
 	UI.section(tab, "Target Player")
 	local players = {}
 	local function names()
@@ -1151,10 +1258,10 @@ do
 	task.spawn(function()
 		while task.wait(3) do pcall(function() plLabel.Text = "Players: " .. #Players:GetPlayers() end) end
 	end)
-	UI.info(tab, "Right Shift toggles the menu. v1.0")
+	UI.info(tab, "Right Shift toggles the menu. v1.1")
 end
 
-notify("Slap Battles v1.0", "Loaded! Right Shift to toggle")
-print("[SX SLAP v1.0] Pebbleford Hub - Slap Battles Hub")
-print("[SX SLAP v1.0] Tabs: Combat | Movement | Player | Visuals | Misc")
-print("[SX SLAP v1.0] Reach + Auto Slap + Slap Aura + Anti-Void")
+notify("Slap Battles v1.1", "Loaded! Right Shift to toggle")
+print("[SX SLAP v1.1] Pebbleford Hub - Slap Battles Hub")
+print("[SX SLAP v1.1] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
+print("[SX SLAP v1.1] Reach + Auto Slap + Slap Aura + Place TP + Anti-Void")
