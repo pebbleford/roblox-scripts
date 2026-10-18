@@ -17,7 +17,7 @@ if not keySystem or not keySystem.validate("slapbattles") then return end
 -- ================================================================
 -- Pebbleford Hub - Slap Battles Hub
 -- Dedicated hub for Slap Battles
--- v3.2
+-- v3.3
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -187,7 +187,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "SLAP BATTLES v3.2"
+titleLabel.Text = "SLAP BATTLES v3.3"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -863,7 +863,10 @@ F.startSmartFarm = function()
 						local ff = ch and ch:FindFirstChildWhichIsA("ForceField")
 						if r and not ff then
 							local d = (r.Position - root.Position).Magnitude
-							if d <= S.farmRange then
+							-- skip players on elevated platforms/ledges we'd have to
+							-- climb to - only chase ones roughly at our height
+							local higher = r.Position.Y - root.Position.Y
+							if d <= S.farmRange and higher <= 14 then
 								local g = getPlayerGlove(p)
 								if not gloveIgnored(g) then
 									table.insert(cands, {p = p, r = r, d = d, danger = gloveDanger(g)})
@@ -942,6 +945,30 @@ local function pressAbility()
 	end)
 end
 
+-- Picks a flee direction that leads AWAY from the threat but still has solid
+-- ground ahead (toward another platform), so you don't sprint off the edge.
+-- Tries the straight-away direction first, then fans out to the sides.
+local function safeFleeDir(root, threatPos)
+	local away = root.Position - threatPos
+	away = (away.Magnitude > 0) and Vector3.new(away.X, 0, away.Z).Unit or root.CFrame.LookVector
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local chars = {}
+	for _, p in ipairs(Players:GetPlayers()) do if p.Character then table.insert(chars, p.Character) end end
+	params.FilterDescendantsInstances = chars
+	-- test the away dir, then +/- up to 150 degrees, preferring the straightest
+	local offsets = { 0, 25, -25, 50, -50, 75, -75, 110, -110, 150, -150 }
+	for _, deg in ipairs(offsets) do
+		local d = (CFrame.Angles(0, math.rad(deg), 0) * CFrame.new(away)).Position
+		d = Vector3.new(d.X, 0, d.Z).Unit
+		-- is there ground a short run ahead in this direction?
+		local ahead = root.Position + d * 16 + Vector3.new(0, 3, 0)
+		local hit = workspace:Raycast(ahead, Vector3.new(0, -14, 0), params)
+		if hit then return d end
+	end
+	return nil -- boxed in by void on every side
+end
+
 -- Flees from any enemy who closes in on you fast (a rusher going for a kill -
 -- which is what a one-shot glove user does). Glove-agnostic because the game
 -- doesn't expose other players' equipped gloves to read. Optionally fires your
@@ -971,9 +998,14 @@ F.startSelfDefense = function()
 					if closing then
 						C.fleeing = true
 						if S.useAbility then pressAbility() end
-						local dir = root.Position - bestR.Position
-						dir = (dir.Magnitude > 0) and Vector3.new(dir.X, 0, dir.Z).Unit or root.CFrame.LookVector
-						pcall(function() hum:MoveTo(root.Position + dir * 60) hum.Jump = true end)
+						-- flee toward solid ground, not off the edge
+						local dir = safeFleeDir(root, bestR.Position)
+						if dir then
+							pcall(function() hum:MoveTo(root.Position + dir * 60) hum.Jump = true end)
+						else
+							-- no safe exit: hold position and keep using ability
+							pcall(function() hum:MoveTo(root.Position) end)
+						end
 					else
 						C.fleeing = false
 					end
@@ -1893,10 +1925,10 @@ do
 	task.spawn(function()
 		while task.wait(3) do pcall(function() plLabel.Text = "Players: " .. #Players:GetPlayers() end) end
 	end)
-	UI.info(tab, "Right Shift toggles the menu. v3.2")
+	UI.info(tab, "Right Shift toggles the menu. v3.3")
 end
 
-notify("Slap Battles v3.2", "Loaded! Right Shift to toggle")
-print("[SX SLAP v3.2] Pebbleford Hub - Slap Battles Hub")
-print("[SX SLAP v3.2] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
-print("[SX SLAP v3.2] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
+notify("Slap Battles v3.3", "Loaded! Right Shift to toggle")
+print("[SX SLAP v3.3] Pebbleford Hub - Slap Battles Hub")
+print("[SX SLAP v3.3] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
+print("[SX SLAP v3.3] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
