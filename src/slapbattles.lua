@@ -17,7 +17,7 @@ if not keySystem or not keySystem.validate("slapbattles") then return end
 -- ================================================================
 -- Pebbleford Hub - Slap Battles Hub
 -- Dedicated hub for Slap Battles
--- v1.2
+-- v1.3
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -181,7 +181,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "SLAP BATTLES v1.2"
+titleLabel.Text = "SLAP BATTLES v1.3"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -1092,14 +1092,11 @@ end
 
 -- ----- GLOVE PORTALS -----
 -- Brazil and the other glove areas are not separate places - they are in-game
--- portals you normally have to touch (fly up to the purple Brazil portal, etc.).
--- So instead of a PlaceId jump we find the portal and FIRE its touch, which
--- runs the game's own teleport. We detect portals by name and by ProximityPrompt.
-local PORTAL_NAMES = {
-	"portal", "brazil", "teleport", "warp", "null", "backrooms", "void",
-	"space", "forest", "obby", "secret", "gate", "badge", "realm", "glove",
-	"egg", "dimension", "cannon", "beam", "pad", "entrance", "door",
-}
+-- portals you normally have to touch. We find them STRICTLY (strong portal
+-- names only, plus children of any Portals/Teleporters folder) so the list
+-- stays short, and ACTIVATE fires the portal so the game teleports you.
+local PORTAL_NAMES = { "portal", "brazil", "teleport", "warp", "dimension", "realm" }
+local PORTAL_CONTAINERS = { "portal", "teleport", "warp" }
 
 local function portalNameHit(name)
 	local nl = name:lower()
@@ -1107,38 +1104,78 @@ local function portalNameHit(name)
 	return nil
 end
 
+local function partPos(obj)
+	if obj:IsA("BasePart") then return obj.Position end
+	if obj:IsA("Model") then local p = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart") if p then return p.Position end end
+	return nil
+end
+
 F.scanPortals = function()
 	local found, seen = {}, {}
+	local function add(obj, label)
+		if seen[obj] or not (obj:IsA("BasePart") or obj:IsA("Model")) then return end
+		local pos = partPos(obj)
+		if not pos then return end
+		seen[obj] = true
+		table.insert(found, {name = label, part = (obj:IsA("BasePart") and obj or nil), pos = pos})
+	end
 	local scanned = 0
 	pcall(function()
 		for _, obj in ipairs(workspace:GetDescendants()) do
 			scanned = scanned + 1
 			if scanned > 60000 then break end
-			-- A ProximityPrompt is almost always an interaction/teleport point.
-			if obj:IsA("ProximityPrompt") then
-				local host = obj.Parent
-				if host and not seen[obj] then
-					seen[obj] = true
-					local label = (obj.ActionText ~= "" and obj.ActionText) or host.Name
-					local pos
+			-- 1) strong portal-named parts/models
+			local hit = portalNameHit(obj.Name)
+			if hit then add(obj, "[" .. hit .. "] " .. obj.Name) end
+			-- 2) children of a Portals/Teleporters folder/model
+			if obj:IsA("Folder") or obj:IsA("Model") then
+				local cl = obj.Name:lower()
+				local isContainer = false
+				for _, kw in ipairs(PORTAL_CONTAINERS) do if cl:find(kw, 1, true) then isContainer = true break end end
+				if isContainer then
 					pcall(function()
-						if host:IsA("BasePart") then pos = host.Position
-						elseif host:IsA("Model") then local p = host.PrimaryPart or host:FindFirstChildWhichIsA("BasePart") if p then pos = p.Position end end
+						for _, ch in ipairs(obj:GetChildren()) do add(ch, obj.Name .. "/" .. ch.Name) end
 					end)
-					table.insert(found, {name = "[Prompt] " .. label, prompt = obj, part = (host:IsA("BasePart") and host or nil), pos = pos})
-				end
-			-- A part whose name looks like a portal/teleporter.
-			elseif obj:IsA("BasePart") then
-				local hit = portalNameHit(obj.Name)
-				if hit and not seen[obj] then
-					seen[obj] = true
-					table.insert(found, {name = "[" .. hit .. "] " .. obj.Name, part = obj, pos = obj.Position})
 				end
 			end
 		end
 	end)
 	table.sort(found, function(a, b) return a.name < b.name end)
 	return found, scanned
+end
+
+-- Focused dump: prints likely teleporters (named parts, portal folders) and
+-- portal/teleport-named Remotes to F9, with full paths, so the exact objects
+-- can be identified and wired to named buttons.
+F.dumpPortals = function()
+	print("========== SLAP BATTLES PORTAL DUMP ==========")
+	local n = 0
+	pcall(function()
+		for _, obj in ipairs(workspace:GetDescendants()) do
+			local nl = obj.Name:lower()
+			if (obj:IsA("BasePart") or obj:IsA("Model") or obj:IsA("Folder"))
+				and (nl:find("portal",1,true) or nl:find("brazil",1,true) or nl:find("teleport",1,true)
+					or nl:find("warp",1,true) or nl:find("dimension",1,true) or nl:find("realm",1,true)) then
+				n = n + 1
+				print(obj.ClassName .. " | " .. obj:GetFullName())
+			end
+		end
+	end)
+	print("---------- remotes (teleport/portal/brazil) ----------")
+	pcall(function()
+		for _, svc in ipairs({ game:GetService("ReplicatedStorage"), workspace }) do
+			for _, obj in ipairs(svc:GetDescendants()) do
+				if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+					local nl = obj.Name:lower()
+					if nl:find("teleport",1,true) or nl:find("portal",1,true) or nl:find("brazil",1,true) or nl:find("warp",1,true) then
+						print(obj.ClassName .. " | " .. obj:GetFullName())
+					end
+				end
+			end
+		end
+	end)
+	print("========== END DUMP (" .. n .. " named objects) ==========")
+	notify("Portal Dump", "Printed to F9 - paste it to pin exact portals")
 end
 
 -- Activate a portal entry: walk you onto it, fire its touch interest, and fire
@@ -1308,7 +1345,8 @@ do
 		if F.activatePortal(pchosen) then notify("Portals", "Activated: " .. pchosen.name)
 		else notify("Portals", "Could not activate (executor may lack firetouchinterest)") end
 	end)
-	UI.info(tab, "If nothing happens, the portal may need a specific glove equipped first, or your executor lacks firetouchinterest. Check F9 for the full portal list.")
+	UI.button(tab, "DUMP PORTALS (F9)", function() F.dumpPortals() end)
+	UI.info(tab, "If the list is empty or wrong, press DUMP and send me the F9 output - I'll wire exact one-click buttons (Go To Brazil, etc.).")
 end
 
 -- ===== PLAYER =====
@@ -1373,10 +1411,10 @@ do
 	task.spawn(function()
 		while task.wait(3) do pcall(function() plLabel.Text = "Players: " .. #Players:GetPlayers() end) end
 	end)
-	UI.info(tab, "Right Shift toggles the menu. v1.2")
+	UI.info(tab, "Right Shift toggles the menu. v1.3")
 end
 
-notify("Slap Battles v1.2", "Loaded! Right Shift to toggle")
-print("[SX SLAP v1.2] Pebbleford Hub - Slap Battles Hub")
-print("[SX SLAP v1.2] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
-print("[SX SLAP v1.2] Reach + Auto Slap + Slap Aura + Place TP + Anti-Void")
+notify("Slap Battles v1.3", "Loaded! Right Shift to toggle")
+print("[SX SLAP v1.3] Pebbleford Hub - Slap Battles Hub")
+print("[SX SLAP v1.3] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
+print("[SX SLAP v1.3] Reach + Auto Slap + Slap Aura + Place TP + Anti-Void")
