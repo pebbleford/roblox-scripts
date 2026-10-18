@@ -17,7 +17,7 @@ if not keySystem or not keySystem.validate("slapbattles") then return end
 -- ================================================================
 -- Pebbleford Hub - Slap Battles Hub
 -- Dedicated hub for Slap Battles
--- v3.7
+-- v3.8
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -187,7 +187,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "SLAP BATTLES v3.7"
+titleLabel.Text = "SLAP BATTLES v3.8"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -849,6 +849,19 @@ local function inArena()
 	return true -- unknown: assume arena so farming still works
 end
 
+-- Is there solid ground a few studs ahead in this direction? Stops the farm
+-- from walking straight off an edge toward a target across a gap.
+local function groundAhead(root, dir, dist)
+	if dir.Magnitude == 0 then return true end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local chars = {}
+	for _, p in ipairs(Players:GetPlayers()) do if p.Character then table.insert(chars, p.Character) end end
+	params.FilterDescendantsInstances = chars
+	local ahead = root.Position + dir.Unit * (dist or 6) + Vector3.new(0, 2, 0)
+	return workspace:Raycast(ahead, Vector3.new(0, -16, 0), params) ~= nil
+end
+
 F.startSmartFarm = function()
 	S.smartFarmEnabled = true
 	if S.farmUseReach and not S.reachEnabled then S.reachEnabled = true F.startReach() C._farmStartedReach = true end
@@ -910,9 +923,16 @@ F.startSmartFarm = function()
 						local dir = bestR.Position - root.Position
 						if dir.Magnitude > 0 then approach = bestR.Position - dir.Unit * (reach - 1) end
 					end
-					pcall(function() hum:MoveTo(approach) end)
-					if S.farmJump and C.farmLastPos and (root.Position - C.farmLastPos).Magnitude < 1.5 then
-						pcall(function() hum.Jump = true end)
+					-- Edge guard: only walk if there's ground ahead; otherwise the
+					-- target is across a gap - stop instead of strolling off the map.
+					local moveDir = Vector3.new(approach.X - root.Position.X, 0, approach.Z - root.Position.Z)
+					if groundAhead(root, moveDir, 6) then
+						pcall(function() hum:MoveTo(approach) end)
+						if S.farmJump and C.farmLastPos and (root.Position - C.farmLastPos).Magnitude < 1.5 then
+							pcall(function() hum.Jump = true end)
+						end
+					else
+						pcall(function() hum:MoveTo(root.Position) end) -- stop at the edge
 					end
 					C.farmLastPos = root.Position
 				else
@@ -1943,10 +1963,10 @@ do
 	task.spawn(function()
 		while task.wait(3) do pcall(function() plLabel.Text = "Players: " .. #Players:GetPlayers() end) end
 	end)
-	UI.info(tab, "Right Shift toggles the menu. v3.7")
+	UI.info(tab, "Right Shift toggles the menu. v3.8")
 end
 
-notify("Slap Battles v3.7", "Loaded! Right Shift to toggle")
-print("[SX SLAP v3.7] Pebbleford Hub - Slap Battles Hub")
-print("[SX SLAP v3.7] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
-print("[SX SLAP v3.7] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
+notify("Slap Battles v3.8", "Loaded! Right Shift to toggle")
+print("[SX SLAP v3.8] Pebbleford Hub - Slap Battles Hub")
+print("[SX SLAP v3.8] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
+print("[SX SLAP v3.8] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
