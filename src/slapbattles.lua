@@ -17,7 +17,7 @@ if not keySystem or not keySystem.validate("slapbattles") then return end
 -- ================================================================
 -- Pebbleford Hub - Slap Battles Hub
 -- Dedicated hub for Slap Battles
--- v2.6
+-- v2.7
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -46,6 +46,8 @@ local S = {
 	-- combat
 	reachEnabled = false, autoSlapEnabled = false, slapAuraEnabled = false,
 	reachSize = 18, slapAuraRange = 60, autoSlapDelay = 0.1,
+	smartFarmEnabled = false, farmRange = 300, slapsPerTarget = 3,
+	farmReturnSafe = true, farmUseReach = true,
 	-- movement
 	speedEnabled = false, flyEnabled = false, noclipEnabled = false, infJumpEnabled = false,
 	antiVoidEnabled = false, antiFlingEnabled = false,
@@ -58,6 +60,7 @@ local S = {
 local C = {
 	reachConn = nil, reachOrigSize = nil, reachPart = nil,
 	autoSlapThread = nil, slapAuraThread = nil,
+	smartFarmThread = nil, farmHome = nil,
 	flyConn = nil, flyBV = nil, flyBG = nil, flyUpBtn = nil, flyDownBtn = nil,
 	noclipConn = nil, infJumpConn = nil, speedConn = nil,
 	antiVoidConn = nil, antiVoidSafe = nil, antiFlingConn = nil,
@@ -181,7 +184,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "SLAP BATTLES v2.6"
+titleLabel.Text = "SLAP BATTLES v2.7"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -726,6 +729,113 @@ F.slapTarget = function()
 		if tool then tool:Activate() end
 	end)
 	notify("Slap", "Slapped " .. target.DisplayName)
+end
+
+-- ----- SMART AUTO FARM -----
+-- You earn Slaps by knocking players OFF the map, so a smart farm doesn't just
+-- spam in place: for each target it raycasts around them to find which way the
+-- void is, positions itself on the inner side, faces the void, and slaps so the
+-- knockback sends them off. Between passes it returns to a safe home spot so it
+-- doesn't fall, and it skips spawn-protected (ForceField) players.
+local VOID_DIRS = {
+	Vector3.new(1,0,0), Vector3.new(-1,0,0), Vector3.new(0,0,1), Vector3.new(0,0,-1),
+	Vector3.new(1,0,1).Unit, Vector3.new(1,0,-1).Unit, Vector3.new(-1,0,1).Unit, Vector3.new(-1,0,-1).Unit,
+}
+
+local function findVoidDir(T)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local chars = {}
+	for _, p in ipairs(Players:GetPlayers()) do if p.Character then table.insert(chars, p.Character) end end
+	params.FilterDescendantsInstances = chars
+	-- Prefer the direction with the deepest drop (most likely the real edge).
+	local bestDir, bestDrop
+	for _, d in ipairs(VOID_DIRS) do
+		local probe = T + d * 14 + Vector3.new(0, 3, 0)
+		local hit = workspace:Raycast(probe, Vector3.new(0, -120, 0), params)
+		local drop = hit and (probe.Y - hit.Position.Y) or 999
+		if not bestDrop or drop > bestDrop then bestDrop, bestDir = drop, d end
+	end
+	-- Only treat it as an edge if the deepest side actually drops a long way.
+	if bestDrop and bestDrop > 25 then return bestDir end
+	return nil
+end
+
+local function farmTargets(root)
+	local list = {}
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= LocalPlayer and isAlive(p) then
+			local ch = p.Character
+			local r = ch and ch:FindFirstChild("HumanoidRootPart")
+			local ff = ch and ch:FindFirstChildWhichIsA("ForceField")
+			if r and not ff then
+				local d = (r.Position - root.Position).Magnitude
+				if d <= S.farmRange then table.insert(list, {p = p, r = r, d = d}) end
+			end
+		end
+	end
+	table.sort(list, function(a, b) return a.d < b.d end)
+	return list
+end
+
+F.startSmartFarm = function()
+	S.smartFarmEnabled = true
+	-- remember where we started as the safe home to return to
+	local sr = getRoot()
+	C.farmHome = sr and sr.Position or nil
+	-- reach makes the slap connect reliably at the attack distance
+	if S.farmUseReach and not S.reachEnabled then S.reachEnabled = true F.startReach() C._farmStartedReach = true end
+
+	C.smartFarmThread = _spawn(function()
+		while S.smartFarmEnabled do
+			local root = getRoot()
+			if root and getHum() then
+				local targets = farmTargets(root)
+				for _, t in ipairs(targets) do
+					if not S.smartFarmEnabled then break end
+					if t.r and t.r.Parent and isAlive(t.p) then
+						pcall(function()
+							local T = t.r.Position
+							local void = findVoidDir(T)
+							local myRoot = getRoot()
+							if myRoot then
+								if void then
+									-- inner side of target, facing the void -> slap pushes them off
+									myRoot.CFrame = CFrame.new(T - void * 4.5, T + void * 12)
+								else
+									-- no clear edge: get right behind them and slap anyway
+									myRoot.CFrame = CFrame.new(T - t.r.CFrame.LookVector * 4, T)
+								end
+								myRoot.AssemblyLinearVelocity = Vector3.zero
+								local tool = equipGlove()
+								if tool then
+									for _ = 1, math.max(1, S.slapsPerTarget) do
+										if not isAlive(t.p) or not S.smartFarmEnabled then break end
+										tool:Activate()
+										task.wait(0.08)
+									end
+								end
+							end
+						end)
+						task.wait(S.autoSlapDelay)
+					end
+				end
+				-- back to the safe home between passes so we don't sit on an edge
+				if S.farmReturnSafe and C.farmHome then
+					local mr = getRoot()
+					if mr then pcall(function() mr.CFrame = CFrame.new(C.farmHome) mr.AssemblyLinearVelocity = Vector3.zero end) end
+				end
+			end
+			task.wait(0.25)
+		end
+	end)
+	notify("Smart Farm", "Hunting targets + knocking them off")
+end
+
+F.stopSmartFarm = function()
+	S.smartFarmEnabled = false
+	if C._farmStartedReach then S.reachEnabled = false F.stopReach() C._farmStartedReach = false end
+	notify("Smart Farm", "OFF")
 end
 
 -- ----- SPEED -----
@@ -1345,6 +1455,18 @@ end)
 -- ===== COMBAT =====
 do
 	local tab = tabFrames["Combat"]
+	UI.section(tab, "Smart Auto Farm")
+	UI.toggle(tab, "Smart Farm (knock players off)", function(on)
+		S.smartFarmEnabled = on
+		if on then F.startSmartFarm() else F.stopSmartFarm() end
+	end)
+	UI.slider(tab, "Farm Range (studs)", 50, 500, S.farmRange, function(v) S.farmRange = v end)
+	UI.slider(tab, "Slaps Per Target", 1, 8, S.slapsPerTarget, function(v) S.slapsPerTarget = v end)
+	UI.toggle(tab, "Return To Safe Spot Each Pass", function(on) S.farmReturnSafe = on end).setVisualState(S.farmReturnSafe)
+	UI.toggle(tab, "Auto Reach While Farming", function(on) S.farmUseReach = on end).setVisualState(S.farmUseReach)
+	UI.info(tab, "Finds each target, raycasts for the void, positions behind them facing the edge, and slaps them off. Returns home between passes. Turn on Anti-Fling + Anti-Void (Movement) so you don't die.")
+
+	UI.spacer(tab)
 	UI.section(tab, "Slap Reach")
 	UI.toggle(tab, "Reach Extender", function(on)
 		S.reachEnabled = on
@@ -1528,10 +1650,10 @@ do
 	task.spawn(function()
 		while task.wait(3) do pcall(function() plLabel.Text = "Players: " .. #Players:GetPlayers() end) end
 	end)
-	UI.info(tab, "Right Shift toggles the menu. v2.6")
+	UI.info(tab, "Right Shift toggles the menu. v2.7")
 end
 
-notify("Slap Battles v2.6", "Loaded! Right Shift to toggle")
-print("[SX SLAP v2.6] Pebbleford Hub - Slap Battles Hub")
-print("[SX SLAP v2.6] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
-print("[SX SLAP v2.6] Reach + Auto Slap + Slap Aura + Place TP + Anti-Void")
+notify("Slap Battles v2.7", "Loaded! Right Shift to toggle")
+print("[SX SLAP v2.7] Pebbleford Hub - Slap Battles Hub")
+print("[SX SLAP v2.7] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
+print("[SX SLAP v2.7] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
