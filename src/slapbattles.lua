@@ -17,7 +17,7 @@ if not keySystem or not keySystem.validate("slapbattles") then return end
 -- ================================================================
 -- Pebbleford Hub - Slap Battles Hub
 -- Dedicated hub for Slap Battles
--- v3.1
+-- v3.2
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -49,6 +49,7 @@ local S = {
 	smartFarmEnabled = false, farmRange = 300, slapsPerTarget = 3,
 	farmReturnSafe = true, farmUseReach = true, farmPreferSafe = true, farmJump = true,
 	autoBestGlove = false, autoArenaEnabled = false,
+	selfDefenseEnabled = false, fleeDistance = 28, useAbility = true, abilityKey = "E",
 	-- movement
 	speedEnabled = false, flyEnabled = false, noclipEnabled = false, infJumpEnabled = false,
 	antiVoidEnabled = false, antiFlingEnabled = false,
@@ -62,6 +63,7 @@ local C = {
 	reachConn = nil, reachOrigSize = nil, reachPart = nil,
 	autoSlapThread = nil, slapAuraThread = nil,
 	smartFarmThread = nil, farmHome = nil, farmLastPos = nil,
+	selfDefenseThread = nil, fleeing = false,
 	flyConn = nil, flyBV = nil, flyBG = nil, flyUpBtn = nil, flyDownBtn = nil,
 	noclipConn = nil, infJumpConn = nil, speedConn = nil,
 	antiVoidConn = nil, antiVoidSafe = nil, antiFlingConn = nil,
@@ -185,7 +187,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "SLAP BATTLES v3.1"
+titleLabel.Text = "SLAP BATTLES v3.2"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -849,6 +851,8 @@ F.startSmartFarm = function()
 				local root, hum = getRoot(), getHum()
 				if not (root and hum and hum.Health > 0) then return end
 
+				-- Self-defense drives movement when fleeing; skip attacking this tick.
+				if C.fleeing then return end
 				-- Build candidate list with each target's glove + danger, so we can
 				-- prefer safe kills and be wary of gloves that can kill us.
 				local cands = {}
@@ -922,6 +926,74 @@ F.stopSmartFarm = function()
 	notify("Smart Farm", "OFF")
 end
 
+-- ----- SELF DEFENSE -----
+-- Presses your glove's ability key (default E) to trigger a defensive ability
+-- like Diamond's shield.
+local function pressAbility()
+	local key = (S.abilityKey or "E"):upper()
+	local kc = nil
+	pcall(function() kc = Enum.KeyCode[key] end)
+	if not kc then return end
+	pcall(function() if keypress and keyrelease then keypress(kc.Value) task.wait(0.03) keyrelease(kc.Value) return end end)
+	pcall(function()
+		VIM:SendKeyEvent(true, kc, false, game)
+		task.wait(0.03)
+		VIM:SendKeyEvent(false, kc, false, game)
+	end)
+end
+
+-- Flees from any enemy who closes in on you fast (a rusher going for a kill -
+-- which is what a one-shot glove user does). Glove-agnostic because the game
+-- doesn't expose other players' equipped gloves to read. Optionally fires your
+-- ability (Diamond shield etc.) while the threat is near.
+F.startSelfDefense = function()
+	S.selfDefenseEnabled = true
+	C.selfDefenseThread = _spawn(function()
+		local lastD = {}
+		while S.selfDefenseEnabled do
+			pcall(function()
+				local root, hum = getRoot(), getHum()
+				if not (root and hum and hum.Health > 0) then C.fleeing = false return end
+				local best, bestD, bestR
+				for _, p in ipairs(Players:GetPlayers()) do
+					if p ~= LocalPlayer and isAlive(p) then
+						local r = p.Character and p.Character:FindFirstChild("HumanoidRootPart")
+						if r then
+							local d = (r.Position - root.Position).Magnitude
+							if not bestD or d < bestD then best, bestD, bestR = p, d, r end
+						end
+					end
+				end
+				if bestR and bestD <= S.fleeDistance then
+					local prev = lastD[best]
+					local closing = (not prev) or (bestD < prev - 0.4)
+					lastD[best] = bestD
+					if closing then
+						C.fleeing = true
+						if S.useAbility then pressAbility() end
+						local dir = root.Position - bestR.Position
+						dir = (dir.Magnitude > 0) and Vector3.new(dir.X, 0, dir.Z).Unit or root.CFrame.LookVector
+						pcall(function() hum:MoveTo(root.Position + dir * 60) hum.Jump = true end)
+					else
+						C.fleeing = false
+					end
+				else
+					C.fleeing = false
+				end
+			end)
+			task.wait(0.1)
+		end
+		C.fleeing = false
+	end)
+	notify("Self Defense", "Will flee rushers" .. (S.useAbility and " + use ability" or ""))
+end
+
+F.stopSelfDefense = function()
+	S.selfDefenseEnabled = false
+	C.fleeing = false
+	notify("Self Defense", "OFF")
+end
+
 -- ----- BEST GLOVE PICKER -----
 -- Gloves are Tools in the backpack. Ranked best-first for farming (strong, fast
 -- knockback that sends people off). Equips the highest-ranked one you own.
@@ -943,11 +1015,17 @@ F.pickBestGlove = function(silent)
 			notify("Glove", "No glove Tools found - dumping to F9")
 			print("=== SLAP GLOVE DUMP ===")
 			pcall(function()
-				print("-- Character children --")
-				for _, c in ipairs(char:GetChildren()) do print(c.ClassName .. " | " .. c.Name) end
+				print("-- Player children --")
+				for _, c in ipairs(LocalPlayer:GetChildren()) do print(c.ClassName .. " | " .. c.Name .. (c:IsA("ValueBase") and (" = " .. tostring(c.Value)) or "")) end
+				print("-- Player attributes --")
+				for k, v in pairs(LocalPlayer:GetAttributes()) do print("@" .. k .. " = " .. tostring(v)) end
+				print("-- Character attributes --")
+				for k, v in pairs(char:GetAttributes()) do print("@" .. k .. " = " .. tostring(v)) end
+				print("-- Character ValueBase children --")
+				for _, c in ipairs(char:GetChildren()) do if c:IsA("ValueBase") then print(c.ClassName .. " | " .. c.Name .. " = " .. tostring(c.Value)) end end
+				local ls = LocalPlayer:FindFirstChild("leaderstats")
+				if ls then print("-- leaderstats --") for _, c in ipairs(ls:GetChildren()) do print(c.Name .. " = " .. tostring(c.Value)) end end
 				if bp then print("-- Backpack children --") for _, c in ipairs(bp:GetChildren()) do print(c.ClassName .. " | " .. c.Name) end end
-				local gs = workspace:FindFirstChild("Lobby") and workspace.Lobby:FindFirstChild("GloveStands")
-				if gs then print("-- GloveStands --") for _, c in ipairs(gs:GetChildren()) do print(c.ClassName .. " | " .. c.Name) end end
 			end)
 			print("=== END GLOVE DUMP ===")
 		end
@@ -1621,6 +1699,17 @@ do
 	UI.info(tab, "Walks to the nearest player (no teleporting) and slaps when in range - looks like normal play. Reach helps land hits. Turn on Speed (Movement) to chase faster.")
 
 	UI.spacer(tab)
+	UI.section(tab, "Self Defense")
+	UI.toggle(tab, "Flee From Rushers", function(on)
+		S.selfDefenseEnabled = on
+		if on then F.startSelfDefense() else F.stopSelfDefense() end
+	end)
+	UI.slider(tab, "Flee Distance (studs)", 10, 80, S.fleeDistance, function(v) S.fleeDistance = v end)
+	UI.toggle(tab, "Auto Use Ability When Rushed", function(on) S.useAbility = on end).setVisualState(S.useAbility)
+	UI.input(tab, "Ability Key (default E)", function(txt) if txt and #txt > 0 then S.abilityKey = txt end end)
+	UI.info(tab, "If a player closes in on you fast (a one-shot rusher), you run away and fire your ability key (set it to your glove's ability, e.g. E for Diamond's shield).")
+
+	UI.spacer(tab)
 	UI.section(tab, "Slap Reach")
 	UI.toggle(tab, "Reach Extender", function(on)
 		S.reachEnabled = on
@@ -1804,10 +1893,10 @@ do
 	task.spawn(function()
 		while task.wait(3) do pcall(function() plLabel.Text = "Players: " .. #Players:GetPlayers() end) end
 	end)
-	UI.info(tab, "Right Shift toggles the menu. v3.1")
+	UI.info(tab, "Right Shift toggles the menu. v3.2")
 end
 
-notify("Slap Battles v3.1", "Loaded! Right Shift to toggle")
-print("[SX SLAP v3.1] Pebbleford Hub - Slap Battles Hub")
-print("[SX SLAP v3.1] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
-print("[SX SLAP v3.1] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
+notify("Slap Battles v3.2", "Loaded! Right Shift to toggle")
+print("[SX SLAP v3.2] Pebbleford Hub - Slap Battles Hub")
+print("[SX SLAP v3.2] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
+print("[SX SLAP v3.2] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
