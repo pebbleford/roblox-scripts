@@ -17,7 +17,7 @@ if not keySystem or not keySystem.validate("slapbattles") then return end
 -- ================================================================
 -- Pebbleford Hub - Slap Battles Hub
 -- Dedicated hub for Slap Battles
--- v3.5
+-- v3.6
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -187,7 +187,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "SLAP BATTLES v3.5"
+titleLabel.Text = "SLAP BATTLES v3.6"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -840,11 +840,12 @@ end
 -- Lobby vs arena, read from the BoolValues the game puts on your character.
 local function inArena()
 	local ch = getChar()
-	if not ch then return false end
-	local ia = ch:FindFirstChild("isInArena") or ch:FindFirstChild("IsInDefaultArena")
-	if ia and ia:IsA("BoolValue") then return ia.Value end
+	if not ch then return true end
+	-- InLobby is the clearest signal; false means we're out in an arena.
 	local lob = ch:FindFirstChild("InLobby")
 	if lob and lob:IsA("BoolValue") then return not lob.Value end
+	local ia = ch:FindFirstChild("isInArena") or ch:FindFirstChild("IsInDefaultArena")
+	if ia and ia:IsA("BoolValue") then return ia.Value end
 	return true -- unknown: assume arena so farming still works
 end
 
@@ -901,31 +902,23 @@ F.startSmartFarm = function()
 				local t = cands[1]
 				local bestR, bestD = t.r, t.d
 
-				-- Against a dangerous glove, hang back at reach distance and poke;
-				-- against safe ones, close in normally.
 				local reach = (S.reachEnabled and S.reachSize or 7)
 				local slapRange = reach + 5
-				local approach = bestR.Position
-				if t.danger > 0 then
-					-- stop ~reach studs short so we don't walk into their hitbox
-					local dir = (bestR.Position - root.Position)
-					if dir.Magnitude > 0 then
-						approach = bestR.Position - dir.Unit * (reach - 1)
+				if bestD > slapRange then
+					local approach = bestR.Position
+					if t.danger > 0 then
+						local dir = bestR.Position - root.Position
+						if dir.Magnitude > 0 then approach = bestR.Position - dir.Unit * (reach - 1) end
 					end
-				end
-
-				pcall(function() hum:MoveTo(approach) end)
-
-				-- Anti-stuck: if we barely moved but aren't in range yet, jump to
-				-- clear a corner / ledge / another player in the way.
-				if S.farmJump and bestD > slapRange and C.farmLastPos then
-					if (root.Position - C.farmLastPos).Magnitude < 1.5 then
+					pcall(function() hum:MoveTo(approach) end)
+					if S.farmJump and C.farmLastPos and (root.Position - C.farmLastPos).Magnitude < 1.5 then
 						pcall(function() hum.Jump = true end)
 					end
-				end
-				C.farmLastPos = root.Position
-
-				if bestD <= slapRange then
+					C.farmLastPos = root.Position
+				else
+					-- in range: stop walking (no dance), rotate to face them and slap
+					pcall(function() root.CFrame = CFrame.new(root.Position, Vector3.new(bestR.Position.X, root.Position.Y, bestR.Position.Z)) end)
+					C.farmLastPos = root.Position
 					for _ = 1, math.max(1, S.slapsPerTarget) do
 						if not S.smartFarmEnabled or C.fleeing or not isAlive(t.p) then break end
 						doSlap()
@@ -1942,10 +1935,10 @@ do
 	task.spawn(function()
 		while task.wait(3) do pcall(function() plLabel.Text = "Players: " .. #Players:GetPlayers() end) end
 	end)
-	UI.info(tab, "Right Shift toggles the menu. v3.5")
+	UI.info(tab, "Right Shift toggles the menu. v3.6")
 end
 
-notify("Slap Battles v3.5", "Loaded! Right Shift to toggle")
-print("[SX SLAP v3.5] Pebbleford Hub - Slap Battles Hub")
-print("[SX SLAP v3.5] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
-print("[SX SLAP v3.5] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
+notify("Slap Battles v3.6", "Loaded! Right Shift to toggle")
+print("[SX SLAP v3.6] Pebbleford Hub - Slap Battles Hub")
+print("[SX SLAP v3.6] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
+print("[SX SLAP v3.6] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
