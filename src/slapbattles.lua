@@ -17,7 +17,7 @@ if not keySystem or not keySystem.validate("slapbattles") then return end
 -- ================================================================
 -- Pebbleford Hub - Slap Battles Hub
 -- Dedicated hub for Slap Battles
--- v3.4
+-- v3.5
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -187,7 +187,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "SLAP BATTLES v3.4"
+titleLabel.Text = "SLAP BATTLES v3.5"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -837,6 +837,17 @@ local function gloveIgnored(name)
 	return false
 end
 
+-- Lobby vs arena, read from the BoolValues the game puts on your character.
+local function inArena()
+	local ch = getChar()
+	if not ch then return false end
+	local ia = ch:FindFirstChild("isInArena") or ch:FindFirstChild("IsInDefaultArena")
+	if ia and ia:IsA("BoolValue") then return ia.Value end
+	local lob = ch:FindFirstChild("InLobby")
+	if lob and lob:IsA("BoolValue") then return not lob.Value end
+	return true -- unknown: assume arena so farming still works
+end
+
 F.startSmartFarm = function()
 	S.smartFarmEnabled = true
 	if S.farmUseReach and not S.reachEnabled then S.reachEnabled = true F.startReach() C._farmStartedReach = true end
@@ -853,6 +864,11 @@ F.startSmartFarm = function()
 
 				-- Self-defense drives movement when fleeing; skip attacking this tick.
 				if C.fleeing then return end
+				-- In the lobby, don't chase anyone - head into the arena instead.
+				if not inArena() then
+					if (tick() - (C.lastArenaTry or 0)) > 2 then C.lastArenaTry = tick() F.goToArena() end
+					return
+				end
 				-- Build candidate list with each target's glove + danger, so we can
 				-- prefer safe kills and be wary of gloves that can kill us.
 				local cands = {}
@@ -981,6 +997,7 @@ F.startSelfDefense = function()
 			pcall(function()
 				local root, hum = getRoot(), getHum()
 				if not (root and hum and hum.Health > 0) then C.fleeing = false return end
+				if not inArena() then C.fleeing = false return end
 				local best, bestD, bestR
 				for _, p in ipairs(Players:GetPlayers()) do
 					if p ~= LocalPlayer and isAlive(p) then
@@ -1925,10 +1942,10 @@ do
 	task.spawn(function()
 		while task.wait(3) do pcall(function() plLabel.Text = "Players: " .. #Players:GetPlayers() end) end
 	end)
-	UI.info(tab, "Right Shift toggles the menu. v3.4")
+	UI.info(tab, "Right Shift toggles the menu. v3.5")
 end
 
-notify("Slap Battles v3.4", "Loaded! Right Shift to toggle")
-print("[SX SLAP v3.4] Pebbleford Hub - Slap Battles Hub")
-print("[SX SLAP v3.4] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
-print("[SX SLAP v3.4] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
+notify("Slap Battles v3.5", "Loaded! Right Shift to toggle")
+print("[SX SLAP v3.5] Pebbleford Hub - Slap Battles Hub")
+print("[SX SLAP v3.5] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
+print("[SX SLAP v3.5] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
