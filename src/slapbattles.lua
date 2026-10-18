@@ -17,7 +17,7 @@ if not keySystem or not keySystem.validate("slapbattles") then return end
 -- ================================================================
 -- Pebbleford Hub - Slap Battles Hub
 -- Dedicated hub for Slap Battles
--- v3.8
+-- v3.9
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -63,7 +63,7 @@ local C = {
 	reachConn = nil, reachOrigSize = nil, reachPart = nil,
 	autoSlapThread = nil, slapAuraThread = nil,
 	smartFarmThread = nil, farmHome = nil, farmLastPos = nil,
-	selfDefenseThread = nil, fleeing = false,
+	selfDefenseThread = nil, fleeing = false, lastAbility = 0,
 	flyConn = nil, flyBV = nil, flyBG = nil, flyUpBtn = nil, flyDownBtn = nil,
 	noclipConn = nil, infJumpConn = nil, speedConn = nil,
 	antiVoidConn = nil, antiVoidSafe = nil, antiFlingConn = nil,
@@ -187,7 +187,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "SLAP BATTLES v3.8"
+titleLabel.Text = "SLAP BATTLES v3.9"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -1022,12 +1022,18 @@ F.startSelfDefense = function()
 					end
 				end
 				if bestR and bestD <= S.fleeDistance then
+					-- Keep the ability (Diamond form etc.) up the whole time a threat
+					-- is near - re-press whenever it's off cooldown - so you don't drop
+					-- out of it while the one-shot is still around.
+					if S.useAbility and (tick() - (C.lastAbility or 0)) > 0.4 then
+						C.lastAbility = tick()
+						_spawn(pressAbility)
+					end
 					local prev = lastD[best]
 					local closing = (not prev) or (bestD < prev - 0.4)
 					lastD[best] = bestD
 					if closing then
 						C.fleeing = true
-						if S.useAbility then _spawn(pressAbility) end
 						-- flee toward solid ground, not off the edge
 						local dir = safeFleeDir(root, bestR.Position)
 						if dir then
@@ -1963,10 +1969,10 @@ do
 	task.spawn(function()
 		while task.wait(3) do pcall(function() plLabel.Text = "Players: " .. #Players:GetPlayers() end) end
 	end)
-	UI.info(tab, "Right Shift toggles the menu. v3.8")
+	UI.info(tab, "Right Shift toggles the menu. v3.9")
 end
 
-notify("Slap Battles v3.8", "Loaded! Right Shift to toggle")
-print("[SX SLAP v3.8] Pebbleford Hub - Slap Battles Hub")
-print("[SX SLAP v3.8] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
-print("[SX SLAP v3.8] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
+notify("Slap Battles v3.9", "Loaded! Right Shift to toggle")
+print("[SX SLAP v3.9] Pebbleford Hub - Slap Battles Hub")
+print("[SX SLAP v3.9] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
+print("[SX SLAP v3.9] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
