@@ -17,7 +17,7 @@ if not keySystem or not keySystem.validate("slapbattles") then return end
 -- ================================================================
 -- Pebbleford Hub - Slap Battles Hub
 -- Dedicated hub for Slap Battles
--- v4.0
+-- v4.1
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -63,7 +63,7 @@ local C = {
 	reachConn = nil, reachOrigSize = nil, reachPart = nil,
 	autoSlapThread = nil, slapAuraThread = nil,
 	smartFarmThread = nil, farmHome = nil, farmLastPos = nil,
-	selfDefenseThread = nil, fleeing = false, lastAbility = 0,
+	selfDefenseThread = nil, fleeing = false, lastAbility = 0, lastMoveTarget = nil,
 	flyConn = nil, flyBV = nil, flyBG = nil, flyUpBtn = nil, flyDownBtn = nil,
 	noclipConn = nil, infJumpConn = nil, speedConn = nil,
 	antiVoidConn = nil, antiVoidSafe = nil, antiFlingConn = nil,
@@ -187,7 +187,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "SLAP BATTLES v4.0"
+titleLabel.Text = "SLAP BATTLES v4.1"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -850,7 +850,9 @@ local function inArena()
 end
 
 -- Is there solid ground a few studs ahead in this direction? Stops the farm
--- from walking straight off an edge toward a target across a gap.
+-- from walking straight off an edge toward a target across a gap. Rays deep so
+-- only a REAL void (the map edge) trips it - not small steps/ledges, which was
+-- making it too scared to chase.
 local function groundAhead(root, dir, dist)
 	if dir.Magnitude == 0 then return true end
 	local params = RaycastParams.new()
@@ -858,8 +860,8 @@ local function groundAhead(root, dir, dist)
 	local chars = {}
 	for _, p in ipairs(Players:GetPlayers()) do if p.Character then table.insert(chars, p.Character) end end
 	params.FilterDescendantsInstances = chars
-	local ahead = root.Position + dir.Unit * (dist or 6) + Vector3.new(0, 2, 0)
-	return workspace:Raycast(ahead, Vector3.new(0, -16, 0), params) ~= nil
+	local ahead = root.Position + dir.Unit * (dist or 4) + Vector3.new(0, 2, 0)
+	return workspace:Raycast(ahead, Vector3.new(0, -60, 0), params) ~= nil
 end
 
 F.startSmartFarm = function()
@@ -923,16 +925,21 @@ F.startSmartFarm = function()
 						local dir = bestR.Position - root.Position
 						if dir.Magnitude > 0 then approach = bestR.Position - dir.Unit * (reach - 1) end
 					end
-					-- Edge guard: only walk if there's ground ahead; otherwise the
-					-- target is across a gap - stop instead of strolling off the map.
+					-- Edge guard: only stop for a real deep void right in front of us.
 					local moveDir = Vector3.new(approach.X - root.Position.X, 0, approach.Z - root.Position.Z)
-					if groundAhead(root, moveDir, 6) then
-						pcall(function() hum:MoveTo(approach) end)
-						if S.farmJump and C.farmLastPos and (root.Position - C.farmLastPos).Magnitude < 1.5 then
+					if not groundAhead(root, moveDir, 4) then
+						pcall(function() hum:MoveTo(root.Position) end) -- edge ahead: stop
+						C.lastMoveTarget = root.Position
+					else
+						-- Re-path only when the target has moved enough. Re-issuing
+						-- MoveTo every tick to a moving point is what makes it twitch.
+						if (not C.lastMoveTarget) or (approach - C.lastMoveTarget).Magnitude > 4 then
+							pcall(function() hum:MoveTo(approach) end)
+							C.lastMoveTarget = approach
+						end
+						if S.farmJump and C.farmLastPos and (root.Position - C.farmLastPos).Magnitude < 0.8 then
 							pcall(function() hum.Jump = true end)
 						end
-					else
-						pcall(function() hum:MoveTo(root.Position) end) -- stop at the edge
 					end
 					C.farmLastPos = root.Position
 				else
@@ -940,6 +947,7 @@ F.startSmartFarm = function()
 					-- STOP instead of strafing to the old point (the random adadad),
 					-- then face + slap.
 					pcall(function() hum:MoveTo(root.Position) end)
+					C.lastMoveTarget = root.Position
 					pcall(function() root.CFrame = CFrame.new(root.Position, Vector3.new(bestR.Position.X, root.Position.Y, bestR.Position.Z)) end)
 					C.farmLastPos = root.Position
 					for _ = 1, math.max(1, S.slapsPerTarget) do
@@ -1972,10 +1980,10 @@ do
 	task.spawn(function()
 		while task.wait(3) do pcall(function() plLabel.Text = "Players: " .. #Players:GetPlayers() end) end
 	end)
-	UI.info(tab, "Right Shift toggles the menu. v4.0")
+	UI.info(tab, "Right Shift toggles the menu. v4.1")
 end
 
-notify("Slap Battles v4.0", "Loaded! Right Shift to toggle")
-print("[SX SLAP v4.0] Pebbleford Hub - Slap Battles Hub")
-print("[SX SLAP v4.0] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
-print("[SX SLAP v4.0] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
+notify("Slap Battles v4.1", "Loaded! Right Shift to toggle")
+print("[SX SLAP v4.1] Pebbleford Hub - Slap Battles Hub")
+print("[SX SLAP v4.1] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
+print("[SX SLAP v4.1] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
