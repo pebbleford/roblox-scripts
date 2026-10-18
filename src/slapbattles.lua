@@ -17,7 +17,7 @@ if not keySystem or not keySystem.validate("slapbattles") then return end
 -- ================================================================
 -- Pebbleford Hub - Slap Battles Hub
 -- Dedicated hub for Slap Battles
--- v3.3
+-- v3.4
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -187,7 +187,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "SLAP BATTLES v3.3"
+titleLabel.Text = "SLAP BATTLES v3.4"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -911,13 +911,13 @@ F.startSmartFarm = function()
 
 				if bestD <= slapRange then
 					for _ = 1, math.max(1, S.slapsPerTarget) do
-						if not S.smartFarmEnabled or not isAlive(t.p) then break end
+						if not S.smartFarmEnabled or C.fleeing or not isAlive(t.p) then break end
 						doSlap()
 						task.wait(0.12)
 					end
 				end
 			end)
-			task.wait(0.15)
+			task.wait(0.07)
 		end
 	end)
 	notify("Smart Farm", "Walking + jumping to targets, picking safe kills")
@@ -997,7 +997,7 @@ F.startSelfDefense = function()
 					lastD[best] = bestD
 					if closing then
 						C.fleeing = true
-						if S.useAbility then pressAbility() end
+						if S.useAbility then _spawn(pressAbility) end
 						-- flee toward solid ground, not off the edge
 						local dir = safeFleeDir(root, bestR.Position)
 						if dir then
@@ -1013,7 +1013,7 @@ F.startSelfDefense = function()
 					C.fleeing = false
 				end
 			end)
-			task.wait(0.1)
+			task.wait(0.03)
 		end
 		C.fleeing = false
 	end)
@@ -1925,10 +1925,10 @@ do
 	task.spawn(function()
 		while task.wait(3) do pcall(function() plLabel.Text = "Players: " .. #Players:GetPlayers() end) end
 	end)
-	UI.info(tab, "Right Shift toggles the menu. v3.3")
+	UI.info(tab, "Right Shift toggles the menu. v3.4")
 end
 
-notify("Slap Battles v3.3", "Loaded! Right Shift to toggle")
-print("[SX SLAP v3.3] Pebbleford Hub - Slap Battles Hub")
-print("[SX SLAP v3.3] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
-print("[SX SLAP v3.3] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
+notify("Slap Battles v3.4", "Loaded! Right Shift to toggle")
+print("[SX SLAP v3.4] Pebbleford Hub - Slap Battles Hub")
+print("[SX SLAP v3.4] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
+print("[SX SLAP v3.4] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
