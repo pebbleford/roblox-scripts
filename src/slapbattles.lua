@@ -17,7 +17,7 @@ if not keySystem or not keySystem.validate("slapbattles") then return end
 -- ================================================================
 -- Pebbleford Hub - Slap Battles Hub
 -- Dedicated hub for Slap Battles
--- v3.0
+-- v3.1
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -185,7 +185,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "SLAP BATTLES v3.0"
+titleLabel.Text = "SLAP BATTLES v3.1"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -826,6 +826,15 @@ local function gloveDanger(name)
 	return 0
 end
 
+-- Gloves whose users the farm skips entirely (too risky / countered).
+local IGNORE_GLOVES = { "custom", "diamond", "megarock", "mega rock" }
+local function gloveIgnored(name)
+	if not name then return false end
+	name = name:lower()
+	for _, g in ipairs(IGNORE_GLOVES) do if name:find(g, 1, true) then return true end end
+	return false
+end
+
 F.startSmartFarm = function()
 	S.smartFarmEnabled = true
 	if S.farmUseReach and not S.reachEnabled then S.reachEnabled = true F.startReach() C._farmStartedReach = true end
@@ -852,7 +861,9 @@ F.startSmartFarm = function()
 							local d = (r.Position - root.Position).Magnitude
 							if d <= S.farmRange then
 								local g = getPlayerGlove(p)
-								table.insert(cands, {p = p, r = r, d = d, danger = gloveDanger(g)})
+								if not gloveIgnored(g) then
+									table.insert(cands, {p = p, r = r, d = d, danger = gloveDanger(g)})
+								end
 							end
 						end
 					end
@@ -1793,10 +1804,10 @@ do
 	task.spawn(function()
 		while task.wait(3) do pcall(function() plLabel.Text = "Players: " .. #Players:GetPlayers() end) end
 	end)
-	UI.info(tab, "Right Shift toggles the menu. v3.0")
+	UI.info(tab, "Right Shift toggles the menu. v3.1")
 end
 
-notify("Slap Battles v3.0", "Loaded! Right Shift to toggle")
-print("[SX SLAP v3.0] Pebbleford Hub - Slap Battles Hub")
-print("[SX SLAP v3.0] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
-print("[SX SLAP v3.0] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
+notify("Slap Battles v3.1", "Loaded! Right Shift to toggle")
+print("[SX SLAP v3.1] Pebbleford Hub - Slap Battles Hub")
+print("[SX SLAP v3.1] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
+print("[SX SLAP v3.1] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
