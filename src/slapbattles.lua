@@ -17,7 +17,7 @@ if not keySystem or not keySystem.validate("slapbattles") then return end
 -- ================================================================
 -- Pebbleford Hub - Slap Battles Hub
 -- Dedicated hub for Slap Battles
--- v1.4
+-- v1.5
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -181,7 +181,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "SLAP BATTLES v1.4"
+titleLabel.Text = "SLAP BATTLES v1.5"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -1149,27 +1149,28 @@ end
 -- can be identified and wired to named buttons.
 F.dumpPortals = function()
 	print("========== SLAP BATTLES PORTAL DUMP ==========")
+	local KW = { "portal", "brazil", "teleport", "warp", "dimension", "realm",
+		"limbo", "repress", "memor", "reverse", "recall", "secret", "gate", "obtain" }
+	local function anyKw(name)
+		local nl = name:lower()
+		for _, k in ipairs(KW) do if nl:find(k, 1, true) then return true end end
+		return false
+	end
 	local n = 0
 	pcall(function()
 		for _, obj in ipairs(workspace:GetDescendants()) do
-			local nl = obj.Name:lower()
-			if (obj:IsA("BasePart") or obj:IsA("Model") or obj:IsA("Folder"))
-				and (nl:find("portal",1,true) or nl:find("brazil",1,true) or nl:find("teleport",1,true)
-					or nl:find("warp",1,true) or nl:find("dimension",1,true) or nl:find("realm",1,true)) then
+			if (obj:IsA("BasePart") or obj:IsA("Model") or obj:IsA("Folder")) and anyKw(obj.Name) then
 				n = n + 1
 				print(obj.ClassName .. " | " .. obj:GetFullName())
 			end
 		end
 	end)
-	print("---------- remotes (teleport/portal/brazil) ----------")
+	print("---------- remotes ----------")
 	pcall(function()
 		for _, svc in ipairs({ game:GetService("ReplicatedStorage"), workspace }) do
 			for _, obj in ipairs(svc:GetDescendants()) do
-				if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-					local nl = obj.Name:lower()
-					if nl:find("teleport",1,true) or nl:find("portal",1,true) or nl:find("brazil",1,true) or nl:find("warp",1,true) then
-						print(obj.ClassName .. " | " .. obj:GetFullName())
-					end
+				if (obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")) and anyKw(obj.Name) then
+					print(obj.ClassName .. " | " .. obj:GetFullName())
 				end
 			end
 		end
@@ -1257,18 +1258,22 @@ F.goToPortal = function(entry)
 			did = true
 		end
 	end
-	-- Touch the real portal part (TP onto + firetouchinterest)
+	-- Touch the real portal part. We DON'T teleport you onto it anymore -
+	-- firetouchinterest fires the part's Touched from where you stand, so a real
+	-- pad still triggers, and a decorative wall just does nothing instead of
+	-- stranding you to fall to your death.
 	if entry.part then
 		local obj = resolvePath(entry.part)
 		if obj then
 			tried = true
 			local bp = obj:IsA("BasePart") and obj or (obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart"))) or nil
 			local root = getRoot()
-			if bp and root then
+			if bp and root and firetouchinterest then
+				pcall(function() firetouchinterest(root, bp, 0) task.wait(0.06) firetouchinterest(root, bp, 1) end)
+				did = true
+			elseif bp and root then
+				-- no firetouchinterest on this executor: last resort, move onto it
 				pcall(function() root.CFrame = CFrame.new(bp.Position + Vector3.new(0, 3, 0)) root.AssemblyLinearVelocity = Vector3.zero end)
-				if firetouchinterest then
-					pcall(function() firetouchinterest(root, bp, 0) task.wait(0.06) firetouchinterest(root, bp, 1) end)
-				end
 				did = true
 			end
 		end
@@ -1448,10 +1453,10 @@ do
 	task.spawn(function()
 		while task.wait(3) do pcall(function() plLabel.Text = "Players: " .. #Players:GetPlayers() end) end
 	end)
-	UI.info(tab, "Right Shift toggles the menu. v1.4")
+	UI.info(tab, "Right Shift toggles the menu. v1.5")
 end
 
-notify("Slap Battles v1.4", "Loaded! Right Shift to toggle")
-print("[SX SLAP v1.4] Pebbleford Hub - Slap Battles Hub")
-print("[SX SLAP v1.4] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
-print("[SX SLAP v1.4] Reach + Auto Slap + Slap Aura + Place TP + Anti-Void")
+notify("Slap Battles v1.5", "Loaded! Right Shift to toggle")
+print("[SX SLAP v1.5] Pebbleford Hub - Slap Battles Hub")
+print("[SX SLAP v1.5] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
+print("[SX SLAP v1.5] Reach + Auto Slap + Slap Aura + Place TP + Anti-Void")
