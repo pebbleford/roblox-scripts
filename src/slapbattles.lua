@@ -17,7 +17,7 @@ if not keySystem or not keySystem.validate("slapbattles") then return end
 -- ================================================================
 -- Pebbleford Hub - Slap Battles Hub
 -- Dedicated hub for Slap Battles
--- v2.7
+-- v2.8
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -48,6 +48,7 @@ local S = {
 	reachSize = 18, slapAuraRange = 60, autoSlapDelay = 0.1,
 	smartFarmEnabled = false, farmRange = 300, slapsPerTarget = 3,
 	farmReturnSafe = true, farmUseReach = true,
+	autoBestGlove = false, autoArenaEnabled = false,
 	-- movement
 	speedEnabled = false, flyEnabled = false, noclipEnabled = false, infJumpEnabled = false,
 	antiVoidEnabled = false, antiFlingEnabled = false,
@@ -184,7 +185,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "SLAP BATTLES v2.7"
+titleLabel.Text = "SLAP BATTLES v2.8"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -838,6 +839,46 @@ F.stopSmartFarm = function()
 	notify("Smart Farm", "OFF")
 end
 
+-- ----- BEST GLOVE PICKER -----
+-- Gloves are Tools in the backpack. Ranked best-first for farming (strong, fast
+-- knockback that sends people off). Equips the highest-ranked one you own.
+local GLOVE_PRIORITY = {
+	"killstreak", "rocket", "bob", "spring", "diddy", "ghost", "pedro",
+	"baller", "flash", "magnet", "brick", "custom", "default",
+}
+
+F.pickBestGlove = function(silent)
+	local char = getChar()
+	local hum = getHum()
+	if not char or not hum then return end
+	local gloves = {}
+	for _, c in ipairs(char:GetChildren()) do if c:IsA("Tool") then gloves[c.Name:lower()] = c end end
+	local bp = LocalPlayer:FindFirstChild("Backpack")
+	if bp then for _, c in ipairs(bp:GetChildren()) do if c:IsA("Tool") then gloves[c.Name:lower()] = c end end end
+	if not next(gloves) then if not silent then notify("Glove", "No gloves found") end return end
+	local chosen
+	for _, want in ipairs(GLOVE_PRIORITY) do
+		for name, tool in pairs(gloves) do
+			if name:find(want, 1, true) then chosen = tool break end
+		end
+		if chosen then break end
+	end
+	if not chosen then local _, any = next(gloves) chosen = any end
+	if chosen then
+		pcall(function() hum:EquipTool(chosen) end)
+		if not silent then notify("Glove", "Equipped " .. chosen.Name) end
+	end
+end
+
+-- ----- REGULAR ARENA -----
+F.goToArena = function()
+	pcall(function()
+		local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+		local nat = remotes and remotes:FindFirstChild("NormalArenaTeleport")
+		if nat and nat:IsA("RemoteEvent") then nat:FireServer() end
+	end)
+end
+
 -- ----- SPEED -----
 F.startSpeed = function()
 	C.speedConn = RunService.Heartbeat:Connect(function()
@@ -1444,7 +1485,15 @@ LocalPlayer.CharacterAdded:Connect(function()
 		if S.reachEnabled then F.startReach() end
 		if S.antiVoidEnabled then C.antiVoidSafe = nil F.startAntiVoid() end
 		if S.antiFlingEnabled then F.startAntiFling() end
-		if S.autoRespawnEnabled then end
+		if S.autoBestGlove then F.pickBestGlove(true) end
+		-- back into the regular arena after dying, then reset the farm home
+		if S.autoArenaEnabled then
+			task.wait(0.6)
+			F.goToArena()
+			task.wait(1)
+			local r = getRoot()
+			if r then C.farmHome = r.Position end
+		end
 	end)
 end)
 
@@ -1464,6 +1513,13 @@ do
 	UI.slider(tab, "Slaps Per Target", 1, 8, S.slapsPerTarget, function(v) S.slapsPerTarget = v end)
 	UI.toggle(tab, "Return To Safe Spot Each Pass", function(on) S.farmReturnSafe = on end).setVisualState(S.farmReturnSafe)
 	UI.toggle(tab, "Auto Reach While Farming", function(on) S.farmUseReach = on end).setVisualState(S.farmUseReach)
+	UI.toggle(tab, "Rejoin Regular Arena On Death", function(on) S.autoArenaEnabled = on end)
+	UI.toggle(tab, "Auto Best Glove", function(on)
+		S.autoBestGlove = on
+		if on then F.pickBestGlove() end
+	end)
+	UI.button(tab, "Equip Best Glove Now", function() F.pickBestGlove() end)
+	UI.button(tab, "Go To Regular Arena", function() F.goToArena() end)
 	UI.info(tab, "Finds each target, raycasts for the void, positions behind them facing the edge, and slaps them off. Returns home between passes. Turn on Anti-Fling + Anti-Void (Movement) so you don't die.")
 
 	UI.spacer(tab)
@@ -1650,10 +1706,10 @@ do
 	task.spawn(function()
 		while task.wait(3) do pcall(function() plLabel.Text = "Players: " .. #Players:GetPlayers() end) end
 	end)
-	UI.info(tab, "Right Shift toggles the menu. v2.7")
+	UI.info(tab, "Right Shift toggles the menu. v2.8")
 end
 
-notify("Slap Battles v2.7", "Loaded! Right Shift to toggle")
-print("[SX SLAP v2.7] Pebbleford Hub - Slap Battles Hub")
-print("[SX SLAP v2.7] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
-print("[SX SLAP v2.7] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
+notify("Slap Battles v2.8", "Loaded! Right Shift to toggle")
+print("[SX SLAP v2.8] Pebbleford Hub - Slap Battles Hub")
+print("[SX SLAP v2.8] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
+print("[SX SLAP v2.8] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
