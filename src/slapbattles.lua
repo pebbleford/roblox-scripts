@@ -17,7 +17,7 @@ if not keySystem or not keySystem.validate("slapbattles") then return end
 -- ================================================================
 -- Pebbleford Hub - Slap Battles Hub
 -- Dedicated hub for Slap Battles
--- v3.6
+-- v3.7
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -48,7 +48,7 @@ local S = {
 	reachSize = 18, slapAuraRange = 60, autoSlapDelay = 0.1,
 	smartFarmEnabled = false, farmRange = 300, slapsPerTarget = 3,
 	farmReturnSafe = true, farmUseReach = true, farmPreferSafe = true, farmJump = true,
-	autoBestGlove = false, autoArenaEnabled = false,
+	autoBestGlove = false, autoArenaEnabled = false, arenaPad = 1,
 	selfDefenseEnabled = false, fleeDistance = 28, useAbility = true, abilityKey = "E",
 	-- movement
 	speedEnabled = false, flyEnabled = false, noclipEnabled = false, infJumpEnabled = false,
@@ -187,7 +187,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "SLAP BATTLES v3.6"
+titleLabel.Text = "SLAP BATTLES v3.7"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -1089,11 +1089,18 @@ end
 
 -- ----- REGULAR ARENA -----
 F.goToArena = function()
-	pcall(function()
-		local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-		local nat = remotes and remotes:FindFirstChild("NormalArenaTeleport")
-		if nat and nat:IsA("RemoteEvent") then nat:FireServer() end
-	end)
+	-- The regular arena is a lobby teleport pad (NormalArenaTeleport goes to the
+	-- DEFAULT-glove arena, not this one). arenaPad picks which pad to use.
+	local lobby = workspace:FindFirstChild("Lobby")
+	local pad = lobby and lobby:FindFirstChild("Teleport" .. tostring(S.arenaPad or 1))
+	local root = getRoot()
+	if pad and pad:IsA("BasePart") and root then
+		if firetouchinterest then
+			pcall(function() firetouchinterest(root, pad, 0) task.wait(0.05) firetouchinterest(root, pad, 1) end)
+		else
+			pcall(function() root.CFrame = CFrame.new(pad.Position + Vector3.new(0, 3, 0)) root.AssemblyLinearVelocity = Vector3.zero end)
+		end
+	end
 end
 
 -- ----- SPEED -----
@@ -1732,6 +1739,7 @@ do
 	UI.toggle(tab, "Jump Over Obstacles When Stuck", function(on) S.farmJump = on end).setVisualState(S.farmJump)
 	UI.toggle(tab, "Prefer Safe Targets (dodge deadly gloves)", function(on) S.farmPreferSafe = on end).setVisualState(S.farmPreferSafe)
 	UI.toggle(tab, "Rejoin Regular Arena On Death", function(on) S.autoArenaEnabled = on end)
+	UI.slider(tab, "Arena Pad # (which lobby pad is the normal arena)", 1, 6, S.arenaPad, function(v) S.arenaPad = v end)
 	UI.toggle(tab, "Auto Best Glove", function(on)
 		S.autoBestGlove = on
 		if on then F.pickBestGlove() end
@@ -1935,10 +1943,10 @@ do
 	task.spawn(function()
 		while task.wait(3) do pcall(function() plLabel.Text = "Players: " .. #Players:GetPlayers() end) end
 	end)
-	UI.info(tab, "Right Shift toggles the menu. v3.6")
+	UI.info(tab, "Right Shift toggles the menu. v3.7")
 end
 
-notify("Slap Battles v3.6", "Loaded! Right Shift to toggle")
-print("[SX SLAP v3.6] Pebbleford Hub - Slap Battles Hub")
-print("[SX SLAP v3.6] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
-print("[SX SLAP v3.6] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
+notify("Slap Battles v3.7", "Loaded! Right Shift to toggle")
+print("[SX SLAP v3.7] Pebbleford Hub - Slap Battles Hub")
+print("[SX SLAP v3.7] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
+print("[SX SLAP v3.7] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
