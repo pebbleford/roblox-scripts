@@ -17,7 +17,7 @@ if not keySystem or not keySystem.validate("slapbattles") then return end
 -- ================================================================
 -- Pebbleford Hub - Slap Battles Hub
 -- Dedicated hub for Slap Battles
--- v1.3
+-- v1.4
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -181,7 +181,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "SLAP BATTLES v1.3"
+titleLabel.Text = "SLAP BATTLES v1.4"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -1206,6 +1206,77 @@ F.activatePortal = function(entry)
 	return ok
 end
 
+-- ----- EXACT KNOWN PORTALS (from the in-game dump) -----
+-- Each destination fires its real teleport remote and/or touches its real
+-- portal part. Resolved by path so a missing one just no-ops.
+local KNOWN_PORTALS = {
+	{ label = "Brazil",            remote = "ReplicatedStorage.BrazilHit", part = "Workspace.Lobby.brazil.portal" },
+	{ label = "Normal Arena",      remote = "ReplicatedStorage.Remotes.NormalArenaTeleport" },
+	{ label = "Ultra Instinct",    remote = "ReplicatedStorage.UltraInstinctTeleport" },
+	{ label = "Flash",             remote = "ReplicatedStorage.FlashTeleport" },
+	{ label = "Elude",             remote = "ReplicatedStorage.TeleportElude" },
+	{ label = "Friday 13th",       remote = "ReplicatedStorage.TeleportFriday13th" },
+	{ label = "Slenderman",        remote = "ReplicatedStorage.Remotes.SlendermanObtainmentTeleport" },
+	{ label = "Shopkeeper",        remote = "ReplicatedStorage.Remotes.ShopkeeperObtainmentTeleport" },
+	{ label = "Warp (Lobby)",      remote = "ReplicatedStorage.WarpHit", part = "Workspace.Lobby.Warp" },
+	{ label = "Bounty Hunter Room", part = "Workspace.BountyHunterRoom.BountyHunterBooth._bountyRoomWarpPart" },
+	{ label = "Egg Teleport",      part = "Workspace.BountyHunterRoom.EggTeleport" },
+	{ label = "Pocket Dimension",  part = "Workspace.PocketDimension.PocketDimensionArea" },
+	{ label = "Limited Portal",    part = "Workspace.Limited_Portal.Teleport" },
+	{ label = "Conker",            part = "Workspace.ConkerTeleport" },
+	{ label = "Repressed Memories", part = "Workspace.RepressedMemories.Portal" },
+	{ label = "Find The Gloves",   part = "Workspace.FindTheGlovesTeleport" },
+	{ label = "Well",              part = "Workspace.WellModel.Portal" },
+	{ label = "Cannon Island",     part = "Workspace.Arena.CannonIsland.Cannon Island [OLD].Model.Towers.TeleportSFHitbox" },
+}
+
+local function resolvePath(path)
+	local segs = string.split(path, ".")
+	local cur
+	if segs[1] == "Workspace" then cur = workspace
+	elseif segs[1] == "ReplicatedStorage" then cur = ReplicatedStorage
+	else return nil end
+	for i = 2, #segs do
+		if not cur then return nil end
+		cur = cur:FindFirstChild(segs[i])
+	end
+	return cur
+end
+
+F.goToPortal = function(entry)
+	local did, tried = false, false
+	-- Fire the real teleport remote
+	if entry.remote then
+		local r = resolvePath(entry.remote)
+		if r then
+			tried = true
+			pcall(function()
+				if r:IsA("RemoteEvent") then r:FireServer()
+				elseif r:IsA("RemoteFunction") then r:InvokeServer() end
+			end)
+			did = true
+		end
+	end
+	-- Touch the real portal part (TP onto + firetouchinterest)
+	if entry.part then
+		local obj = resolvePath(entry.part)
+		if obj then
+			tried = true
+			local bp = obj:IsA("BasePart") and obj or (obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart"))) or nil
+			local root = getRoot()
+			if bp and root then
+				pcall(function() root.CFrame = CFrame.new(bp.Position + Vector3.new(0, 3, 0)) root.AssemblyLinearVelocity = Vector3.zero end)
+				if firetouchinterest then
+					pcall(function() firetouchinterest(root, bp, 0) task.wait(0.06) firetouchinterest(root, bp, 1) end)
+				end
+				did = true
+			end
+		end
+	end
+	if not tried then notify("Portal", entry.label .. ": not found in this server") end
+	return did
+end
+
 -- ================================================================
 -- RESPAWN HOOK: re-apply active features after death
 -- ================================================================
@@ -1278,12 +1349,20 @@ end
 -- ===== PLACES =====
 do
 	local tab = tabFrames["Places"]
-	UI.section(tab, "Place Teleporter")
-	UI.info(tab, "Scan finds reachable areas in the server (arena, Brazil, Backrooms, pads, spawns...).")
+	UI.section(tab, "Glove Portals (one-click)")
+	UI.info(tab, "Fires each area's real teleport (remote + portal touch). Some need the right glove equipped first.")
+	for _, entry in ipairs(KNOWN_PORTALS) do
+		UI.button(tab, "Go To " .. entry.label, function()
+			if F.goToPortal(entry) then notify("Portal", "-> " .. entry.label) end
+		end)
+	end
+
+	UI.spacer(tab)
+	UI.section(tab, "Generic Scan (fallback)")
+	UI.info(tab, "Finds other reachable areas by name if a new one appears.")
 	local places = {}
 	local chosen = nil
 	local dd
-	local status = UI.dyn(tab, "Press SCAN to find places.")
 	local function labels()
 		local n = {}
 		for _, pl in ipairs(places) do table.insert(n, pl.name) end
@@ -1294,13 +1373,6 @@ do
 		places = F.scanPlaces()
 		chosen = nil
 		if dd then dd:SetValues(labels()) end
-		if #places == 0 then
-			status.Text = "No named places found. Try moving to a new area and scan again."
-			status.TextColor3 = COLORS.textDim
-		else
-			status.Text = "Found " .. #places .. " place(s). Pick one, then Teleport."
-			status.TextColor3 = COLORS.success
-		end
 		notify("Places", #places .. " found")
 	end)
 	dd = UI.dropdown(tab, "Place", labels(), "Pick", function(choice)
@@ -1309,44 +1381,9 @@ do
 	UI.button(tab, "TELEPORT TO PLACE", function()
 		if not chosen then notify("Places", "Scan and pick a place first") return end
 		if F.tpToPos(chosen.pos) then notify("Places", "Teleported to " .. chosen.name)
-		else notify("Places", "Teleport failed (no character?)") end
-	end)
-	UI.info(tab, "Some areas (like Brazil) are normally reached with a glove - this drops you there directly. If one is empty, re-scan after you've been near it once.")
-
-	UI.spacer(tab)
-	UI.section(tab, "Glove Portals (Brazil etc.)")
-	UI.info(tab, "Brazil and the glove areas are in-game portals, not separate games. This finds portals and FIRES them so the game teleports you.")
-	local portals = {}
-	local pchosen = nil
-	local pdd
-	local pstatus = UI.dyn(tab, "Press SCAN PORTALS to find teleporters.")
-	local function plabels()
-		local n = {}
-		for _, pl in ipairs(portals) do table.insert(n, pl.name) end
-		if #n == 0 then n = {"(scan first)"} end
-		return n
-	end
-	UI.button(tab, "SCAN PORTALS", function()
-		local sc
-		portals, sc = F.scanPortals()
-		pchosen = nil
-		if pdd then pdd:SetValues(plabels()) end
-		pstatus.Text = (#portals > 0) and ("Found " .. #portals .. " portal(s)/prompt(s).") or "No portals found. Move near one and re-scan."
-		pstatus.TextColor3 = (#portals > 0) and COLORS.success or COLORS.textDim
-		print("[SX SLAP] Portal scan: " .. #portals .. " found (" .. tostring(sc) .. " objects)")
-		for _, pl in ipairs(portals) do print("  " .. pl.name) end
-		notify("Portals", #portals .. " found - full list in F9")
-	end)
-	pdd = UI.dropdown(tab, "Portal", plabels(), "Pick", function(choice)
-		for _, pl in ipairs(portals) do if pl.name == choice then pchosen = pl break end end
-	end)
-	UI.button(tab, "ACTIVATE PORTAL", function()
-		if not pchosen then notify("Portals", "Scan and pick a portal first") return end
-		if F.activatePortal(pchosen) then notify("Portals", "Activated: " .. pchosen.name)
-		else notify("Portals", "Could not activate (executor may lack firetouchinterest)") end
+		else notify("Places", "Teleport failed") end
 	end)
 	UI.button(tab, "DUMP PORTALS (F9)", function() F.dumpPortals() end)
-	UI.info(tab, "If the list is empty or wrong, press DUMP and send me the F9 output - I'll wire exact one-click buttons (Go To Brazil, etc.).")
 end
 
 -- ===== PLAYER =====
@@ -1411,10 +1448,10 @@ do
 	task.spawn(function()
 		while task.wait(3) do pcall(function() plLabel.Text = "Players: " .. #Players:GetPlayers() end) end
 	end)
-	UI.info(tab, "Right Shift toggles the menu. v1.3")
+	UI.info(tab, "Right Shift toggles the menu. v1.4")
 end
 
-notify("Slap Battles v1.3", "Loaded! Right Shift to toggle")
-print("[SX SLAP v1.3] Pebbleford Hub - Slap Battles Hub")
-print("[SX SLAP v1.3] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
-print("[SX SLAP v1.3] Reach + Auto Slap + Slap Aura + Place TP + Anti-Void")
+notify("Slap Battles v1.4", "Loaded! Right Shift to toggle")
+print("[SX SLAP v1.4] Pebbleford Hub - Slap Battles Hub")
+print("[SX SLAP v1.4] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
+print("[SX SLAP v1.4] Reach + Auto Slap + Slap Aura + Place TP + Anti-Void")
