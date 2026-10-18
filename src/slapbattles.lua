@@ -17,7 +17,7 @@ if not keySystem or not keySystem.validate("slapbattles") then return end
 -- ================================================================
 -- Pebbleford Hub - Slap Battles Hub
 -- Dedicated hub for Slap Battles
--- v2.8
+-- v2.9
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -185,7 +185,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "SLAP BATTLES v2.8"
+titleLabel.Text = "SLAP BATTLES v2.9"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -629,6 +629,31 @@ local function equipGlove()
 	return nil
 end
 
+-- Slap Battles slapping is a mouse click, not a Tool:Activate (gloves aren't
+-- Tools). doSlap triggers the game's own slap input so it works with whatever
+-- glove is equipped and uses the real slap logic.
+local VIM = game:GetService("VirtualInputManager")
+local function doSlap()
+	local clicked = false
+	-- executor click (most reliable - game sees a real click)
+	pcall(function() if mouse1click then mouse1click() clicked = true end end)
+	pcall(function() if (not clicked) and mouse1press and mouse1release then mouse1press() mouse1release() clicked = true end end)
+	-- VirtualInputManager fallback
+	if not clicked then
+		pcall(function()
+			VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+			VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+			clicked = true
+		end)
+	end
+	-- tool fallback (in case a game build does use a Tool)
+	pcall(function()
+		local c = getChar()
+		if c then for _, t in ipairs(c:GetChildren()) do if t:IsA("Tool") then t:Activate() end end end
+	end)
+	return clicked
+end
+
 -- ----- REACH -----
 F.startReach = function()
 	C.reachConn = RunService.Heartbeat:Connect(function()
@@ -666,10 +691,7 @@ end
 F.startAutoSlap = function()
 	C.autoSlapThread = _spawn(function()
 		while S.autoSlapEnabled do
-			pcall(function()
-				local tool = equipGlove()
-				if tool then tool:Activate() end
-			end)
+			pcall(doSlap)
 			_wait(S.autoSlapDelay)
 		end
 	end)
@@ -700,10 +722,9 @@ F.startSlapAura = function()
 						end
 					end
 					if best then
-						-- face the target so the slap connects, then activate
+						-- face the target (rotation only, no teleport) then slap
 						root.CFrame = CFrame.new(root.Position, Vector3.new(best.Position.X, root.Position.Y, best.Position.Z))
-						local tool = equipGlove()
-						if tool then tool:Activate() end
+						doSlap()
 					end
 				end
 			end)
@@ -726,8 +747,7 @@ F.slapTarget = function()
 	if not root or not tr then return end
 	pcall(function()
 		root.CFrame = tr.CFrame * CFrame.new(0, 0, 4)
-		local tool = equipGlove()
-		if tool then tool:Activate() end
+		doSlap()
 	end)
 	notify("Slap", "Slapped " .. target.DisplayName)
 end
@@ -781,56 +801,45 @@ end
 
 F.startSmartFarm = function()
 	S.smartFarmEnabled = true
-	-- remember where we started as the safe home to return to
-	local sr = getRoot()
-	C.farmHome = sr and sr.Position or nil
-	-- reach makes the slap connect reliably at the attack distance
+	-- reach lets the slap connect from a bit further so you don't have to body
+	-- them, which also looks more natural than standing on top of people
 	if S.farmUseReach and not S.reachEnabled then S.reachEnabled = true F.startReach() C._farmStartedReach = true end
 
 	C.smartFarmThread = _spawn(function()
 		while S.smartFarmEnabled do
-			local root = getRoot()
-			if root and getHum() then
-				local targets = farmTargets(root)
-				for _, t in ipairs(targets) do
-					if not S.smartFarmEnabled then break end
-					if t.r and t.r.Parent and isAlive(t.p) then
-						pcall(function()
-							local T = t.r.Position
-							local void = findVoidDir(T)
-							local myRoot = getRoot()
-							if myRoot then
-								if void then
-									-- inner side of target, facing the void -> slap pushes them off
-									myRoot.CFrame = CFrame.new(T - void * 4.5, T + void * 12)
-								else
-									-- no clear edge: get right behind them and slap anyway
-									myRoot.CFrame = CFrame.new(T - t.r.CFrame.LookVector * 4, T)
-								end
-								myRoot.AssemblyLinearVelocity = Vector3.zero
-								local tool = equipGlove()
-								if tool then
-									for _ = 1, math.max(1, S.slapsPerTarget) do
-										if not isAlive(t.p) or not S.smartFarmEnabled then break end
-										tool:Activate()
-										task.wait(0.08)
-									end
-								end
-							end
-						end)
-						task.wait(S.autoSlapDelay)
+			local root, hum = getRoot(), getHum()
+			if root and hum and hum.Health > 0 then
+				-- nearest alive, non-spawn-protected target
+				local best, bestD, bestR
+				for _, p in ipairs(Players:GetPlayers()) do
+					if p ~= LocalPlayer and isAlive(p) then
+						local ch = p.Character
+						local r = ch and ch:FindFirstChild("HumanoidRootPart")
+						local ff = ch and ch:FindFirstChildWhichIsA("ForceField")
+						if r and not ff then
+							local d = (r.Position - root.Position).Magnitude
+							if d <= S.farmRange and (not bestD or d < bestD) then best, bestD, bestR = p, d, r end
+						end
 					end
 				end
-				-- back to the safe home between passes so we don't sit on an edge
-				if S.farmReturnSafe and C.farmHome then
-					local mr = getRoot()
-					if mr then pcall(function() mr.CFrame = CFrame.new(C.farmHome) mr.AssemblyLinearVelocity = Vector3.zero end) end
+				if bestR then
+					-- WALK toward the target like a real player (MoveTo also turns
+					-- you to face them). No teleporting, so nothing to flag.
+					pcall(function() hum:MoveTo(bestR.Position) end)
+					local slapRange = (S.reachEnabled and S.reachSize or 7) + 5
+					if bestD <= slapRange then
+						for _ = 1, math.max(1, S.slapsPerTarget) do
+							if not S.smartFarmEnabled or not isAlive(best) then break end
+							doSlap()
+							task.wait(0.12)
+						end
+					end
 				end
 			end
-			task.wait(0.25)
+			task.wait(0.15)
 		end
 	end)
-	notify("Smart Farm", "Hunting targets + knocking them off")
+	notify("Smart Farm", "Walking to targets and slapping (no teleport)")
 end
 
 F.stopSmartFarm = function()
@@ -855,7 +864,21 @@ F.pickBestGlove = function(silent)
 	for _, c in ipairs(char:GetChildren()) do if c:IsA("Tool") then gloves[c.Name:lower()] = c end end
 	local bp = LocalPlayer:FindFirstChild("Backpack")
 	if bp then for _, c in ipairs(bp:GetChildren()) do if c:IsA("Tool") then gloves[c.Name:lower()] = c end end end
-	if not next(gloves) then if not silent then notify("Glove", "No gloves found") end return end
+	if not next(gloves) then
+		if not silent then
+			notify("Glove", "No glove Tools found - dumping to F9")
+			print("=== SLAP GLOVE DUMP ===")
+			pcall(function()
+				print("-- Character children --")
+				for _, c in ipairs(char:GetChildren()) do print(c.ClassName .. " | " .. c.Name) end
+				if bp then print("-- Backpack children --") for _, c in ipairs(bp:GetChildren()) do print(c.ClassName .. " | " .. c.Name) end end
+				local gs = workspace:FindFirstChild("Lobby") and workspace.Lobby:FindFirstChild("GloveStands")
+				if gs then print("-- GloveStands --") for _, c in ipairs(gs:GetChildren()) do print(c.ClassName .. " | " .. c.Name) end end
+			end)
+			print("=== END GLOVE DUMP ===")
+		end
+		return
+	end
 	local chosen
 	for _, want in ipairs(GLOVE_PRIORITY) do
 		for name, tool in pairs(gloves) do
@@ -1511,7 +1534,6 @@ do
 	end)
 	UI.slider(tab, "Farm Range (studs)", 50, 500, S.farmRange, function(v) S.farmRange = v end)
 	UI.slider(tab, "Slaps Per Target", 1, 8, S.slapsPerTarget, function(v) S.slapsPerTarget = v end)
-	UI.toggle(tab, "Return To Safe Spot Each Pass", function(on) S.farmReturnSafe = on end).setVisualState(S.farmReturnSafe)
 	UI.toggle(tab, "Auto Reach While Farming", function(on) S.farmUseReach = on end).setVisualState(S.farmUseReach)
 	UI.toggle(tab, "Rejoin Regular Arena On Death", function(on) S.autoArenaEnabled = on end)
 	UI.toggle(tab, "Auto Best Glove", function(on)
@@ -1520,7 +1542,7 @@ do
 	end)
 	UI.button(tab, "Equip Best Glove Now", function() F.pickBestGlove() end)
 	UI.button(tab, "Go To Regular Arena", function() F.goToArena() end)
-	UI.info(tab, "Finds each target, raycasts for the void, positions behind them facing the edge, and slaps them off. Returns home between passes. Turn on Anti-Fling + Anti-Void (Movement) so you don't die.")
+	UI.info(tab, "Walks to the nearest player (no teleporting) and slaps when in range - looks like normal play. Reach helps land hits. Turn on Speed (Movement) to chase faster.")
 
 	UI.spacer(tab)
 	UI.section(tab, "Slap Reach")
@@ -1706,10 +1728,10 @@ do
 	task.spawn(function()
 		while task.wait(3) do pcall(function() plLabel.Text = "Players: " .. #Players:GetPlayers() end) end
 	end)
-	UI.info(tab, "Right Shift toggles the menu. v2.8")
+	UI.info(tab, "Right Shift toggles the menu. v2.9")
 end
 
-notify("Slap Battles v2.8", "Loaded! Right Shift to toggle")
-print("[SX SLAP v2.8] Pebbleford Hub - Slap Battles Hub")
-print("[SX SLAP v2.8] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
-print("[SX SLAP v2.8] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
+notify("Slap Battles v2.9", "Loaded! Right Shift to toggle")
+print("[SX SLAP v2.9] Pebbleford Hub - Slap Battles Hub")
+print("[SX SLAP v2.9] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
+print("[SX SLAP v2.9] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
