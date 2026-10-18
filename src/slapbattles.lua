@@ -17,7 +17,7 @@ if not keySystem or not keySystem.validate("slapbattles") then return end
 -- ================================================================
 -- Pebbleford Hub - Slap Battles Hub
 -- Dedicated hub for Slap Battles
--- v1.6
+-- v1.7
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -181,7 +181,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "SLAP BATTLES v1.6"
+titleLabel.Text = "SLAP BATTLES v1.7"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -1225,7 +1225,7 @@ local KNOWN_PORTALS = {
 	{ label = "Pocket Dimension",  part = "Workspace.PocketDimension.PocketDimensionArea" },
 	{ label = "Limited Portal",    part = "Workspace.Limited_Portal.Teleport" },
 	{ label = "Conker",            part = "Workspace.ConkerTeleport" },
-	{ label = "Limbo / Repressed Memories", remote = "ReplicatedStorage.ClaimLimboFastTravel", part = "Workspace.RepressedMemories.Limbo" },
+	{ label = "Limbo / Repressed Memories", remote = "ReplicatedStorage.ClaimLimboFastTravel", part = "Workspace.RepressedMemories.Limbo", tp = true },
 	{ label = "Find The Gloves",   part = "Workspace.FindTheGlovesTeleport" },
 	{ label = "Well",              part = "Workspace.WellModel.Portal" },
 	{ label = "Cannon Island",     part = "Workspace.Arena.CannonIsland.Cannon Island [OLD].Model.Towers.TeleportSFHitbox" },
@@ -1261,20 +1261,29 @@ F.goToPortal = function(entry)
 	-- Touch the real portal part. We DON'T teleport you onto it anymore -
 	-- firetouchinterest fires the part's Touched from where you stand, so a real
 	-- pad still triggers, and a decorative wall just does nothing instead of
-	-- stranding you to fall to your death.
+	-- stranding you to fall to your death. Entries with tp=true are real AREAS
+	-- (not trigger pads) so we land you on TOP of the part instead.
 	if entry.part then
 		local obj = resolvePath(entry.part)
 		if obj then
 			tried = true
 			local bp = obj:IsA("BasePart") and obj or (obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart"))) or nil
 			local root = getRoot()
-			if bp and root and firetouchinterest then
-				pcall(function() firetouchinterest(root, bp, 0) task.wait(0.06) firetouchinterest(root, bp, 1) end)
-				did = true
-			elseif bp and root then
-				-- no firetouchinterest on this executor: last resort, move onto it
-				pcall(function() root.CFrame = CFrame.new(bp.Position + Vector3.new(0, 3, 0)) root.AssemblyLinearVelocity = Vector3.zero end)
-				did = true
+			if bp and root then
+				if entry.tp then
+					pcall(function()
+						local top = bp.Position + Vector3.new(0, (bp.Size.Y / 2) + 4, 0)
+						root.CFrame = CFrame.new(top)
+						root.AssemblyLinearVelocity = Vector3.zero
+					end)
+					did = true
+				elseif firetouchinterest then
+					pcall(function() firetouchinterest(root, bp, 0) task.wait(0.06) firetouchinterest(root, bp, 1) end)
+					did = true
+				else
+					pcall(function() root.CFrame = CFrame.new(bp.Position + Vector3.new(0, 3, 0)) root.AssemblyLinearVelocity = Vector3.zero end)
+					did = true
+				end
 			end
 		end
 	end
@@ -1453,10 +1462,10 @@ do
 	task.spawn(function()
 		while task.wait(3) do pcall(function() plLabel.Text = "Players: " .. #Players:GetPlayers() end) end
 	end)
-	UI.info(tab, "Right Shift toggles the menu. v1.6")
+	UI.info(tab, "Right Shift toggles the menu. v1.7")
 end
 
-notify("Slap Battles v1.6", "Loaded! Right Shift to toggle")
-print("[SX SLAP v1.6] Pebbleford Hub - Slap Battles Hub")
-print("[SX SLAP v1.6] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
-print("[SX SLAP v1.6] Reach + Auto Slap + Slap Aura + Place TP + Anti-Void")
+notify("Slap Battles v1.7", "Loaded! Right Shift to toggle")
+print("[SX SLAP v1.7] Pebbleford Hub - Slap Battles Hub")
+print("[SX SLAP v1.7] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
+print("[SX SLAP v1.7] Reach + Auto Slap + Slap Aura + Place TP + Anti-Void")
