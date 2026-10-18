@@ -17,7 +17,7 @@ if not keySystem or not keySystem.validate("slapbattles") then return end
 -- ================================================================
 -- Pebbleford Hub - Slap Battles Hub
 -- Dedicated hub for Slap Battles
--- v3.9
+-- v4.0
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -187,7 +187,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "SLAP BATTLES v3.9"
+titleLabel.Text = "SLAP BATTLES v4.0"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -936,7 +936,10 @@ F.startSmartFarm = function()
 					end
 					C.farmLastPos = root.Position
 				else
-					-- in range: stop walking (no dance), rotate to face them and slap
+					-- in range: cancel the leftover walk (MoveTo our own spot) so legs
+					-- STOP instead of strafing to the old point (the random adadad),
+					-- then face + slap.
+					pcall(function() hum:MoveTo(root.Position) end)
 					pcall(function() root.CFrame = CFrame.new(root.Position, Vector3.new(bestR.Position.X, root.Position.Y, bestR.Position.Z)) end)
 					C.farmLastPos = root.Position
 					for _ = 1, math.max(1, S.slapsPerTarget) do
@@ -1969,10 +1972,10 @@ do
 	task.spawn(function()
 		while task.wait(3) do pcall(function() plLabel.Text = "Players: " .. #Players:GetPlayers() end) end
 	end)
-	UI.info(tab, "Right Shift toggles the menu. v3.9")
+	UI.info(tab, "Right Shift toggles the menu. v4.0")
 end
 
-notify("Slap Battles v3.9", "Loaded! Right Shift to toggle")
-print("[SX SLAP v3.9] Pebbleford Hub - Slap Battles Hub")
-print("[SX SLAP v3.9] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
-print("[SX SLAP v3.9] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
+notify("Slap Battles v4.0", "Loaded! Right Shift to toggle")
+print("[SX SLAP v4.0] Pebbleford Hub - Slap Battles Hub")
+print("[SX SLAP v4.0] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
+print("[SX SLAP v4.0] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
