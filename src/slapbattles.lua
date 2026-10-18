@@ -1198,7 +1198,9 @@ do
 	UI.info(tab, "Some areas (like Brazil) are normally reached with a glove - this drops you there directly. If one is empty, re-scan after you've been near it once.")
 end
 
-
+-- ===== PLAYER =====
+do
+	local tab = tabFrames["Player"]
 	UI.section(tab, "Target Player")
 	local players = {}
 	local function names()
