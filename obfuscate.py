@@ -33,6 +33,7 @@ SCRIPTS = [
     "industrialist.lua",
     "psteleport.lua",
     "translator.lua",
+    "slapbattles.lua",
     "nbtfdump.lua",
     "uidemo_fluent.lua",
     "uidemo_windui.lua",

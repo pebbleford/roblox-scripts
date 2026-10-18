@@ -32,6 +32,7 @@ local GENERATED_KEY_EXPIRY = 86400
 local SCRIPT_IDS = {
     synapsex = 0, rivals = 1, mm2 = 2, brookhaven = 3,
     sharkbite = 4, nbtf = 5, elected = 6, ["99nights"] = 7,
+    slapbattles = 8,
 }
 
 -- ============================================================
