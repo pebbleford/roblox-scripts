@@ -17,7 +17,7 @@ if not keySystem or not keySystem.validate("slapbattles") then return end
 -- ================================================================
 -- Pebbleford Hub - Slap Battles Hub
 -- Dedicated hub for Slap Battles
--- v4.1
+-- v4.2
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -64,6 +64,7 @@ local C = {
 	autoSlapThread = nil, slapAuraThread = nil,
 	smartFarmThread = nil, farmHome = nil, farmLastPos = nil,
 	selfDefenseThread = nil, fleeing = false, lastAbility = 0, lastMoveTarget = nil,
+	farmTarget = nil, threatUntil = 0,
 	flyConn = nil, flyBV = nil, flyBG = nil, flyUpBtn = nil, flyDownBtn = nil,
 	noclipConn = nil, infJumpConn = nil, speedConn = nil,
 	antiVoidConn = nil, antiVoidSafe = nil, antiFlingConn = nil,
@@ -187,7 +188,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "SLAP BATTLES v4.1"
+titleLabel.Text = "SLAP BATTLES v4.2"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -907,7 +908,7 @@ F.startSmartFarm = function()
 						end
 					end
 				end
-				if #cands == 0 then C.farmLastPos = root.Position return end
+				if #cands == 0 then C.farmTarget = nil C.farmLastPos = root.Position return end
 
 				-- Prefer safe (low-danger) targets, then nearest.
 				table.sort(cands, function(a, b)
@@ -915,6 +916,7 @@ F.startSmartFarm = function()
 					return a.d < b.d
 				end)
 				local t = cands[1]
+				C.farmTarget = t.p
 				local bestR, bestD = t.r, t.d
 
 				local reach = (S.reachEnabled and S.reachSize or 7)
@@ -1016,15 +1018,18 @@ end
 F.startSelfDefense = function()
 	S.selfDefenseEnabled = true
 	C.selfDefenseThread = _spawn(function()
-		local lastD = {}
+		local lastD, lastT = {}, {}
+		local RUSH_SPEED = 16  -- studs/sec of closing = someone sprinting at you
 		while S.selfDefenseEnabled do
 			pcall(function()
 				local root, hum = getRoot(), getHum()
 				if not (root and hum and hum.Health > 0) then C.fleeing = false return end
 				if not inArena() then C.fleeing = false return end
+				-- Nearest enemy that ISN'T the one we're farming (so slapping a
+				-- target never counts as a threat - that overlap was the wiggle).
 				local best, bestD, bestR
 				for _, p in ipairs(Players:GetPlayers()) do
-					if p ~= LocalPlayer and isAlive(p) then
+					if p ~= LocalPlayer and p ~= C.farmTarget and isAlive(p) then
 						local r = p.Character and p.Character:FindFirstChild("HumanoidRootPart")
 						if r then
 							local d = (r.Position - root.Position).Magnitude
@@ -1032,29 +1037,33 @@ F.startSelfDefense = function()
 						end
 					end
 				end
-				if bestR and bestD <= S.fleeDistance then
-					-- Keep the ability (Diamond form etc.) up the whole time a threat
-					-- is near - re-press whenever it's off cooldown - so you don't drop
-					-- out of it while the one-shot is still around.
-					if S.useAbility and (tick() - (C.lastAbility or 0)) > 0.4 then
-						C.lastAbility = tick()
+				-- Only treat a RUSHER as a threat: someone closing distance fast.
+				-- We can't read gloves, but one-shot users are the ones who sprint
+				-- at you, so closing speed is the proxy.
+				local now = tick()
+				if best then
+					local prev, pt = lastD[best], lastT[best]
+					if prev and pt and (now - pt) > 0 then
+						local closeSpeed = (prev - bestD) / (now - pt)
+						if bestD <= S.fleeDistance and closeSpeed > RUSH_SPEED then
+							C.threatUntil = now + 1.2 -- remember the rusher briefly
+						end
+					end
+					lastD[best], lastT[best] = bestD, now
+				end
+				local threatActive = best and bestR and bestD <= S.fleeDistance and now < (C.threatUntil or 0)
+				if threatActive then
+					C.fleeing = true
+					-- hold your ability (Diamond form) while the rusher is near
+					if S.useAbility and (now - (C.lastAbility or 0)) > 0.4 then
+						C.lastAbility = now
 						_spawn(pressAbility)
 					end
-					local prev = lastD[best]
-					local closing = (not prev) or (bestD < prev - 0.4)
-					lastD[best] = bestD
-					if closing then
-						C.fleeing = true
-						-- flee toward solid ground, not off the edge
-						local dir = safeFleeDir(root, bestR.Position)
-						if dir then
-							pcall(function() hum:MoveTo(root.Position + dir * 60) hum.Jump = true end)
-						else
-							-- no safe exit: hold position and keep using ability
-							pcall(function() hum:MoveTo(root.Position) end)
-						end
+					local dir = safeFleeDir(root, bestR.Position)
+					if dir then
+						pcall(function() hum:MoveTo(root.Position + dir * 60) hum.Jump = true end)
 					else
-						C.fleeing = false
+						pcall(function() hum:MoveTo(root.Position) end)
 					end
 				else
 					C.fleeing = false
@@ -1794,7 +1803,7 @@ do
 	UI.slider(tab, "Flee Distance (studs)", 10, 80, S.fleeDistance, function(v) S.fleeDistance = v end)
 	UI.toggle(tab, "Auto Use Ability When Rushed", function(on) S.useAbility = on end).setVisualState(S.useAbility)
 	UI.input(tab, "Ability Key (default E)", function(txt) if txt and #txt > 0 then S.abilityKey = txt end end)
-	UI.info(tab, "If a player closes in on you fast (a one-shot rusher), you run away and fire your ability key (set it to your glove's ability, e.g. E for Diamond's shield).")
+	UI.info(tab, "Only flees when someone SPRINTS at you (one-shot rushers), never from the player you're farming - so it won't fight the farm. Fires your ability key (set it to your glove's, e.g. E for Diamond) and holds it until they leave.")
 
 	UI.spacer(tab)
 	UI.section(tab, "Slap Reach")
@@ -1980,10 +1989,10 @@ do
 	task.spawn(function()
 		while task.wait(3) do pcall(function() plLabel.Text = "Players: " .. #Players:GetPlayers() end) end
 	end)
-	UI.info(tab, "Right Shift toggles the menu. v4.1")
+	UI.info(tab, "Right Shift toggles the menu. v4.2")
 end
 
-notify("Slap Battles v4.1", "Loaded! Right Shift to toggle")
-print("[SX SLAP v4.1] Pebbleford Hub - Slap Battles Hub")
-print("[SX SLAP v4.1] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
-print("[SX SLAP v4.1] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
+notify("Slap Battles v4.2", "Loaded! Right Shift to toggle")
+print("[SX SLAP v4.2] Pebbleford Hub - Slap Battles Hub")
+print("[SX SLAP v4.2] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
+print("[SX SLAP v4.2] Smart Farm + Reach + Slap Aura + Place TP + Anti-Void")
