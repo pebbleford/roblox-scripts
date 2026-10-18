@@ -17,7 +17,7 @@ if not keySystem or not keySystem.validate("slapbattles") then return end
 -- ================================================================
 -- Pebbleford Hub - Slap Battles Hub
 -- Dedicated hub for Slap Battles
--- v1.5
+-- v1.6
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -181,7 +181,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "SLAP BATTLES v1.5"
+titleLabel.Text = "SLAP BATTLES v1.6"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -1225,7 +1225,7 @@ local KNOWN_PORTALS = {
 	{ label = "Pocket Dimension",  part = "Workspace.PocketDimension.PocketDimensionArea" },
 	{ label = "Limited Portal",    part = "Workspace.Limited_Portal.Teleport" },
 	{ label = "Conker",            part = "Workspace.ConkerTeleport" },
-	{ label = "Repressed Memories", part = "Workspace.RepressedMemories.Portal" },
+	{ label = "Limbo / Repressed Memories", remote = "ReplicatedStorage.ClaimLimboFastTravel", part = "Workspace.RepressedMemories.Limbo" },
 	{ label = "Find The Gloves",   part = "Workspace.FindTheGlovesTeleport" },
 	{ label = "Well",              part = "Workspace.WellModel.Portal" },
 	{ label = "Cannon Island",     part = "Workspace.Arena.CannonIsland.Cannon Island [OLD].Model.Towers.TeleportSFHitbox" },
@@ -1453,10 +1453,10 @@ do
 	task.spawn(function()
 		while task.wait(3) do pcall(function() plLabel.Text = "Players: " .. #Players:GetPlayers() end) end
 	end)
-	UI.info(tab, "Right Shift toggles the menu. v1.5")
+	UI.info(tab, "Right Shift toggles the menu. v1.6")
 end
 
-notify("Slap Battles v1.5", "Loaded! Right Shift to toggle")
-print("[SX SLAP v1.5] Pebbleford Hub - Slap Battles Hub")
-print("[SX SLAP v1.5] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
-print("[SX SLAP v1.5] Reach + Auto Slap + Slap Aura + Place TP + Anti-Void")
+notify("Slap Battles v1.6", "Loaded! Right Shift to toggle")
+print("[SX SLAP v1.6] Pebbleford Hub - Slap Battles Hub")
+print("[SX SLAP v1.6] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
+print("[SX SLAP v1.6] Reach + Auto Slap + Slap Aura + Place TP + Anti-Void")
