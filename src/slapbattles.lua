@@ -17,7 +17,7 @@ if not keySystem or not keySystem.validate("slapbattles") then return end
 -- ================================================================
 -- Pebbleford Hub - Slap Battles Hub
 -- Dedicated hub for Slap Battles
--- v2.2
+-- v2.3
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -181,7 +181,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "SLAP BATTLES v2.2"
+titleLabel.Text = "SLAP BATTLES v2.3"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -1496,15 +1496,40 @@ do
 	end)
 
 	UI.spacer(tab)
+	UI.section(tab, "Place ID Finder")
+	UI.button(tab, "Print Current PlaceId (F9)", function()
+		print("[SX SLAP] Current PlaceId: " .. tostring(game.PlaceId) .. " | JobId: " .. tostring(game.JobId))
+		notify("PlaceId", tostring(game.PlaceId))
+	end)
+	UI.button(tab, "Log Teleports (F9)", function()
+		if S._tpLogInstalled then notify("TP Logger", "Already on") return end
+		local ok = pcall(function()
+			if not hookmetamethod then error("no hookmetamethod") end
+			local old
+			old = hookmetamethod(game, "__namecall", (newcclosure or function(f) return f end)(function(self, ...)
+				local m = getnamecallmethod and getnamecallmethod()
+				if m and (m == "Teleport" or m == "TeleportToPlaceInstance" or m == "TeleportToPrivateServer" or m == "TeleportAsync") then
+					local a = { ... }
+					print("[SX SLAP][TP LOG] " .. tostring(m) .. " -> PlaceId " .. tostring(a[1]))
+				end
+				return old(self, ...)
+			end))
+		end)
+		S._tpLogInstalled = ok
+		notify("TP Logger", ok and "ON - trigger the obby, watch F9 for the PlaceId" or "Not supported on this executor")
+	end)
+	UI.info(tab, "To find the retro obby ID: turn on Log Teleports, then trigger the obby the normal way - F9 prints the destination PlaceId. Send it to me and I'll add a button. (Hook may kick on anti-cheat games.)")
+
+	UI.spacer(tab)
 	UI.section(tab, "Info")
 	local plLabel = UI.dyn(tab, "Players: " .. #Players:GetPlayers())
 	task.spawn(function()
 		while task.wait(3) do pcall(function() plLabel.Text = "Players: " .. #Players:GetPlayers() end) end
 	end)
-	UI.info(tab, "Right Shift toggles the menu. v2.2")
+	UI.info(tab, "Right Shift toggles the menu. v2.3")
 end
 
-notify("Slap Battles v2.2", "Loaded! Right Shift to toggle")
-print("[SX SLAP v2.2] Pebbleford Hub - Slap Battles Hub")
-print("[SX SLAP v2.2] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
-print("[SX SLAP v2.2] Reach + Auto Slap + Slap Aura + Place TP + Anti-Void")
+notify("Slap Battles v2.3", "Loaded! Right Shift to toggle")
+print("[SX SLAP v2.3] Pebbleford Hub - Slap Battles Hub")
+print("[SX SLAP v2.3] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
+print("[SX SLAP v2.3] Reach + Auto Slap + Slap Aura + Place TP + Anti-Void")
