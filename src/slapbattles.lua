@@ -17,7 +17,7 @@ if not keySystem or not keySystem.validate("slapbattles") then return end
 -- ================================================================
 -- Pebbleford Hub - Slap Battles Hub
 -- Dedicated hub for Slap Battles
--- v1.9
+-- v2.0
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -181,7 +181,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "SLAP BATTLES v1.9"
+titleLabel.Text = "SLAP BATTLES v2.0"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -1232,6 +1232,26 @@ local KNOWN_PORTALS = {
 	{ label = "Cannon Island",     part = "Workspace.Arena.CannonIsland.Cannon Island [OLD].Model.Towers.TeleportSFHitbox" },
 }
 
+-- Separate Slap Battles places (their own PlaceIds) - TeleportService jumps you
+-- to a server running that place. These are the real "go to Brazil" etc.
+local SUBPLACES = {
+	{ "Brazil", 7234087065 },
+	{ "Glove Customization", 9068206286 },
+	{ "Slap Royale", 9431156611 },
+	{ "Slap Royale Queue", 9412139218 },
+	{ "Ice Essence", 17290438723 },
+	{ "The Dark Realm", 13833961666 },
+	{ "The Null Zone", 14422118326 },
+	{ "Tower Defence", 15228348051 },
+	{ "100 Players", 8550289322 },
+	{ "200 Players", 13592060273 },
+	{ "Main Game (rejoin)", 6403373529 },
+}
+
+F.tpPlaceId = function(id)
+	pcall(function() TeleportService:Teleport(id, LocalPlayer) end)
+end
+
 local function resolvePath(path)
 	local segs = string.split(path, ".")
 	local cur
@@ -1364,6 +1384,16 @@ end
 -- ===== PLACES =====
 do
 	local tab = tabFrames["Places"]
+	UI.section(tab, "Sub-Places (separate servers)")
+	UI.info(tab, "Jumps you to a server running that place. This is the real Brazil etc. - takes a few seconds to load.")
+	for _, sp in ipairs(SUBPLACES) do
+		UI.button(tab, "Go To " .. sp[1], function()
+			notify("Teleport", "Joining " .. sp[1] .. "...")
+			F.tpPlaceId(sp[2])
+		end)
+	end
+
+	UI.spacer(tab)
 	UI.section(tab, "Glove Portals (one-click)")
 	UI.info(tab, "Fires each area's real teleport (remote + portal touch). Some need the right glove equipped first.")
 	for _, entry in ipairs(KNOWN_PORTALS) do
@@ -1463,10 +1493,10 @@ do
 	task.spawn(function()
 		while task.wait(3) do pcall(function() plLabel.Text = "Players: " .. #Players:GetPlayers() end) end
 	end)
-	UI.info(tab, "Right Shift toggles the menu. v1.9")
+	UI.info(tab, "Right Shift toggles the menu. v2.0")
 end
 
-notify("Slap Battles v1.9", "Loaded! Right Shift to toggle")
-print("[SX SLAP v1.9] Pebbleford Hub - Slap Battles Hub")
-print("[SX SLAP v1.9] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
-print("[SX SLAP v1.9] Reach + Auto Slap + Slap Aura + Place TP + Anti-Void")
+notify("Slap Battles v2.0", "Loaded! Right Shift to toggle")
+print("[SX SLAP v2.0] Pebbleford Hub - Slap Battles Hub")
+print("[SX SLAP v2.0] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
+print("[SX SLAP v2.0] Reach + Auto Slap + Slap Aura + Place TP + Anti-Void")
