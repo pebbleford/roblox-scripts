@@ -17,7 +17,7 @@ if not keySystem or not keySystem.validate("slapbattles") then return end
 -- ================================================================
 -- Pebbleford Hub - Slap Battles Hub
 -- Dedicated hub for Slap Battles
--- v2.4
+-- v2.5
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -181,7 +181,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "SLAP BATTLES v2.4"
+titleLabel.Text = "SLAP BATTLES v2.5"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.Font = Enum.Font.Code
 titleLabel.TextSize = 15
@@ -1223,6 +1223,7 @@ local KNOWN_PORTALS = {
 	{ label = "Retro",             part = "Workspace.Lobby.Retro" },
 	{ label = "Retro Obby (Enter)", remote = "ReplicatedStorage.EnterRetroObby" },
 	{ label = "Retro Obby (TP)",   remote = "ReplicatedStorage.RetroTP" },
+	{ label = "Retro Obby (walk in)", part = "Workspace.FinishDoor_Retro", tp = true },
 	{ label = "Leave Retro Obby",  remote = "ReplicatedStorage.LeaveRetroObby" },
 	{ label = "Reverse",           part = "Workspace.Lobby.Reverse" },
 	{ label = "Recall",            part = "Workspace.Lobby.Recall" },
@@ -1529,10 +1530,10 @@ do
 	task.spawn(function()
 		while task.wait(3) do pcall(function() plLabel.Text = "Players: " .. #Players:GetPlayers() end) end
 	end)
-	UI.info(tab, "Right Shift toggles the menu. v2.4")
+	UI.info(tab, "Right Shift toggles the menu. v2.5")
 end
 
-notify("Slap Battles v2.4", "Loaded! Right Shift to toggle")
-print("[SX SLAP v2.4] Pebbleford Hub - Slap Battles Hub")
-print("[SX SLAP v2.4] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
-print("[SX SLAP v2.4] Reach + Auto Slap + Slap Aura + Place TP + Anti-Void")
+notify("Slap Battles v2.5", "Loaded! Right Shift to toggle")
+print("[SX SLAP v2.5] Pebbleford Hub - Slap Battles Hub")
+print("[SX SLAP v2.5] Tabs: Combat | Movement | Places | Player | Visuals | Misc")
+print("[SX SLAP v2.5] Reach + Auto Slap + Slap Aura + Place TP + Anti-Void")
