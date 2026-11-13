@@ -2,7 +2,7 @@
 -- Pebbleford Hub - Chat Translator
 -- Reads incoming chat, auto-translates to English, and lets you
 -- send outgoing messages translated into any target language.
--- v1.1
+-- v1.3
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -162,7 +162,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 36, 1, 0)
 versionLabel.Position = UDim2.new(1, -78, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v1.0"
+versionLabel.Text = "v1.3"
 versionLabel.TextColor3 = COLORS.textDim
 versionLabel.TextSize = 12
 versionLabel.Font = Enum.Font.Gotham
@@ -430,20 +430,42 @@ end
 -- is a nested JSON array: result[1] holds one entry per sentence chunk,
 -- each of the form { translatedText, sourceText, ... }; result[3] is the
 -- detected source language code.
+-- Robust HTTP GET. game:HttpGet is often blocked/rate-limited by executors for
+-- Google's API, so prefer the executor's own request function (syn.request,
+-- http_request, request, fluxus.request...) which sends a proper User-Agent and
+-- is far more reliable. Falls back to game:HttpGet.
+local _reqFn = (syn and syn.request) or (http and http.request) or http_request or request
+	or (fluxus and fluxus.request) or (getgenv and getgenv().request)
+local function httpGet(url)
+	if _reqFn then
+		local ok, res = pcall(_reqFn, { Url = url, Method = "GET", Headers = { ["User-Agent"] = "Mozilla/5.0" } })
+		if ok and type(res) == "table" and type(res.Body) == "string"
+			and (res.StatusCode == 200 or res.StatusCode == nil or res.Success) and #res.Body > 0 then
+			return res.Body
+		end
+	end
+	local ok, body = pcall(function() return game:HttpGet(url) end)
+	if ok and type(body) == "string" then return body end
+	return nil
+end
+
 local function translate(text, targetLang, sourceLang)
 	if not text or text == "" then return nil, nil, "empty" end
 	targetLang = targetLang or "en"
 	sourceLang = sourceLang or "auto"
-	local url = string.format(
-		"https://translate.googleapis.com/translate_a/single?client=gtx&sl=%s&tl=%s&dt=t&q=%s",
-		HttpService:UrlEncode(sourceLang),
-		HttpService:UrlEncode(targetLang),
-		HttpService:UrlEncode(text)
-	)
-	local ok, body = pcall(function() return game:HttpGet(url) end)
-	if not ok or type(body) ~= "string" then
-		return nil, nil, "http failed"
+	-- Two Google endpoints; if the first is blocked the second often isn't.
+	local urls = {
+		string.format("https://translate.googleapis.com/translate_a/single?client=gtx&sl=%s&tl=%s&dt=t&q=%s",
+			HttpService:UrlEncode(sourceLang), HttpService:UrlEncode(targetLang), HttpService:UrlEncode(text)),
+		string.format("https://clients5.google.com/translate_a/single?client=gtx&sl=%s&tl=%s&dt=t&q=%s",
+			HttpService:UrlEncode(sourceLang), HttpService:UrlEncode(targetLang), HttpService:UrlEncode(text)),
+	}
+	local body
+	for _, url in ipairs(urls) do
+		body = httpGet(url)
+		if body then break end
 	end
+	if not body then return nil, nil, "http failed (executor blocked the request)" end
 	local ok2, data = pcall(function() return HttpService:JSONDecode(body) end)
 	if not ok2 or type(data) ~= "table" or type(data[1]) ~= "table" then
 		return nil, nil, "parse failed"
@@ -505,8 +527,9 @@ local function handleIncoming(speakerName, rawText)
 	end)
 end
 
--- Determine which chat system this game uses. TextChatService is authoritative
--- on modern experiences; anything older still fires Player.Chatted events.
+-- Hook BOTH chat systems rather than guessing one. Some games fire only
+-- TextChatService.MessageReceived, some only Player.Chatted, some both - so we
+-- listen on both and de-dupe so a message seen twice isn't translated twice.
 local usingNewChat = false
 pcall(function()
 	if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
@@ -514,23 +537,34 @@ pcall(function()
 	end
 end)
 
-if usingNewChat then
-	TextChatService.MessageReceived:Connect(function(message)
-		if not message or not message.TextSource then return end
-		local src = message.TextSource
-		if src.UserId == LocalPlayer.UserId then return end
-		local plr = Players:GetPlayerByUserId(src.UserId)
-		local name = plr and plr.DisplayName or src.Name or "Player"
-		handleIncoming(name, message.Text)
-	end)
-else
-	local function hookPlayer(plr)
-		if plr == LocalPlayer then return end
-		plr.Chatted:Connect(function(msg) handleIncoming(plr.DisplayName or plr.Name, msg) end)
-	end
-	for _, plr in ipairs(Players:GetPlayers()) do hookPlayer(plr) end
-	Players.PlayerAdded:Connect(hookPlayer)
+local _recentIncoming = {}
+local function incomingOnce(name, msg)
+	if not msg or msg == "" then return end
+	local key = name .. "\0" .. msg
+	if _recentIncoming[key] and (tick() - _recentIncoming[key]) < 1.5 then return end
+	_recentIncoming[key] = tick()
+	handleIncoming(name, msg)
 end
+
+pcall(function()
+	TextChatService.MessageReceived:Connect(function(message)
+		if not message then return end
+		local src = message.TextSource
+		if src and src.UserId == LocalPlayer.UserId then return end
+		local plr = src and Players:GetPlayerByUserId(src.UserId)
+		local name = (plr and plr.DisplayName) or (src and src.Name) or "Player"
+		incomingOnce(name, message.Text)
+	end)
+end)
+
+local function hookPlayer(plr)
+	if plr == LocalPlayer then return end
+	pcall(function()
+		plr.Chatted:Connect(function(msg) incomingOnce(plr.DisplayName or plr.Name, msg) end)
+	end)
+end
+for _, plr in ipairs(Players:GetPlayers()) do hookPlayer(plr) end
+Players.PlayerAdded:Connect(hookPlayer)
 
 -- ===================== SEND TRANSLATED =====================
 local function sendChat(text)
@@ -642,3 +676,15 @@ end)
 
 addLog("Ready. Chat mode: " .. (usingNewChat and "TextChatService" or "Legacy"), COLORS.textDim)
 addLog("Language codes: en, es, fr, de, ja, ko, zh, ru, pt, it, ar, hi, tr, nl, pl, tl, id, vi, th", COLORS.textDim)
+
+-- Startup self-test so you instantly know if translation works on this executor.
+_spawn(function()
+	addLog("Testing translation...", COLORS.textDim)
+	local out, det, err = translate("hola", "en", "auto")
+	if out then
+		addLog("[OK] Translation works (" .. (_reqFn and "request" or "HttpGet") .. "). hola -> " .. out, COLORS.success)
+	else
+		addLog("[X] Translation blocked by your executor: " .. tostring(err), COLORS.error)
+		addLog("    Your executor can't reach Google Translate. Try a different executor.", COLORS.warn)
+	end
+end)
