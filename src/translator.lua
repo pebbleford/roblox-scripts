@@ -2,7 +2,7 @@
 -- Pebbleford Hub - Chat Translator
 -- Reads incoming chat, auto-translates to English, and lets you
 -- send outgoing messages translated into any target language.
--- v1.3
+-- v1.4
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -151,7 +151,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -100, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "Chat Translator"
+titleLabel.Text = "Chat Translator v1.4"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.TextSize = 16
 titleLabel.Font = Enum.Font.GothamBold
@@ -162,7 +162,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 36, 1, 0)
 versionLabel.Position = UDim2.new(1, -78, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v1.3"
+versionLabel.Text = "v1.4"
 versionLabel.TextColor3 = COLORS.textDim
 versionLabel.TextSize = 12
 versionLabel.Font = Enum.Font.Gotham
