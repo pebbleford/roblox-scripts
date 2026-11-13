@@ -2,7 +2,7 @@
 -- Pebbleford Hub - Chat Translator
 -- Reads incoming chat, auto-translates to English, and lets you
 -- send outgoing messages translated into any target language.
--- v1.5
+-- v1.6
 -- ================================================================
 
 local Players = game:GetService("Players")
@@ -151,7 +151,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -100, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "Chat Translator v1.5"
+titleLabel.Text = "Chat Translator v1.6"
 titleLabel.TextColor3 = COLORS.textPrimary
 titleLabel.TextSize = 16
 titleLabel.Font = Enum.Font.GothamBold
@@ -162,7 +162,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(0, 36, 1, 0)
 versionLabel.Position = UDim2.new(1, -78, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v1.5"
+versionLabel.Text = "v1.6"
 versionLabel.TextColor3 = COLORS.textDim
 versionLabel.TextSize = 12
 versionLabel.Font = Enum.Font.Gotham
@@ -449,59 +449,77 @@ local function httpGet(url)
 	return nil
 end
 
+-- Each backend is one host attempt: returns translated, detected or nil.
+local function enc(s) return HttpService:UrlEncode(s) end
+
+local function _googleAttempt(host)
+	return function(text, tl, sl)
+		local url = ("https://%s/translate_a/single?client=gtx&sl=%s&tl=%s&dt=t&q=%s"):format(host, enc(sl), enc(tl), enc(text))
+		local body = httpGet(url)
+		if not body then return nil end
+		local ok, data = pcall(function() return HttpService:JSONDecode(body) end)
+		if ok and type(data) == "table" and type(data[1]) == "table" then
+			local parts = {}
+			for _, seg in ipairs(data[1]) do
+				if type(seg) == "table" and type(seg[1]) == "string" then table.insert(parts, seg[1]) end
+			end
+			local t = table.concat(parts)
+			if t ~= "" then return t, (type(data[3]) == "string" and data[3] or nil) end
+		end
+		return nil
+	end
+end
+
+local function _lingvaAttempt(host)
+	return function(text, tl, sl)
+		local url = ("https://%s/api/v1/%s/%s/%s"):format(host, enc(sl), enc(tl), enc(text))
+		local body = httpGet(url)
+		if not body then return nil end
+		local ok, data = pcall(function() return HttpService:JSONDecode(body) end)
+		if ok and type(data) == "table" and type(data.translation) == "string" and data.translation ~= "" then
+			local det = (type(data.info) == "table" and type(data.info.detectedSource) == "string") and data.info.detectedSource or nil
+			return data.translation, det
+		end
+		return nil
+	end
+end
+
+local function _mymemoryAttempt(text, tl, sl)
+	local msl = (sl == "auto") and "en" or sl
+	local url = ("https://api.mymemory.translated.net/get?q=%s&langpair=%s|%s"):format(enc(text), enc(msl), enc(tl))
+	local body = httpGet(url)
+	if not body then return nil end
+	local ok, data = pcall(function() return HttpService:JSONDecode(body) end)
+	if ok and type(data) == "table" and type(data.responseData) == "table"
+		and type(data.responseData.translatedText) == "string" and data.responseData.translatedText ~= "" then
+		return data.responseData.translatedText, nil
+	end
+	return nil
+end
+
+local _backends = {
+	_googleAttempt("translate.googleapis.com"),
+	_googleAttempt("clients5.google.com"),
+	_lingvaAttempt("lingva.ml"),
+	_lingvaAttempt("lingva.garudalinux.org"),
+	_lingvaAttempt("translate.plausibility.cloud"),
+	_mymemoryAttempt,
+}
+-- Remember which backend last worked so we hit it FIRST next time, instead of
+-- re-waiting on a blocked host (Google) on every single translation.
+local _lastGood = 1
+
 local function translate(text, targetLang, sourceLang)
 	if not text or text == "" then return nil, nil, "empty" end
 	local tl = targetLang or "en"
 	local sl = sourceLang or "auto"
-	local function enc(s) return HttpService:UrlEncode(s) end
-
-	-- Try several translation hosts in order. If your executor blocks one
-	-- (Opiumware blocks Google's host), another usually gets through.
-
-	-- 1) Google array endpoints (support auto-detect)
-	for _, host in ipairs({ "translate.googleapis.com", "clients5.google.com" }) do
-		local url = ("https://%s/translate_a/single?client=gtx&sl=%s&tl=%s&dt=t&q=%s"):format(host, enc(sl), enc(tl), enc(text))
-		local body = httpGet(url)
-		if body then
-			local ok, data = pcall(function() return HttpService:JSONDecode(body) end)
-			if ok and type(data) == "table" and type(data[1]) == "table" then
-				local parts = {}
-				for _, seg in ipairs(data[1]) do
-					if type(seg) == "table" and type(seg[1]) == "string" then table.insert(parts, seg[1]) end
-				end
-				local t = table.concat(parts)
-				if t ~= "" then return t, (type(data[3]) == "string" and data[3] or nil) end
-			end
-		end
+	-- Build try order: last-known-good first, then the rest.
+	local order = { _lastGood }
+	for i = 1, #_backends do if i ~= _lastGood then table.insert(order, i) end end
+	for _, idx in ipairs(order) do
+		local t, d = _backends[idx](text, tl, sl)
+		if t then _lastGood = idx return t, d end
 	end
-
-	-- 2) Lingva (a Google Translate mirror on different hosts; supports auto)
-	for _, host in ipairs({ "lingva.ml", "lingva.garudalinux.org", "translate.plausibility.cloud" }) do
-		local url = ("https://%s/api/v1/%s/%s/%s"):format(host, enc(sl), enc(tl), enc(text))
-		local body = httpGet(url)
-		if body then
-			local ok, data = pcall(function() return HttpService:JSONDecode(body) end)
-			if ok and type(data) == "table" and type(data.translation) == "string" and data.translation ~= "" then
-				local det = (type(data.info) == "table" and type(data.info.detectedSource) == "string") and data.info.detectedSource or nil
-				return data.translation, det
-			end
-		end
-	end
-
-	-- 3) MyMemory (needs an explicit source language)
-	local msl = (sl == "auto") and "en" or sl
-	do
-		local url = ("https://api.mymemory.translated.net/get?q=%s&langpair=%s|%s"):format(enc(text), enc(msl), enc(tl))
-		local body = httpGet(url)
-		if body then
-			local ok, data = pcall(function() return HttpService:JSONDecode(body) end)
-			if ok and type(data) == "table" and type(data.responseData) == "table"
-				and type(data.responseData.translatedText) == "string" and data.responseData.translatedText ~= "" then
-				return data.responseData.translatedText, nil
-			end
-		end
-	end
-
 	return nil, nil, "all translation hosts blocked by executor"
 end
 
